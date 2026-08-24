@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  @apply bg-white text-slate-900;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+}
+
+/* Elevation system */
+.shadow-flat { box-shadow: none; border: 1px solid rgba(15,23,42,0.06); }
+.shadow-float { box-shadow: 0 1px 2px rgba(2,6,23,0.04), 0 2px 8px rgba(2,6,23,0.04); }
+.shadow-modal { box-shadow: 0 10px 30px rgba(2,6,23,0.18); }
+
+/* Motion and reduced-motion respect */
+@keyframes skeleton-shimmer {
+  0% { background-position: -200px 0 }
+  100% { background-position: calc(200px + 100%) 0 }
+}
+.skeleton { background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.02) 37%, rgba(0,0,0,0.04) 63%); background-size: 400px 100%; animation: skeleton-shimmer 1.2s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+  .dropdown-transition, .slide-over-transition, .row-hover, .btn-press { transition: none !important; }
+}
+
+/* dropdown/slide transitions */
+.dropdown-transition { transition: transform 140ms cubic-bezier(.0,.0,.2,1), opacity 140ms cubic-bezier(.0,.0,.2,1); transform-origin: top left; }
+.dropdown-enter { opacity: 0; transform: translateY(-4px); }
+.dropdown-enter-active { opacity: 1; transform: translateY(0); }
+
+.slide-over-transition { transition: transform 200ms cubic-bezier(.0,.0,.2,1), opacity 200ms cubic-bezier(.0,.0,.2,1); }
+
+.row-hover { transition: background-color 100ms ease-in-out; }
+
+/* button press */
+.btn-press:active { transform: scale(0.98); }
+
+/* monospace utility for numeric columns */
+.mono-numeric { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Segoe UI Mono', 'Noto Mono', 'Courier New', monospace; font-variant-numeric: tabular-nums; }
+
+/* small tag/pill */
+.tag-pill { padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; }
+
+/* Excel upload result card */
+.excel-result { display: flex; gap: 0.5rem; align-items: center; }
+.excel-stats { display:flex; gap:0.5rem }
+.excel-stat { min-width:72px; padding:0.5rem; border-radius:6px; color:white; text-align:center }
+
+/* toast (basic) */
+.toast-enter { opacity: 0; transform: translateY(8px); }
+.toast-enter-active { opacity: 1; transform: translateY(0); transition: all 180ms ease-out; }
+.toast-progress { height:3px; background: linear-gradient(90deg,#3F9884,#2F6F5E); }
+
+/* form input standardization */
+.form-input { border: 1px solid rgba(15,23,42,0.06); padding: 0.5rem 0.75rem; border-radius: 6px; background: white; }
+.form-input:focus { outline: none; box-shadow: 0 0 0 3px rgba(47,111,94,0.12); border-color: #2F6F5E; }
+
