@@ -5,6 +5,7 @@ import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { list, create, update, remove, BusinessCenter } from '../../mocks/businessCenters'
 import SearchInput from '../../components/SearchInput'
+import { validateNameField } from '../../utils/validators'
 
 export default function BusinessCentersPage() {
   const [rows, setRows] = useState<BusinessCenter[]>([])
@@ -22,7 +23,12 @@ export default function BusinessCentersPage() {
   function validate() {
     const next: { code?: string; name?: string } = {}
     if (!String(form.code || '').trim()) next.code = 'Code is required'
-    if (!String(form.name || '').trim()) next.name = 'Name is required'
+    if (!String(form.name || '').trim()) {
+      next.name = 'Name is required'
+    } else {
+      const nameError = validateNameField(String(form.name || ''), 'Business center name')
+      if (nameError) next.name = nameError
+    }
     setErrors(next)
     return Object.keys(next).length === 0
   }
@@ -58,7 +64,7 @@ export default function BusinessCentersPage() {
         </div>
       </div>
 
-      <DataTable columns={[{key:'code',label:'Code',className:'mono-numeric'},{key:'name',label:'Name'},{key:'tel',label:'Tel'},{key:'email',label:'Email'},{key:'id',label:'Actions'}]} data={rows.filter(r=> (r.code+ ' ' + r.name).toLowerCase().includes(q.toLowerCase())).map(r=>({code:r.code,name:r.name,tel:r.tel,email:r.email,id:r.code }))} onEdit={(id)=>{ const row = rows.find(r=>r.code===id); if(row) onEdit(row) }} onDelete={(id)=>setDeleting({code:id})} />
+      <DataTable columns={[{key:'code',label:'Code',className:'mono-numeric'},{key:'name',label:'Name'},{key:'tel',label:'Tel'},{key:'email',label:'Email'},{key:'id',label:'Actions'}]} data={rows.filter(r=> ((r.code || '') + ' ' + (r.name || '')).toLowerCase().includes(q.toLowerCase())).map(r=>({code:r.code || '',name:r.name || '',tel:r.tel || '',email:r.email || '',id:r.code || '' }))} onEdit={(id)=>{ const row = rows.find(r=>r.code===id); if(row) onEdit(row) }} onDelete={(id)=>setDeleting({code:id})} />
 
       <Modal title="Add / Edit Business Center" open={open} onClose={() => setOpen(false)}>
         <div className="space-y-3">

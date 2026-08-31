@@ -154,7 +154,7 @@ export default function AttendancePage() {
       return
     }
 
-    const { hours, ot } = computeHours(form.timeIn, form.timeOut)
+    const { hours, ot } = computeHours(form.timeIn || '', form.timeOut || '')
     const toSave: Attendance = {
       ...form,
       totalWorkingHours: hours,
@@ -232,7 +232,7 @@ export default function AttendancePage() {
 
   // Live computed hours
   const liveComputed = useMemo(() => {
-    return computeHours(form.timeIn, form.timeOut)
+    return computeHours(form.timeIn || '', form.timeOut || '')
   }, [form.timeIn, form.timeOut])
 
   // Table Column definitions

@@ -15,6 +15,10 @@ import CustomersPage from '../pages/masters/Customers'
 import EmployeeAdditions from '../pages/Additions/EmployeeAdditions'
 import EmployeeDeductions from '../pages/Deductions/EmployeeDeductions'
 import LeavesPage from '../pages/Leave/Leaves'
+import LoansPage from '../pages/Loans/LoansPage'
+import ReportsPage from '../pages/Reports/ReportsPage'
+import EmployeeHistoryPage from '../pages/Reports/EmployeeHistoryPage'
+import AuditLogPage from '../pages/Audit/AuditLogPage'
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   // Simple test-mode auth: check localStorage flag set by the Login page
@@ -42,6 +46,12 @@ export default function AppRouter() {
         <Route path="employee-additions" element={<EmployeeAdditions />} />
         <Route path="employee-deductions" element={<EmployeeDeductions />} />
         <Route path="leaves" element={<LeavesPage />} />
+        <Route path="loans" element={<LoansPage />} />
+
+        {/* Reports & Audit */}
+        <Route path="reports" element={<ReportsPage />} />
+        <Route path="employee-history" element={<EmployeeHistoryPage />} />
+        <Route path="audit-logs" element={<AuditLogPage />} />
 
         {/* Masters */}
         <Route path="business-centers" element={<BusinessCentersPage />} />

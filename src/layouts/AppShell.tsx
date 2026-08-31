@@ -71,7 +71,7 @@ export default function AppShell() {
                 <div className="absolute top-full right-0 mt-2 z-50 min-w-[220px] w-56 bg-white border rounded shadow-float text-slate-900">
                   <div className="px-3 py-2 text-sm font-medium">{localStorage.getItem('hsb_test_user') || 'Test User'}</div>
                   <div className="px-3 py-1 text-xs text-slate-500">test.user@shinex.lk</div>
-                  <div className="px-3 py-2 text-xs text-slate-400">{centerList.find(c=>c.code===bc)?.name || bc}</div>
+                  <div className="px-3 py-2 text-xs text-slate-400">{centers.find((c: any)=>c.code===bc)?.name || bc}</div>
                   <div className="border-t" />
                   <div className="px-2 py-2"><button type="button" onClick={signOut} className="w-full text-left px-3 py-2 text-sm text-red-600 whitespace-nowrap">Sign out</button></div>
                 </div>

@@ -5,6 +5,7 @@ import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchInput from '../../components/SearchInput'
 import { list, create, update, remove } from '../../mocks/customers'
+import { validateNameField } from '../../utils/validators'
 
 export default function CustomersPage() {
   const [rows, setRows] = useState<any[]>([])
@@ -13,13 +14,13 @@ export default function CustomersPage() {
   const [editing, setEditing] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<string | null>(null)
   const [q, setQ] = useState('')
-  const [errors, setErrors] = useState<{ code?: string; name?: string }>({})
+  const [errors, setErrors] = useState<{ code?: string; name?: string; contactName?: string }>({})
 
   useEffect(() => { list().then(setRows) }, [])
   function refresh(){ list().then(setRows) }
   function onOpenCreate() { setErrors({}); setForm({code:'',name:'',address1:''}); setEditing(null); setOpen(true) }
   function onEdit(row:any){ setErrors({}); setForm(row); setEditing(row.code); setOpen(true) }
-  function validate(){ const next: { code?: string; name?: string } = {}; if(!String(form.code || '').trim()) next.code='Code is required'; if(!String(form.name || '').trim()) next.name='Name is required'; setErrors(next); return Object.keys(next).length===0 }
+  function validate(){ const next: { code?: string; name?: string; contactName?: string } = {}; if(!String(form.code || '').trim()) next.code='Code is required'; if(!String(form.name || '').trim()) { next.name='Name is required' } else { const nameError = validateNameField(String(form.name || ''), 'Name'); if (nameError) next.name = nameError } const contactNameError = validateNameField(String(form.contactName || ''), 'Contact name'); if (contactNameError) next.contactName = contactNameError; setErrors(next); return Object.keys(next).length===0 }
   async function onSave(){ if(!validate()){ toast.error('Please complete the required fields'); return } try { if(editing) await update(editing, form); else await create(form); toast.success('Plant saved'); setOpen(false); refresh() } catch (error) { console.error('Save plant failed', error); toast.error('Failed to save plant — please try again') } }
   function onDeleteConfirm(){ if(confirm){ remove(confirm).then(()=>{ setConfirm(null); refresh(); toast.success('Plant deleted') }).catch(()=>toast.error('Failed to delete plant — please try again')) } }
   return (
@@ -48,7 +49,8 @@ export default function CustomersPage() {
           </div>
           <div>
             <label className="block text-xs text-slate-600">Contact Name</label>
-            <input className="mt-1 w-full form-input" value={form.contactName||''} onChange={e=>setForm({...form,contactName:e.target.value})} />
+            <input className={`mt-1 w-full form-input ${errors.contactName ? 'border-red-300 ring-2 ring-red-100' : ''}`} value={form.contactName||''} onChange={e=>{ setForm({...form,contactName:e.target.value}); if (errors.contactName) setErrors(prev => ({ ...prev, contactName: undefined })) }} />
+            {errors.contactName && <p className="mt-1 text-xs text-red-500">{errors.contactName}</p>}
           </div>
           <div>
             <label className="block text-xs text-slate-600">Contact No</label>

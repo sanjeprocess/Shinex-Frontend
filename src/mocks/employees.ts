@@ -1,49 +1,86 @@
+import api from '../api/axios';
 import { Employee } from '../types/employee';
 
-const make = (epf: string, fn: string, ln: string, plant: string, section: string, bc: string, salary: number): Employee => ({
-  epfNo: epf,
-  nicNo: '900000000V',
-  firstName: fn,
-  lastName: ln,
-  plantCode: plant,
-  sectionCode: section,
-  dateOfBirth: '1990-01-01',
-  hiredDate: '2020-06-15',
-  hiredMonth: 'June',
-  statusActive: true,
-  basicSalary: salary,
-  dayAllowance: 0,
-  nightAllowance: 0,
-  sundayPoyaExtra: 0,
-  bankAccountNumber: '1234567890',
-  bankName: 'Sample Bank',
-  branchName: 'Main Branch',
-  branchCode: '001',
-  swift: 'SBINLKSL',
-  businessCenter: bc,
-  bCardYes: Math.random() > 0.5,
-});
+export const employees: Employee[] = [];
 
-export const employees: Employee[] = [
-  make('EPF00001', 'Sunil', 'Perera', '130013', '001', '001', 45000),
-  make('EPF00002', 'Kamal', 'Fernando', '130014', '001', '001', 37000),
-  make('EPF00003', 'Nimal', 'Silva', '130015', '002', '002', 52000),
-  make('EPF00004', 'Ruwan', 'Kumar', '130016', '003', '001', 33000),
-  make('EPF00005', 'Saman', 'Jayasuriya', '130017', '002', '002', 41000),
-  make('EPF00006', 'Mala', 'Fernando', '130013', '004', '001', 60000),
-  make('EPF00007', 'Asha', 'Perera', '130014', '004', '002', 58000),
-  make('EPF00008', 'Ravi', 'Kumar', '130015', '003', '001', 29000),
-  make('EPF00009', 'Chathura', 'De Silva', '130016', '001', '002', 36000),
-  make('EPF00010', 'Nadeesha', 'Wickramasinghe', '130017', '002', '001', 47000),
-];
-
-export const list = () => Promise.resolve([...employees]);
-export const getById = (epf: string) => Promise.resolve(employees.find(e => e.epfNo === epf));
-export const create = (e: Employee) => { employees.push(e); return Promise.resolve(e); };
-export const update = (epf: string, e: Partial<Employee>) => {
-  const idx = employees.findIndex(x => x.epfNo === epf);
-  if (idx === -1) return Promise.resolve(null as any);
-  employees[idx] = { ...employees[idx], ...e };
-  return Promise.resolve(employees[idx]);
+export const list = async (): Promise<Employee[]> => {
+  try {
+    const res = await api.get('/employees');
+    if (res.data && Array.isArray(res.data)) {
+      return res.data.map((e: any) => ({
+        epfNo: (e.epfNo || '').trim(),
+        nicNo: (e.nicNo || '').trim(),
+        firstName: (e.firstName || e.empName || '').trim(),
+        lastName: (e.lastName || e.empNam1 || '').trim(),
+        dateOfBirth: e.dateOfBirth || '',
+        gender: (e.gender || '').trim(),
+        address: (e.address || '').trim(),
+        homeContact: (e.contactNo || e.homeContact || '').trim(),
+        mobile: (e.mobileNo || e.mobile || '').trim(),
+        email: (e.emailAddress || e.email || '').trim(),
+        plantCode: (e.plantCode || '').trim(),
+        sectionCode: (e.sectionCode || '').trim(),
+        businessCenter: (e.businessCenter || '').trim(),
+        hiredDate: e.hiredDate || '',
+        hiredMonth: (e.hiredMonth || '').trim(),
+        statusActive: true,
+        basicSalary: e.basicSalary || 0,
+        dayAllowance: e.dayAllowance || 0,
+        nightAllowance: e.nightAllowance || 0,
+        sundayPoyaExtra: e.sundayPoyaExtra || 0,
+        bankAccountNumber: (e.bankAccountNumber || '').trim(),
+        bankName: (e.bankName || '').trim(),
+        branchName: (e.bankBranchName || e.branchName || '').trim(),
+        branchCode: (e.branchCode || '').trim(),
+        swift: (e.swift || '').trim(),
+        bCardYes: e.bCardYes === 'Y' || e.bCardYes === true,
+        deathDonation: e.dethDenotion === 'Y' || e.deathDonation === true
+      }));
+    }
+  } catch (err) {
+    console.error('Failed to load employees from API', err);
+  }
+  return [];
 };
-export const remove = (epf: string) => { const idx = employees.findIndex(x => x.epfNo === epf); if (idx >= 0) employees.splice(idx,1); return Promise.resolve(); };
+
+export const getById = async (epf: string): Promise<Employee | undefined> => {
+  try {
+    const res = await api.get(`/employees/${epf}`);
+    if (res.data) return res.data;
+  } catch {}
+  const all = await list();
+  return all.find(e => e.epfNo === epf);
+};
+
+export const create = async (e: Employee): Promise<Employee> => {
+  const payload = {
+    ...e,
+    contactNo: e.homeContact || e.mobile,
+    mobileNo: e.mobile,
+    emailAddress: e.email,
+    bankBranchName: e.branchName,
+    bCardYes: e.bCardYes ? 'Y' : 'N',
+    dethDenotion: e.deathDonation ? 'Y' : 'N'
+  };
+  await api.post('/employees', payload);
+  return e;
+};
+
+export const update = async (epf: string, e: Partial<Employee>): Promise<Employee> => {
+  const payload = {
+    ...e,
+    epfNo: epf,
+    contactNo: e.homeContact || e.mobile,
+    mobileNo: e.mobile,
+    emailAddress: e.email,
+    bankBranchName: e.branchName,
+    bCardYes: e.bCardYes ? 'Y' : 'N',
+    dethDenotion: e.deathDonation ? 'Y' : 'N'
+  };
+  await api.put(`/employees/${epf}`, payload);
+  return { epfNo: epf, ...e } as Employee;
+};
+
+export const remove = async (epf: string): Promise<void> => {
+  await api.delete(`/employees/${epf}`);
+};

@@ -6,6 +6,7 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import Toggle from '../../components/Toggle'
 import SearchInput from '../../components/SearchInput'
 import { list, create, update, remove } from '../../mocks/deductions'
+import { validateNameField } from '../../utils/validators'
 
 export default function DeductionsPage() {
   const [rows, setRows] = useState<any[]>([])
@@ -20,7 +21,7 @@ export default function DeductionsPage() {
   function refresh(){ list().then(setRows) }
   function onOpenCreate() { setErrors({}); setForm({code:'',name:'',amount:0,isLoan:false,isUniform:false,addOther:false}); setEditing(null); setOpen(true) }
   function onEdit(row:any){ setErrors({}); setForm(row); setEditing(row.code); setOpen(true) }
-  function validate(){ const next: { code?: string; name?: string } = {}; if(!String(form.code || '').trim()) next.code='Code is required'; if(!String(form.name || '').trim()) next.name='Name is required'; setErrors(next); return Object.keys(next).length===0 }
+  function validate(){ const next: { code?: string; name?: string } = {}; if(!String(form.code || '').trim()) next.code='Code is required'; if(!String(form.name || '').trim()) { next.name='Name is required' } else { const nameError = validateNameField(String(form.name || ''), 'Deduction name'); if (nameError) next.name = nameError } setErrors(next); return Object.keys(next).length===0 }
   async function onSave(){ if(!validate()){ toast.error('Please complete the required fields'); return } try { if(editing) await update(editing, form); else await create(form); toast.success('Deduction saved'); setOpen(false); refresh() } catch (error) { console.error('Save deduction failed', error); toast.error('Failed to save deduction — please try again') } }
   function onDeleteConfirm(){ if(confirm){ remove(confirm).then(()=>{ setConfirm(null); refresh(); toast.success('Deduction deleted') }).catch(()=>toast.error('Failed to delete deduction — please try again')) } }
 

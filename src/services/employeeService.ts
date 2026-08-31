@@ -1,22 +1,43 @@
-import * as mock from '../mocks/employees';
 import { Employee } from '../types/employee';
+import * as employeeMocks from '../mocks/employees';
+import { logAuditAction } from '../utils/auditLogger';
 
-// TODO: swap these implementations for axios calls to /api/employees when backend is ready
-export const list = (params?: { page?: number; size?: number; search?: string }) => {
-  // naive pagination on mock
-  return mock.list();
+export const list = async (): Promise<Employee[]> => {
+  return employeeMocks.list();
 };
 
-export const getById = (epf: string) => mock.getById(epf);
-export const create = (e: Employee) => mock.create(e);
-export const update = (epf: string, e: Partial<Employee>) => mock.update(epf, e);
-export const remove = (epf: string) => mock.remove(epf);
+export const getById = async (epf: string): Promise<Employee | undefined> => {
+  return employeeMocks.getById(epf);
+};
 
-export const upload = (file: File) => {
-  // fake upload with progress and summary
-  return new Promise(resolve => {
-    setTimeout(() => {
-      resolve({ totalRows: 10, inserted: 2, updated: 8, failed: 0, errors: [] });
-    }, 1200);
+export const create = async (e: Employee): Promise<Employee> => {
+  const result = await employeeMocks.create(e);
+  logAuditAction({
+    action: 'CREATE',
+    module: 'EMPLOYEE',
+    entityId: e.epfNo,
+    details: `Added new employee ${e.epfNo} (${e.firstName} ${e.lastName || ''}) with basic salary LKR ${e.basicSalary || 0}`
+  });
+  return result;
+};
+
+export const update = async (epf: string, e: Partial<Employee>): Promise<Employee> => {
+  const result = await employeeMocks.update(epf, e);
+  logAuditAction({
+    action: 'UPDATE',
+    module: 'EMPLOYEE',
+    entityId: epf,
+    details: `Updated employee ${epf} details (${e.firstName || ''} ${e.lastName || ''})`
+  });
+  return result;
+};
+
+export const remove = async (epf: string): Promise<void> => {
+  await employeeMocks.remove(epf);
+  logAuditAction({
+    action: 'DELETE',
+    module: 'EMPLOYEE',
+    entityId: epf,
+    details: `Removed employee record ${epf}`
   });
 };

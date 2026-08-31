@@ -1,7 +1,5 @@
-import { v4 as uuid } from 'uuid';
+import api from '../api/axios';
 
-// The real backend table has no primary key; this is a local surrogate used for mock CRUD only.
-// When moved to the real DB, add a proper identity PK such as `Leave_ID INT IDENTITY(1,1) PRIMARY KEY`.
 export type LeaveRecord = {
   id: string;
   leaveYear: string;
@@ -18,68 +16,68 @@ export type LeaveRecord = {
   days?: number;
 };
 
-export const leaves: LeaveRecord[] = [
-  {
-    id: uuid(),
-    leaveYear: '2026',
-    leaveMonth: '07',
-    empNo: 'EPF00001',
-    epfNo: 'EPF00001',
-    leaveType: 'ANU',
-    leaveDays: 5,
-    leaveStartDate: '2026-07-20',
-    leaveEndDate: '2026-07-24',
-    businessCenter: '001',
-    start: '2026-07-20',
-    end: '2026-07-24',
-    days: 5
-  },
-  {
-    id: uuid(),
-    leaveYear: '2026',
-    leaveMonth: '08',
-    empNo: 'EPF00003',
-    epfNo: 'EPF00003',
-    leaveType: 'MED',
-    leaveDays: 2,
-    leaveStartDate: '2026-08-03',
-    leaveEndDate: '2026-08-04',
-    businessCenter: '002',
-    start: '2026-08-03',
-    end: '2026-08-04',
-    days: 2
-  },
-  {
-    id: uuid(),
-    leaveYear: '2026',
-    leaveMonth: '08',
-    empNo: 'EPF00005',
-    epfNo: 'EPF00005',
-    leaveType: 'CAS',
-    leaveDays: 1,
-    leaveStartDate: '2026-08-10',
-    leaveEndDate: '2026-08-10',
-    businessCenter: '002',
-    start: '2026-08-10',
-    end: '2026-08-10',
-    days: 1
+export const list = async (): Promise<LeaveRecord[]> => {
+  try {
+    const res = await api.get('/leaves');
+    if (res.data && Array.isArray(res.data)) {
+      return res.data.map((l: any) => ({
+        id: l.leaveId ? String(l.leaveId) : `${l.leaveYear}_${l.leaveMonth}_${l.empNo}_${l.leaveStartDate}`,
+        leaveYear: (l.leaveYear || '').trim(),
+        leaveMonth: (l.leaveMonth || '').trim(),
+        empNo: (l.empNo || '').trim(),
+        epfNo: (l.empNo || '').trim(),
+        leaveType: (l.leaveType || '').trim(),
+        leaveDays: l.leaveDays || 0,
+        leaveStartDate: l.leaveStartDate || '',
+        leaveEndDate: l.leaveEndDate || '',
+        businessCenter: (l.businessCenter || '').trim(),
+        start: l.leaveStartDate || '',
+        end: l.leaveEndDate || '',
+        days: l.leaveDays || 0
+      }));
+    }
+  } catch (err) {
+    console.error('Failed to load leaves from API', err);
   }
-];
+  return [];
+};
 
-export const list = () => Promise.resolve([...leaves]);
-export const listByEmployee = (epf: string) => Promise.resolve(leaves.filter(record => record.empNo === epf || record.epfNo === epf));
-export const create = (record: LeaveRecord) => {
-  leaves.push(record);
-  return Promise.resolve(record);
+export const listByEmployee = async (epf: string): Promise<LeaveRecord[]> => {
+  const all = await list();
+  return all.filter(record => record.empNo === epf || record.epfNo === epf);
 };
-export const update = (id: string, patch: Partial<LeaveRecord>) => {
-  const index = leaves.findIndex(record => record.id === id);
-  if (index === -1) return Promise.resolve(null as any);
-  leaves[index] = { ...leaves[index], ...patch };
-  return Promise.resolve(leaves[index]);
+
+export const create = async (record: LeaveRecord): Promise<LeaveRecord> => {
+  const payload = {
+    leaveYear: record.leaveYear,
+    leaveMonth: record.leaveMonth,
+    empNo: record.empNo || record.epfNo,
+    leaveType: record.leaveType,
+    leaveDays: record.leaveDays || record.days,
+    leaveStartDate: record.leaveStartDate || record.start,
+    leaveEndDate: record.leaveEndDate || record.end,
+    businessCenter: record.businessCenter
+  };
+  const res = await api.post('/leaves', payload);
+  return { ...record, id: res.data?.leaveId ? String(res.data.leaveId) : record.id };
 };
-export const remove = (id: string) => {
-  const index = leaves.findIndex(record => record.id === id);
-  if (index >= 0) leaves.splice(index, 1);
-  return Promise.resolve();
+
+export const update = async (id: string, patch: Partial<LeaveRecord>): Promise<LeaveRecord> => {
+  const payload = {
+    leaveId: isNaN(Number(id)) ? undefined : Number(id),
+    leaveYear: patch.leaveYear,
+    leaveMonth: patch.leaveMonth,
+    empNo: patch.empNo || patch.epfNo,
+    leaveType: patch.leaveType,
+    leaveDays: patch.leaveDays || patch.days,
+    leaveStartDate: patch.leaveStartDate || patch.start,
+    leaveEndDate: patch.leaveEndDate || patch.end,
+    businessCenter: patch.businessCenter
+  };
+  await api.put(`/leaves/${id}`, payload);
+  return { id, ...patch } as LeaveRecord;
+};
+
+export const remove = async (id: string): Promise<void> => {
+  await api.delete(`/leaves/${id}`);
 };

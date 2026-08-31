@@ -18,12 +18,16 @@ const MENU = [
     { label: 'Additions', to: '/employee-additions' },
     { label: 'Deductions', to: '/employee-deductions' },
     { label: 'Leave', to: '/leaves' },
+    { label: 'Loans', to: '/loans' },
   ] },
   { label: 'Process', items: [
     { label: 'Payroll Run', to: '/payroll' },
+    { label: 'System Audit Trail', to: '/audit-logs' },
   ] },
   { label: 'Reports', items: [
-    { label: 'Reports', to: '/reports' },
+    { label: 'General Reports', to: '/reports' },
+    { label: 'Employee History Dossier', to: '/employee-history' },
+    { label: 'System Change History', to: '/audit-logs' },
   ] },
 ]
 
@@ -63,6 +67,11 @@ export default function TopMenuBar() {
       <div className="max-w-7xl mx-auto px-6">
         <div className="flex items-center gap-8 h-12">
           <nav className="flex items-center gap-4">
+            <Link
+              to="/"
+              className={`px-3 py-2 text-sm rounded ${location.pathname === '/' ? 'underline decoration-2 decoration-[#3F9884] font-semibold text-white' : 'text-slate-200 hover:bg-[#1B2028]'}`}>
+              Dashboard
+            </Link>
             {MENU.map((group, idx) => (
               <div key={group.label} className="relative">
                 <button

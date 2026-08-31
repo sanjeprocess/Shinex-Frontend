@@ -1,21 +1,74 @@
 import axios from 'axios'
+import { toast } from 'sonner'
+
+const getStoredToken = () => {
+  try {
+    return (
+      localStorage.getItem('hsb_auth_token') ||
+      localStorage.getItem('token') ||
+      localStorage.getItem('jwt') ||
+      sessionStorage.getItem('hsb_auth_token') ||
+      ''
+    )
+  } catch {
+    return ''
+  }
+}
+
+const getBaseUrl = () => {
+  try {
+    const meta = import.meta as any
+    if (meta && meta.env && meta.env.VITE_API_URL) {
+      return meta.env.VITE_API_URL
+    }
+  } catch {}
+  return 'http://localhost:8080/api'
+}
 
 const api = axios.create({
-  baseURL: process.env.NODE_ENV === 'development' ? 'http://localhost:8080/api' : '/api',
+  baseURL: getBaseUrl(),
+  timeout: 10_000,
   headers: {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    Accept: 'application/json'
   }
 })
 
-// Simple JWT interceptor placeholder; adapt to secure storage strategy
+// ── Request: attach auth token ────────────────────────────────────────────────
 api.interceptors.request.use((config) => {
-  // attach token from memory store or call a getAuthToken helper
-  // const token = auth.getToken();
-  const token = undefined
+  const token = getStoredToken()
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
 })
+
+// ── Response: global error safety net ────────────────────────────────────────
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (!error.response) {
+      toast.error("Can't reach the server. Please check your connection and try again.")
+    } else {
+      const status: number = error.response.status
+      if (status >= 500) {
+        toast.error('Something went wrong on the server. Please try again.')
+      } else if (status >= 400) {
+        const data = error.response.data
+        const backendMessage =
+          (typeof data === 'string' && data.trim()) ||
+          data?.message ||
+          data?.error ||
+          null
+        toast.error(
+          backendMessage
+            ? String(backendMessage)
+            : 'Request failed — please check your input.'
+        )
+      }
+    }
+    return Promise.reject(error)
+  }
+)
 
 export default api

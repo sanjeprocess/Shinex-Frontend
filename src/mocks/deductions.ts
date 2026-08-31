@@ -1,9 +1,52 @@
+import api from '../api/axios';
+
 export type DeductionType = { code: string; name: string; amount: number; isLoan?: boolean; isUniform?: boolean; addOther?: boolean };
-export const deductions: DeductionType[] = [
-  { code: 'D01', name: 'Uniform Deduction', amount: 300, isLoan: false, isUniform: true, addOther: false },
-  { code: 'D02', name: 'Loan Repayment', amount: 2000, isLoan: true, isUniform: false, addOther: false },
-];
-export const list = () => Promise.resolve([...deductions]);
-export const create = (r: DeductionType) => { deductions.push(r); return Promise.resolve(r) }
-export const update = (code: string, patch: Partial<DeductionType>) => { const idx = deductions.findIndex(a=>a.code===code); if (idx===-1) return Promise.resolve(null as any); deductions[idx] = {...deductions[idx], ...patch}; return Promise.resolve(deductions[idx]); }
-export const remove = (code: string) => { const idx = deductions.findIndex(a=>a.code===code); if (idx>=0) deductions.splice(idx,1); return Promise.resolve(); }
+
+export const list = async (): Promise<DeductionType[]> => {
+  try {
+    const res = await api.get('/deduction-types');
+    if (res.data && Array.isArray(res.data)) {
+      return res.data.map((d: any) => ({
+        code: (d.dudCode || d.code || '').trim(),
+        name: (d.dudName || d.name || '').trim(),
+        amount: d.dudAmount || d.amount || 0,
+        isLoan: d.ifLoan === 'Y' || d.isLoan === true,
+        isUniform: d.ifUniform === 'Y' || d.isUniform === true,
+        addOther: d.other === 'Y' || d.addOther === true
+      }));
+    }
+  } catch (err) {
+    console.error('Failed to load deductions from API', err);
+  }
+  return [];
+};
+
+export const create = async (r: DeductionType): Promise<DeductionType> => {
+  const payload = {
+    dudCode: r.code,
+    dudName: r.name,
+    dudAmount: r.amount,
+    ifLoan: r.isLoan ? 'Y' : 'N',
+    ifUniform: r.isUniform ? 'Y' : 'N',
+    other: r.addOther ? 'Y' : 'N'
+  };
+  await api.post('/deduction-types', payload);
+  return r;
+};
+
+export const update = async (code: string, patch: Partial<DeductionType>): Promise<DeductionType> => {
+  const payload = {
+    dudCode: code,
+    dudName: patch.name,
+    dudAmount: patch.amount,
+    ifLoan: patch.isLoan ? 'Y' : 'N',
+    ifUniform: patch.isUniform ? 'Y' : 'N',
+    other: patch.addOther ? 'Y' : 'N'
+  };
+  await api.put(`/deduction-types/${code}`, payload);
+  return { code, ...patch } as DeductionType;
+};
+
+export const remove = async (code: string): Promise<void> => {
+  await api.delete(`/deduction-types/${code}`);
+};

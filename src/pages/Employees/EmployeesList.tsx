@@ -10,6 +10,7 @@ import { list as listSections } from '../../mocks/sections'
 import { list as listCustomers } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
 import { Employee } from '../../types/employee'
+import { validateNameField } from '../../utils/validators'
 
 export default function EmployeesList() {
   // explicit, strongly-typed form state matching Employee type
@@ -57,7 +58,7 @@ export default function EmployeesList() {
   const [customers, setCustomers] = useState<any[]>([])
   const [centerList, setCenterList] = useState<any[]>([])
   const [q, setQ] = useState('')
-  const [errors, setErrors] = useState<{ epfNo?: string; firstName?: string }>({})
+  const [errors, setErrors] = useState<{ epfNo?: string; firstName?: string; lastName?: string; bankName?: string }>({})
 
   useEffect(() => {
     refresh()
@@ -92,9 +93,23 @@ export default function EmployeesList() {
 
   // Save: explicit validation, call create/update, close, toast, refresh
   function validateEmployee() {
-    const next: { epfNo?: string; firstName?: string } = {}
+    const next: { epfNo?: string; firstName?: string; lastName?: string; bankName?: string } = {}
+
     if (!String(form.epfNo || '').trim()) next.epfNo = 'EPF No is required'
-    if (!String(form.firstName || '').trim()) next.firstName = 'First Name is required'
+
+    if (!String(form.firstName || '').trim()) {
+      next.firstName = 'First Name is required'
+    } else {
+      const nameError = validateNameField(form.firstName || '', 'First name')
+      if (nameError) next.firstName = nameError
+    }
+
+    const lastNameError = validateNameField(form.lastName || '', 'Last name')
+    if (lastNameError) next.lastName = lastNameError
+
+    const bankNameError = validateNameField(form.bankName || '', 'Bank name')
+    if (bankNameError) next.bankName = bankNameError
+
     setErrors(next)
     return Object.keys(next).length === 0
   }
@@ -176,7 +191,8 @@ export default function EmployeesList() {
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Last Name</label>
-                <input type="text" value={form.lastName || ''} onChange={e => setForm({ ...form, lastName: e.target.value })} className="mt-1 w-full form-input" />
+                <input type="text" value={form.lastName || ''} onChange={e => { setForm({ ...form, lastName: e.target.value }); if (errors.lastName) setErrors(prev => ({ ...prev, lastName: undefined })) }} className={`mt-1 w-full form-input ${errors.lastName ? 'border-red-300 ring-2 ring-red-100' : ''}`} />
+                {errors.lastName && <p className="mt-1 text-xs text-red-500">{errors.lastName}</p>}
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Date of Birth</label>
@@ -264,7 +280,8 @@ export default function EmployeesList() {
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Bank Name</label>
-                <input value={form.bankName || ''} onChange={e => setForm({ ...form, bankName: e.target.value })} className="mt-1 w-full form-input" />
+                <input value={form.bankName || ''} onChange={e => { setForm({ ...form, bankName: e.target.value }); if (errors.bankName) setErrors(prev => ({ ...prev, bankName: undefined })) }} className={`mt-1 w-full form-input ${errors.bankName ? 'border-red-300 ring-2 ring-red-100' : ''}`} />
+                {errors.bankName && <p className="mt-1 text-xs text-red-500">{errors.bankName}</p>}
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Branch Name</label>

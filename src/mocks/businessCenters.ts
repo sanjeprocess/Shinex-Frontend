@@ -1,4 +1,4 @@
-import { v4 as uuid } from 'uuid';
+import api from '../api/axios';
 
 export type BusinessCenter = {
   id: string;
@@ -14,13 +14,85 @@ export type BusinessCenter = {
   fax?: string;
 };
 
-export const businessCenters: BusinessCenter[] = [
-  { id: uuid(), code: '001', name: 'SHINEX FACILITY MANAGEMENT (PVT) LTD', address: 'No. 123 Facility Rd', tel: '011-2345678', email: 'facility@shinex.com', web: 'www.shinex-facility.com', epfReg: 'EPF123', vatReg: 'VAT123', brNo: 'BR001', fax: '011-2345679' },
-  { id: uuid(), code: '002', name: 'SHINEX HOUSEKEEPING SERVICES (PVT) LTD', address: 'No. 9 Clean St', tel: '011-8765432', email: 'hk@shinex.com', web: 'www.shinex-hk.com', epfReg: 'EPF124', vatReg: 'VAT124', brNo: 'BR002', fax: '011-8765433' },
-];
+export const businessCenters: BusinessCenter[] = [];
 
-export const list = () => Promise.resolve([...businessCenters]);
-export const getByCode = (code: string) => Promise.resolve(businessCenters.find(b => b.code === code));
-export const create = (b: BusinessCenter) => { businessCenters.push(b); return Promise.resolve(b); }
-export const update = (code: string, patch: Partial<BusinessCenter>) => { const idx = businessCenters.findIndex(x=>x.code===code); if (idx===-1) return Promise.resolve(null as any); businessCenters[idx] = {...businessCenters[idx], ...patch}; return Promise.resolve(businessCenters[idx]); }
-export const remove = (code: string) => { const idx = businessCenters.findIndex(x=>x.code===code); if (idx>=0) businessCenters.splice(idx,1); return Promise.resolve(); }
+export const list = async (): Promise<BusinessCenter[]> => {
+  try {
+    const res = await api.get('/business-centers');
+    if (res.data && Array.isArray(res.data)) {
+      return res.data.map((b: any) => ({
+        id: (b.code || b.companyId || b.id || '').trim(),
+        code: (b.code || b.companyId || '').trim(),
+        name: (b.name || b.companyName || '').trim(),
+        address: (b.address || b.companyAddress || '').trim(),
+        tel: (b.tel || b.telNo || '').trim(),
+        email: (b.email || b.emailId || '').trim(),
+        web: (b.web || b.webAddress || '').trim(),
+        epfReg: (b.epfReg || '').trim(),
+        vatReg: (b.vatReg || '').trim(),
+        brNo: (b.brNo || '').trim(),
+        fax: (b.fax || b.faxNo || '').trim()
+      }));
+    }
+  } catch (err) {
+    console.error('Failed to load business centers from API', err);
+  }
+  return [];
+};
+
+export const getByCode = async (code: string): Promise<BusinessCenter | undefined> => {
+  const all = await list();
+  return all.find(b => b.code === code);
+};
+
+export const create = async (b: BusinessCenter): Promise<BusinessCenter> => {
+  const payload = {
+    code: b.code,
+    companyId: b.code,
+    name: b.name,
+    companyName: b.name,
+    address: b.address,
+    companyAddress: b.address,
+    tel: b.tel,
+    telNo: b.tel,
+    email: b.email,
+    emailId: b.email,
+    web: b.web,
+    webAddress: b.web,
+    epfReg: b.epfReg,
+    vatReg: b.vatReg,
+    brNo: b.brNo,
+    fax: b.fax,
+    faxNo: b.fax
+  };
+  await api.post('/business-centers', payload);
+  return b;
+};
+
+export const update = async (code: string, patch: Partial<BusinessCenter>): Promise<BusinessCenter> => {
+  const payload = {
+    code: code,
+    companyId: code,
+    name: patch.name,
+    companyName: patch.name,
+    address: patch.address,
+    companyAddress: patch.address,
+    tel: patch.tel,
+    telNo: patch.tel,
+    email: patch.email,
+    emailId: patch.email,
+    web: patch.web,
+    webAddress: patch.web,
+    epfReg: patch.epfReg,
+    vatReg: patch.vatReg,
+    brNo: patch.brNo,
+    fax: patch.fax,
+    faxNo: patch.fax
+  };
+  await api.put(`/business-centers/${code}`, payload);
+  return { code, ...patch } as BusinessCenter;
+};
+
+export const remove = async (code: string): Promise<void> => {
+  await api.delete(`/business-centers/${code}`);
+};

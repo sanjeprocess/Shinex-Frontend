@@ -5,7 +5,26 @@ import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Toggle from '../../components/Toggle'
 import SearchInput from '../../components/SearchInput'
-import { list, create, update, remove } from '../../mocks/additions'
+import api from '../../api/axios'
+import { validateNameField } from '../../utils/validators'
+
+const toUiRow = (item: any) => ({
+  code: item.additionCode ?? item.code ?? '',
+  name: item.additionName ?? item.name ?? '',
+  value: Number(item.additionValue ?? item.value ?? 0),
+  addToEpf: item.addToEpf === 'Y' || item.addToEpf === true || !!item.addToEpf,
+  addToBasic: item.addToBasic === 'Y' || item.addToBasic === true || !!item.addToBasic,
+  addOther: item.addOther === 'Y' || item.addOther === true || !!item.addOther
+})
+
+const toPayload = (form: any) => ({
+  additionCode: String(form.code || '').trim(),
+  additionName: String(form.name || '').trim(),
+  additionValue: Number(form.value || 0),
+  addToEpf: form.addToEpf ? 'Y' : 'N',
+  addToBasic: form.addToBasic ? 'Y' : 'N',
+  addOther: form.addOther ? 'Y' : 'N'
+})
 
 export default function AdditionsPage() {
   const [rows, setRows] = useState<any[]>([])
@@ -16,13 +35,54 @@ export default function AdditionsPage() {
 
   const [q, setQ] = useState('')
   const [errors, setErrors] = useState<{ code?: string; name?: string }>({})
-  useEffect(() => { list().then(setRows) }, [])
-  function refresh(){ list().then(setRows) }
+
+  const refresh = async () => {
+    const res = await api.get('/master/additions')
+    setRows((res.data || []).map(toUiRow))
+  }
+
+  useEffect(() => {
+    refresh().catch((error) => {
+      console.error('Load additions failed', error)
+      toast.error('Failed to load additions')
+    })
+  }, [])
+
   function onOpenCreate() { setErrors({}); setForm({code:'',name:'',value:0,addToEpf:false,addToBasic:false,addOther:false}); setEditing(null); setOpen(true) }
   function onEdit(row:any){ setErrors({}); setForm(row); setEditing(row.code); setOpen(true) }
-  function validate(){ const next: { code?: string; name?: string } = {}; if(!String(form.code || '').trim()) next.code='Code is required'; if(!String(form.name || '').trim()) next.name='Name is required'; setErrors(next); return Object.keys(next).length===0 }
-  async function onSave(){ if(!validate()){ toast.error('Please complete the required fields'); return } try { if(editing) await update(editing, form); else await create(form); toast.success('Addition saved'); setOpen(false); refresh() } catch (error) { console.error('Save addition failed', error); toast.error('Failed to save addition — please try again') } }
-  function onDeleteConfirm(){ if(confirm){ remove(confirm).then(()=>{ setConfirm(null); refresh(); toast.success('Addition deleted') }).catch(()=>toast.error('Failed to delete addition — please try again')) } }
+  function validate(){ const next: { code?: string; name?: string } = {}; if(!String(form.code || '').trim()) next.code='Code is required'; if(!String(form.name || '').trim()) { next.name='Name is required' } else { const nameError = validateNameField(String(form.name || ''), 'Addition name'); if (nameError) next.name = nameError } setErrors(next); return Object.keys(next).length===0 }
+
+  async function onSave(){
+    if(!validate()){ toast.error('Please complete the required fields'); return }
+    try {
+      const payload = toPayload(form)
+      if(editing) {
+        await api.put(`/master/additions/${encodeURIComponent(editing)}`, payload)
+      } else {
+        await api.post('/master/additions', payload)
+      }
+      toast.success('Addition saved')
+      setOpen(false)
+      await refresh()
+    } catch (error) {
+      console.error('Save addition failed', error)
+      toast.error('Failed to save addition — please try again')
+    }
+  }
+
+  async function onDeleteConfirm(){
+    if(confirm){
+      try {
+        await api.delete(`/master/additions/${encodeURIComponent(confirm)}`)
+        setConfirm(null)
+        await refresh()
+        toast.success('Addition deleted')
+      } catch (error) {
+        console.error('Delete addition failed', error)
+        toast.error('Failed to delete addition — please try again')
+      }
+    }
+  }
 
   return (
     <div>

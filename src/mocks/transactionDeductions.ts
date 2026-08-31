@@ -1,3 +1,5 @@
+import api from '../api/axios';
+
 export type TransactionDeduction = {
   epfNo: string;
   didCode: string;
@@ -8,74 +10,48 @@ export type TransactionDeduction = {
   addYear: string;
 };
 
-const transactionDeductions: TransactionDeduction[] = [
-  {
-    epfNo: 'EPF00001',
-    didCode: 'D01',
-    businessCenter: '001',
-    didAmount: 2500,
-    everyMonth: 'Y',
-    addMonth: '07',
-    addYear: '2026'
-  },
-  {
-    epfNo: 'EPF00001',
-    didCode: 'D02',
-    businessCenter: '001',
-    didAmount: 1500,
-    everyMonth: 'N',
-    addMonth: '07',
-    addYear: '2026'
-  },
-  {
-    epfNo: 'EPF00002',
-    didCode: 'D01',
-    businessCenter: '001',
-    didAmount: 2200,
-    everyMonth: 'Y',
-    addMonth: '08',
-    addYear: '2026'
-  },
-  {
-    epfNo: 'EPF00003',
-    didCode: 'D02',
-    businessCenter: '002',
-    didAmount: 1800,
-    everyMonth: 'N',
-    addMonth: '08',
-    addYear: '2026'
-  },
-  {
-    epfNo: 'EPF00004',
-    didCode: 'D01',
-    businessCenter: '001',
-    didAmount: 3100,
-    everyMonth: 'Y',
-    addMonth: '09',
-    addYear: '2026'
+export const list = async (): Promise<TransactionDeduction[]> => {
+  try {
+    const res = await api.get('/transaction-deductions');
+    if (res.data && Array.isArray(res.data)) {
+      return res.data.map((d: any) => ({
+        epfNo: (d.epfNo || '').trim(),
+        didCode: (d.didCode || '').trim(),
+        businessCenter: (d.businessCenter || '').trim(),
+        didAmount: d.didAmount || 0,
+        everyMonth: d.everyMonth,
+        addMonth: String(d.addMonth || ''),
+        addYear: String(d.addYear || '')
+      }));
+    }
+  } catch (err) {
+    console.error('Failed to load transaction deductions from API', err);
   }
-];
-
-const matches = (row: TransactionDeduction, epfNo: string, didCode: string, addMonth: string, addYear: string) => {
-  return row.epfNo === epfNo && row.didCode === didCode && row.addMonth === addMonth && row.addYear === addYear;
+  return [];
 };
 
-export const list = () => Promise.resolve([...transactionDeductions]);
-
-export const create = (record: TransactionDeduction) => {
-  transactionDeductions.push(record);
-  return Promise.resolve(record);
+export const create = async (record: TransactionDeduction): Promise<TransactionDeduction> => {
+  const payload = {
+    ...record,
+    everyMonth: record.everyMonth === true ? 'Y' : record.everyMonth === false ? 'N' : record.everyMonth
+  };
+  await api.post('/transaction-deductions', payload);
+  return record;
 };
 
-export const update = (epfNo: string, didCode: string, addMonth: string, addYear: string, patch: Partial<TransactionDeduction>) => {
-  const index = transactionDeductions.findIndex(row => matches(row, epfNo, didCode, addMonth, addYear));
-  if (index === -1) return Promise.resolve(null as any);
-  transactionDeductions[index] = { ...transactionDeductions[index], ...patch };
-  return Promise.resolve(transactionDeductions[index]);
+export const update = async (epfNo: string, didCode: string, addMonth: string, addYear: string, patch: Partial<TransactionDeduction>): Promise<TransactionDeduction> => {
+  const payload = {
+    ...patch,
+    epfNo,
+    didCode,
+    addMonth: String(addMonth),
+    addYear: String(addYear),
+    everyMonth: patch.everyMonth === true ? 'Y' : patch.everyMonth === false ? 'N' : patch.everyMonth
+  };
+  await api.put(`/transaction-deductions/${epfNo}/${didCode}`, payload);
+  return { epfNo, didCode, addMonth, addYear, ...patch } as TransactionDeduction;
 };
 
-export const remove = (epfNo: string, didCode: string, addMonth: string, addYear: string) => {
-  const index = transactionDeductions.findIndex(row => matches(row, epfNo, didCode, addMonth, addYear));
-  if (index >= 0) transactionDeductions.splice(index, 1);
-  return Promise.resolve();
+export const remove = async (epfNo: string, didCode: string, addMonth: string, addYear: string): Promise<void> => {
+  await api.delete(`/transaction-deductions/${epfNo}/${didCode}`);
 };
