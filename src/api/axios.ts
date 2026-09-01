@@ -21,8 +21,13 @@ const getBaseUrl = () => {
     if (meta && meta.env && meta.env.VITE_API_URL) {
       return meta.env.VITE_API_URL
     }
+    // Local development mode (npm run dev)
+    if (meta && meta.env && meta.env.DEV) {
+      return 'http://localhost:8080/api'
+    }
   } catch {}
-  return 'http://localhost:8080/api'
+  // Hosted Production default (AWS Amplify / AWS Elastic Beanstalk)
+  return 'http://shinex-hris-backend-env.eba-tdpzseqt.eu-north-1.elasticbeanstalk.com/api'
 }
 
 const api = axios.create({
