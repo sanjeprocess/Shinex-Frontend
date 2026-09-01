@@ -26,8 +26,8 @@ const getBaseUrl = () => {
       return 'http://localhost:8080/api'
     }
   } catch {}
-  // Hosted Production default (AWS Amplify / AWS Elastic Beanstalk)
-  return 'http://shinex-hris-backend-env.eba-tdpzseqt.eu-north-1.elasticbeanstalk.com/api'
+  // Hosted Production default (Uses Amplify /api proxy to avoid Mixed Content HTTP/HTTPS blocking)
+  return '/api'
 }
 
 const api = axios.create({
