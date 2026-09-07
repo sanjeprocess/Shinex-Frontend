@@ -17,12 +17,8 @@ const getStoredToken = () => {
 }
 
 const getBaseUrl = () => {
-  try {
-    const meta = import.meta as any
-    if (meta && meta.env && meta.env.VITE_API_URL) {
-      return meta.env.VITE_API_URL
-    }
-  } catch {}
+  const url = import.meta.env.VITE_API_URL
+  if (url) return url
   return 'http://localhost:8080/api'
 }
 
