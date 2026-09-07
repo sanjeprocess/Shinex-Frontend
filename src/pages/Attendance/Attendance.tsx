@@ -43,6 +43,15 @@ function computeHours(timeInStr: string, timeOutStr: string): { hours: number; o
   return { hours, ot };
 }
 
+function normalizeLocalDateTime(dateValue?: string, fallbackTime?: string): string | undefined {
+  if (!dateValue) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(dateValue)) return dateValue;
+
+  const baseDate = dateValue.includes('T') ? dateValue.split('T')[0] : dateValue;
+  const time = (fallbackTime || '00:00').trim();
+  return `${baseDate}T${time}`.length === 16 ? `${baseDate}T${time}:00` : `${baseDate}T${time}`;
+}
+
 export default function AttendancePage() {
   const defaultForm: Attendance = {
     id: '',
@@ -61,7 +70,7 @@ export default function AttendancePage() {
     nightAllowance: 0,
     dayIn: new Date().toISOString().split('T')[0],
     timeIn: '08:00',
-    dayOut: new Date().toISOString().split('T')[0],
+    dayOut: `${new Date().toISOString().split('T')[0]}T17:00:00`,
     timeOut: '17:00',
     halfDay: 0,
     totalWorkingHours: 9.0,
@@ -97,7 +106,20 @@ export default function AttendancePage() {
 
   useEffect(() => {
     refresh()
-    listEmployees().then(setEmployeeList)
+    listEmployees().then((employees) => {
+      setEmployeeList(employees)
+      const firstEmployee = employees.find((employee) => employee?.epfNo)
+      if (!firstEmployee) return
+      setForm((prev) => ({
+        ...prev,
+        epfNo: prev.epfNo || firstEmployee.epfNo,
+        plantCode: prev.plantCode || firstEmployee.plantCode || '',
+        businessCenter: prev.businessCenter || firstEmployee.businessCenter || localStorage.getItem('hsb_active_bc') || '001',
+        basicSalary: prev.basicSalary && prev.basicSalary !== 0 ? prev.basicSalary : (firstEmployee.basicSalary || 0),
+        dayAllowance: prev.dayAllowance && prev.dayAllowance !== 0 ? prev.dayAllowance : (firstEmployee.dayAllowance || 0),
+        nightAllowance: prev.nightAllowance && prev.nightAllowance !== 0 ? prev.nightAllowance : (firstEmployee.nightAllowance || 0)
+      }))
+    })
     listCustomers().then(setCustomerList)
     listBC().then(setBcList)
   }, [])
@@ -106,10 +128,26 @@ export default function AttendancePage() {
     listAttendance().then(setRows)
   }
 
+  function getDefaultEmployeeValues(employee?: any) {
+    if (!employee) return {}
+    return {
+      epfNo: employee.epfNo || '',
+      plantCode: employee.plantCode || '',
+      businessCenter: employee.businessCenter || localStorage.getItem('hsb_active_bc') || '001',
+      basicSalary: employee.basicSalary || 0,
+      dayAllowance: employee.dayAllowance || 0,
+      nightAllowance: employee.nightAllowance || 0
+    }
+  }
+
   // Add flow
   function handleAdd() {
-    const empty = { ...defaultForm }
-    empty.businessCenter = localStorage.getItem('hsb_active_bc') || empty.businessCenter
+    const firstEmployee = employeeList.find((employee) => employee?.epfNo)
+    const empty = {
+      ...defaultForm,
+      ...getDefaultEmployeeValues(firstEmployee),
+      businessCenter: localStorage.getItem('hsb_active_bc') || defaultForm.businessCenter
+    }
     setForm(empty)
     setIsEditing(false)
     setEditingId(null)
@@ -140,7 +178,13 @@ export default function AttendancePage() {
 
   function validateAttendance() {
     const next: { epfNo?: string; plantCode?: string; dayIn?: string } = {}
-    if (!String(form.epfNo || '').trim()) next.epfNo = 'Employee is required'
+    const selectedEmployeeExists = String(form.epfNo || '').trim() && employeeList.some((employee) => employee?.epfNo === form.epfNo)
+
+    if (!String(form.epfNo || '').trim()) {
+      next.epfNo = 'Employee is required'
+    } else if (!selectedEmployeeExists) {
+      next.epfNo = 'Select a valid employee from the list'
+    }
     if (!String(form.plantCode || '').trim()) next.plantCode = 'Plant is required'
     if (!String(form.dayIn || '').trim()) next.dayIn = 'Date is required'
     setErrors(next)
@@ -157,8 +201,21 @@ export default function AttendancePage() {
     const { hours, ot } = computeHours(form.timeIn || '', form.timeOut || '')
     const toSave: Attendance = {
       ...form,
+      dayOut: normalizeLocalDateTime(form.dayOut, form.timeOut) || form.dayOut,
       totalWorkingHours: hours,
       totalOt: ot
+    }
+
+    const duplicate = !isEditing && rows.some((row) => 
+      row.epfNo === toSave.epfNo &&
+      row.dayIn === toSave.dayIn &&
+      row.attMonth === toSave.attMonth &&
+      row.atttYear === toSave.atttYear
+    )
+
+    if (duplicate) {
+      toast.error('Attendance already exists for this employee on this date.')
+      return
     }
 
     try {
@@ -174,9 +231,10 @@ export default function AttendancePage() {
       }
       setOpen(false)
       refresh()
-    } catch (err) {
+    } catch (err: any) {
       console.error('Save failed', err)
-      toast.error('Save failed')
+      const backendMessage = err?.response?.data?.message || err?.response?.data?.error || 'Attendance save failed'
+      toast.error(String(backendMessage))
     }
   }
 
@@ -191,6 +249,18 @@ export default function AttendancePage() {
   }, [rows, employeeList, q])
 
   // Custom Form Select Handlers
+  function handleNumericInput(field: 'workingDays' | 'noOfStaff' | 'dasForAttAllowance' | 'basicSalary' | 'dayAllowance' | 'nightAllowance' | 'sundayPoyaExtra' | 'noOfMeal' | 'totalMealValue', label: string, value: string) {
+    if (value === '') {
+      setForm(prev => ({ ...prev, [field]: 0 }))
+      return
+    }
+    if (!/^\d*\.?\d*$/.test(value)) {
+      toast.error(`${label} must be a number.`)
+      return
+    }
+    setForm(prev => ({ ...prev, [field]: Number(value) }))
+  }
+
   function handleEmployeeChange(epf: string | null) {
     if (!epf) return
     const emp = employeeList.find(e => e.epfNo === epf)
@@ -198,6 +268,8 @@ export default function AttendancePage() {
       setForm(prev => ({
         ...prev,
         epfNo: epf,
+        plantCode: emp.plantCode || prev.plantCode || '',
+        businessCenter: emp.businessCenter || prev.businessCenter || localStorage.getItem('hsb_active_bc') || '001',
         basicSalary: emp.basicSalary || 0,
         dayAllowance: emp.dayAllowance || 0,
         nightAllowance: emp.nightAllowance || 0
@@ -367,15 +439,15 @@ export default function AttendancePage() {
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div>
                 <label className="block text-slate-600">Working Days (Plant)</label>
-                <input type="number" value={form.workingDays || 0} onChange={e => setForm({ ...form, workingDays: Number(e.target.value) })} className="mt-1 w-full form-input" />
+                <input type="number" value={form.workingDays || 0} onChange={e => handleNumericInput('workingDays', 'Working days', e.target.value)} className="mt-1 w-full form-input" />
               </div>
               <div>
                 <label className="block text-slate-600">No Of Staff (Plant)</label>
-                <input type="number" value={form.noOfStaff || 0} onChange={e => setForm({ ...form, noOfStaff: Number(e.target.value) })} className="mt-1 w-full form-input" />
+                <input type="number" value={form.noOfStaff || 0} onChange={e => handleNumericInput('noOfStaff', 'No of staff', e.target.value)} className="mt-1 w-full form-input" />
               </div>
               <div>
                 <label className="block text-slate-600">Das for Att Allowance</label>
-                <input type="number" value={form.dasForAttAllowance || 0} onChange={e => setForm({ ...form, dasForAttAllowance: Number(e.target.value) })} className="mt-1 w-full form-input" />
+                <input type="number" value={form.dasForAttAllowance || 0} onChange={e => handleNumericInput('dasForAttAllowance', 'Attendance allowance days', e.target.value)} className="mt-1 w-full form-input" />
               </div>
               <div className="flex items-center justify-between p-1 bg-white border rounded mt-3">
                 <span className="text-slate-600 font-medium">Auto OT Calculation</span>
@@ -394,15 +466,15 @@ export default function AttendancePage() {
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="block text-xs text-slate-600">Basic Salary</label>
-                <input type="number" value={form.basicSalary || 0} onChange={e => setForm({ ...form, basicSalary: Number(e.target.value) })} className="mt-1 w-full form-input text-right font-mono mono-numeric" />
+                <input type="number" value={form.basicSalary || 0} onChange={e => handleNumericInput('basicSalary', 'Basic salary', e.target.value)} className="mt-1 w-full form-input text-right font-mono mono-numeric" />
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Day Allowance</label>
-                <input type="number" value={form.dayAllowance || 0} onChange={e => setForm({ ...form, dayAllowance: Number(e.target.value) })} className="mt-1 w-full form-input text-right font-mono mono-numeric" />
+                <input type="number" value={form.dayAllowance || 0} onChange={e => handleNumericInput('dayAllowance', 'Day allowance', e.target.value)} className="mt-1 w-full form-input text-right font-mono mono-numeric" />
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Night Allowance</label>
-                <input type="number" value={form.nightAllowance || 0} onChange={e => setForm({ ...form, nightAllowance: Number(e.target.value) })} className="mt-1 w-full form-input text-right font-mono mono-numeric" />
+                <input type="number" value={form.nightAllowance || 0} onChange={e => handleNumericInput('nightAllowance', 'Night allowance', e.target.value)} className="mt-1 w-full form-input text-right font-mono mono-numeric" />
               </div>
             </div>
           </section>
@@ -466,7 +538,7 @@ export default function AttendancePage() {
               </div>
               <div className="col-span-2">
                 <label className="block text-slate-600 mb-1">Sunday Poya Extra Payment</label>
-                <input type="number" value={form.sundayPoyaExtra || 0} onChange={e => setForm({ ...form, sundayPoyaExtra: Number(e.target.value) })} className="w-full form-input" />
+                <input type="number" value={form.sundayPoyaExtra || 0} onChange={e => handleNumericInput('sundayPoyaExtra', 'Sunday/Poya extra payment', e.target.value)} className="w-full form-input" />
               </div>
             </div>
           </section>
@@ -499,11 +571,11 @@ export default function AttendancePage() {
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="block text-xs text-slate-600">No of Meals</label>
-                <input type="number" value={form.noOfMeal || 0} onChange={e => setForm({ ...form, noOfMeal: Number(e.target.value) })} className="mt-1 w-full form-input text-right mono-numeric" />
+                <input type="number" value={form.noOfMeal || 0} onChange={e => handleNumericInput('noOfMeal', 'No of meals', e.target.value)} className="mt-1 w-full form-input text-right mono-numeric" />
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Total Meal Value</label>
-                <input type="number" value={form.totalMealValue || 0} onChange={e => setForm({ ...form, totalMealValue: Number(e.target.value) })} className="mt-1 w-full form-input text-right mono-numeric" />
+                <input type="number" value={form.totalMealValue || 0} onChange={e => handleNumericInput('totalMealValue', 'Total meal value', e.target.value)} className="mt-1 w-full form-input text-right mono-numeric" />
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Late Allow No</label>

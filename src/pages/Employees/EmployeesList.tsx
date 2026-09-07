@@ -186,12 +186,12 @@ export default function EmployeesList() {
               </div>
               <div>
                 <label className="block text-xs text-slate-600">First Name</label>
-                <input type="text" value={form.firstName || ''} onChange={e => { setForm({ ...form, firstName: e.target.value }); if (errors.firstName) setErrors(prev => ({ ...prev, firstName: undefined })) }} className={`mt-1 w-full form-input ${errors.firstName ? 'border-red-300 ring-2 ring-red-100' : ''}`} />
+                <input type="text" value={form.firstName || ''} onChange={e => { if (/\d/.test(e.target.value)) { toast.error('First name cannot contain numbers.'); return } setForm({ ...form, firstName: e.target.value }); if (errors.firstName) setErrors(prev => ({ ...prev, firstName: undefined })) }} className={`mt-1 w-full form-input ${errors.firstName ? 'border-red-300 ring-2 ring-red-100' : ''}`} />
                 {errors.firstName && <p className="mt-1 text-xs text-red-500">{errors.firstName}</p>}
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Last Name</label>
-                <input type="text" value={form.lastName || ''} onChange={e => { setForm({ ...form, lastName: e.target.value }); if (errors.lastName) setErrors(prev => ({ ...prev, lastName: undefined })) }} className={`mt-1 w-full form-input ${errors.lastName ? 'border-red-300 ring-2 ring-red-100' : ''}`} />
+                <input type="text" value={form.lastName || ''} onChange={e => { if (/\d/.test(e.target.value)) { toast.error('Last name cannot contain numbers.'); return } setForm({ ...form, lastName: e.target.value }); if (errors.lastName) setErrors(prev => ({ ...prev, lastName: undefined })) }} className={`mt-1 w-full form-input ${errors.lastName ? 'border-red-300 ring-2 ring-red-100' : ''}`} />
                 {errors.lastName && <p className="mt-1 text-xs text-red-500">{errors.lastName}</p>}
               </div>
               <div>
@@ -254,20 +254,20 @@ export default function EmployeesList() {
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="block text-xs text-slate-600">Basic Salary</label>
-                <input type="number" value={form.basicSalary || 0} onChange={e => setForm({ ...form, basicSalary: Number(e.target.value) })} className="mt-1 w-full form-input mono-numeric" />
+                <input type="number" value={form.basicSalary || 0} onChange={e => { if (!/^\d*\.?\d*$/.test(e.target.value)) { toast.error('Basic salary must be a number.'); return } setForm({ ...form, basicSalary: Number(e.target.value) }) }} className="mt-1 w-full form-input mono-numeric" />
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Day Allowance</label>
-                <input type="number" value={form.dayAllowance || 0} onChange={e => setForm({ ...form, dayAllowance: Number(e.target.value) })} className="mt-1 w-full form-input mono-numeric" />
+                <input type="number" value={form.dayAllowance || 0} onChange={e => { if (!/^\d*\.?\d*$/.test(e.target.value)) { toast.error('Day allowance must be a number.'); return } setForm({ ...form, dayAllowance: Number(e.target.value) }) }} className="mt-1 w-full form-input mono-numeric" />
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Night Allowance</label>
-                <input type="number" value={form.nightAllowance || 0} onChange={e => setForm({ ...form, nightAllowance: Number(e.target.value) })} className="mt-1 w-full form-input mono-numeric" />
+                <input type="number" value={form.nightAllowance || 0} onChange={e => { if (!/^\d*\.?\d*$/.test(e.target.value)) { toast.error('Night allowance must be a number.'); return } setForm({ ...form, nightAllowance: Number(e.target.value) }) }} className="mt-1 w-full form-input mono-numeric" />
               </div>
             </div>
             <div className="mt-2">
               <label className="block text-xs text-slate-600">Sunday / Poya Extra Payment</label>
-              <input type="number" value={form.sundayPoyaExtra || 0} onChange={e => setForm({ ...form, sundayPoyaExtra: Number(e.target.value) })} className="mt-1 w-40 form-input mono-numeric" />
+              <input type="number" value={form.sundayPoyaExtra || 0} onChange={e => { if (!/^\d*\.?\d*$/.test(e.target.value)) { toast.error('Sunday/Poya extra payment must be a number.'); return } setForm({ ...form, sundayPoyaExtra: Number(e.target.value) }) }} className="mt-1 w-40 form-input mono-numeric" />
             </div>
           </section>
 
@@ -280,7 +280,7 @@ export default function EmployeesList() {
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Bank Name</label>
-                <input value={form.bankName || ''} onChange={e => { setForm({ ...form, bankName: e.target.value }); if (errors.bankName) setErrors(prev => ({ ...prev, bankName: undefined })) }} className={`mt-1 w-full form-input ${errors.bankName ? 'border-red-300 ring-2 ring-red-100' : ''}`} />
+                <input value={form.bankName || ''} onChange={e => { if (/\d/.test(e.target.value)) { toast.error('Bank name cannot contain numbers.'); return } setForm({ ...form, bankName: e.target.value }); if (errors.bankName) setErrors(prev => ({ ...prev, bankName: undefined })) }} className={`mt-1 w-full form-input ${errors.bankName ? 'border-red-300 ring-2 ring-red-100' : ''}`} />
                 {errors.bankName && <p className="mt-1 text-xs text-red-500">{errors.bankName}</p>}
               </div>
               <div>

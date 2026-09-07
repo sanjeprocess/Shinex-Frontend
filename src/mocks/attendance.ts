@@ -95,10 +95,20 @@ export const listByEmployee = async (epf: string): Promise<Attendance[]> => {
   return all.filter(a => a.epfNo === epf);
 };
 
+function normalizeLocalDateTime(dateValue?: string, fallbackTime?: string): string | undefined {
+  if (!dateValue) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(dateValue)) return dateValue;
+
+  const baseDate = dateValue.includes('T') ? dateValue.split('T')[0] : dateValue;
+  const time = (fallbackTime || '00:00').trim();
+  return `${baseDate}T${time}`.length === 16 ? `${baseDate}T${time}:00` : `${baseDate}T${time}`;
+}
+
 export const create = async (rec: Attendance): Promise<Attendance> => {
   const payload = {
     ...rec,
     attYear: rec.atttYear || '2026',
+    dayOut: normalizeLocalDateTime(rec.dayOut, rec.timeOut),
     daysForAttAllowance: rec.dasForAttAllowance
   };
   await api.post('/attendance', payload);
@@ -115,6 +125,7 @@ export const update = async (id: string, patch: Partial<Attendance>): Promise<At
       attMonth: month,
       epfNo: epfNo,
       dayIn: dayIn,
+      dayOut: normalizeLocalDateTime(patch.dayOut, patch.timeOut),
       daysForAttAllowance: patch.dasForAttAllowance
     };
     await api.put(`/attendance/${year}/${month}/${epfNo}/${dayIn}`, payload);
