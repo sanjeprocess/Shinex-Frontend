@@ -38,9 +38,13 @@ export default function BusinessCentersPage() {
       return
     }
     try {
-      const exists = rows.some(r=>r.code===form.code)
-      if (exists) await update(form.code!, form as BusinessCenter)
-      else await create(form as BusinessCenter)
+      const normalizedForm = Object.fromEntries(
+        Object.entries(form).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value])
+      ) as Partial<BusinessCenter>
+      normalizedForm.code = String(normalizedForm.code || '').slice(0, 10)
+      const exists = rows.some(r=>r.code===normalizedForm.code)
+      if (exists) await update(normalizedForm.code, normalizedForm)
+      else await create(normalizedForm as BusinessCenter)
       toast.success('Business center saved')
       setOpen(false); refresh()
     } catch (error) {
@@ -67,10 +71,11 @@ export default function BusinessCentersPage() {
       <DataTable columns={[{key:'code',label:'Code',className:'mono-numeric'},{key:'name',label:'Name'},{key:'tel',label:'Tel'},{key:'email',label:'Email'},{key:'id',label:'Actions'}]} data={rows.filter(r=> ((r.code || '') + ' ' + (r.name || '')).toLowerCase().includes(q.toLowerCase())).map(r=>({code:r.code || '',name:r.name || '',tel:r.tel || '',email:r.email || '',id:r.code || '' }))} onEdit={(id)=>{ const row = rows.find(r=>r.code===id); if(row) onEdit(row) }} onDelete={(id)=>setDeleting({code:id})} />
 
       <Modal title="Add / Edit Business Center" open={open} onClose={() => setOpen(false)}>
-        <div className="space-y-3">
+        <div className="min-h-0 flex flex-col">
+          <div className="min-h-0 max-h-[calc(85vh-9rem)] overflow-y-auto overscroll-contain px-1 pb-2 space-y-3 smooth-scroll">
           <div>
             <label className="block text-xs text-slate-600">Code</label>
-            <input className={`mt-1 w-full form-input mono-numeric ${errors.code ? 'border-red-300 ring-2 ring-red-100' : ''}`} value={form.code || ''} onChange={e=>{ setForm({...form,code:e.target.value}); if (errors.code) setErrors(prev => ({ ...prev, code: undefined })) }} />
+            <input maxLength={10} className={`mt-1 w-full form-input mono-numeric ${errors.code ? 'border-red-300 ring-2 ring-red-100' : ''}`} value={form.code || ''} onChange={e=>{ setForm({...form,code:e.target.value.slice(0, 10)}); if (errors.code) setErrors(prev => ({ ...prev, code: undefined })) }} />
             {errors.code && <p className="mt-1 text-xs text-red-500">{errors.code}</p>}
           </div>
           <div>
@@ -84,12 +89,12 @@ export default function BusinessCentersPage() {
           </div>
           <div>
             <label className="block text-xs text-slate-600">Tel No</label>
-                      <input className="mt-1 w-full form-input" value={form.tel || ''} onChange={e=>setForm({...form,tel:e.target.value})} />
+                      <input className="mt-1 w-full form-input" value={form.tel || ''} onChange={e=>setForm({...form,tel:e.target.value.replace(/[^0-9+]/g, '')})} />
           </div>
           <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs text-slate-600">Fax No</label>
-                        <input className="mt-1 w-full form-input" value={form.fax || ''} onChange={e=>setForm({...form,fax:e.target.value})} />
+                        <input className="mt-1 w-full form-input" value={form.fax || ''} onChange={e=>setForm({...form,fax:e.target.value.replace(/[^0-9+]/g, '')})} />
                       </div>
                       <div>
                         <label className="block text-xs text-slate-600">Web Address</label>
@@ -115,9 +120,10 @@ export default function BusinessCentersPage() {
                       </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-                      <button onClick={()=>setOpen(false)} className="px-3 py-1 rounded-md border">Cancel</button>
-                      <button onClick={onSave} className="px-3 py-1 rounded-md bg-[#2F6F5E] text-white">Save</button>
+          </div>
+          <div className="flex shrink-0 justify-end gap-2 border-t bg-white pt-4 mt-2">
+            <button type="button" onClick={()=>setOpen(false)} className="px-3 py-1 rounded-md border">Cancel</button>
+            <button type="button" onClick={onSave} className="px-3 py-1 rounded-md bg-[#2F6F5E] text-white">Save</button>
           </div>
         </div>
       </Modal>

@@ -82,5 +82,5 @@ export const update = async (epf: string, e: Partial<Employee>): Promise<Employe
 };
 
 export const remove = async (epf: string): Promise<void> => {
-  await api.delete(`/employees/${epf}`);
+  await api.delete(`/employees/${encodeURIComponent(epf)}`);
 };

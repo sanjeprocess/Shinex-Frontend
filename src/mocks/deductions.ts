@@ -48,5 +48,5 @@ export const update = async (code: string, patch: Partial<DeductionType>): Promi
 };
 
 export const remove = async (code: string): Promise<void> => {
-  await api.delete(`/deduction-types/${code}`);
+  await api.delete(`/deduction-types/${encodeURIComponent(code)}`);
 };

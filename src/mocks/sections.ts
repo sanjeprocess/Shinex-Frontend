@@ -37,5 +37,5 @@ export const update = async (code: string, patch: Partial<Section>): Promise<Sec
 };
 
 export const remove = async (code: string): Promise<void> => {
-  await api.delete(`/sections/${code}`);
+  await api.delete(`/sections/${encodeURIComponent(code)}`);
 };

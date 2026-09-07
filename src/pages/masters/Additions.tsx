@@ -4,6 +4,7 @@ import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Toggle from '../../components/Toggle'
+import NumericInput from '../../components/NumericInput'
 import SearchInput from '../../components/SearchInput'
 import api from '../../api/axios'
 import { validateNameField } from '../../utils/validators'
@@ -110,7 +111,7 @@ export default function AdditionsPage() {
           </div>
           <div>
             <label className="block text-xs text-slate-600">Value</label>
-            <input type="number" className="mt-1 w-full form-input mono-numeric" value={form.value||0} onChange={e=>setForm({...form,value:Number(e.target.value)})} />
+            <NumericInput className="mt-1 w-full form-input mono-numeric" value={form.value||0} onChange={e=>setForm({...form,value:Number(e.target.value)})} />
           </div>
           <div className="flex items-center gap-2">
             <Toggle checked={!!form.addToEpf} onChange={v=>setForm({...form,addToEpf:v})} label="Add to EPF" />

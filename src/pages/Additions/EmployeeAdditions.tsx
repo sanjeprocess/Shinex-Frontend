@@ -5,6 +5,7 @@ import Modal from '../../components/Modal'
 import SearchInput from '../../components/SearchInput'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableEmployeeSelect from '../../components/shared/SearchableEmployeeSelect'
+import NumericInput from '../../components/NumericInput'
 import { list as listEmployees } from '../../mocks/employees'
 import { list as listAdditionTypes } from '../../mocks/additions'
 import {
@@ -221,7 +222,8 @@ export default function EmployeeAdditions() {
      </div>
 
      <Modal title={editingKey ? 'Edit Addition' : 'Add Addition'} open={open} onClose={() => setOpen(false)}>
-       <div className="space-y-4">
+       <div className="min-h-0 flex flex-col">
+         <div className="flex-1 overflow-y-auto px-1 py-1 space-y-4 smooth-scroll overscroll-contain">
          <div className="space-y-2">
            <label className="block text-xs font-medium uppercase tracking-wide text-slate-600">Employee</label>
            <SearchableEmployeeSelect value={form.epfNo || undefined} onChange={(epf) => { setForm(prev => ({ ...prev, epfNo: epf || '' })); if (errors.epfNo) setErrors(prev => ({ ...prev, epfNo: undefined })) }} />
@@ -246,8 +248,7 @@ export default function EmployeeAdditions() {
          <div className="grid grid-cols-2 gap-3">
            <div className="space-y-2">
              <label className="block text-xs font-medium uppercase tracking-wide text-slate-600">Amount</label>
-             <input
-               type="number"
+             <NumericInput
                step="0.01"
                value={form.addAmount}
                onChange={e => setForm(prev => ({ ...prev, addAmount: Number(e.target.value || 0) }))}
@@ -302,7 +303,8 @@ export default function EmployeeAdditions() {
            />
          </div>
 
-         <div className="flex justify-end gap-2 pt-2">
+         </div>
+         <div className="flex justify-end gap-3 px-1 pt-4 mt-3 border-t bg-gray-50 rounded-b-lg shrink-0">
            <button type="button" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm" onClick={() => setOpen(false)}>
              Cancel
            </button>

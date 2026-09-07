@@ -28,6 +28,5 @@ export interface Employee {
   branchCode?: string;
   swift?: string;
 
-  bCardYes?: boolean;
   deathDonation?: boolean;
 }

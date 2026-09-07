@@ -60,3 +60,37 @@ body {
 .form-input { border: 1px solid rgba(15,23,42,0.06); padding: 0.5rem 0.75rem; border-radius: 6px; background: white; }
 .form-input:focus { outline: none; box-shadow: 0 0 0 3px rgba(47,111,94,0.12); border-color: #2F6F5E; }
 
+/* Constrained modal form scrolling */
+.plant-form-scroll {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(15, 23, 42, 0.3) transparent;
+}
+.plant-form-scroll::-webkit-scrollbar { width: 6px; }
+.plant-form-scroll::-webkit-scrollbar-track { background: transparent; }
+.plant-form-scroll::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.3); border-radius: 9999px; }
+.plant-form-scroll::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.5); }
+
+.leave-modal-body {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(15, 23, 42, 0.3) transparent;
+}
+.leave-modal-body::-webkit-scrollbar { width: 6px; }
+.leave-modal-body::-webkit-scrollbar-track { background: transparent; }
+.leave-modal-body::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.3); border-radius: 9999px; }
+.leave-modal-body::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.5); }
+
+.smooth-scroll {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(15, 23, 42, 0.3) transparent;
+}
+.smooth-scroll::-webkit-scrollbar { width: 6px; }
+.smooth-scroll::-webkit-scrollbar-track { background: transparent; }
+.smooth-scroll::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.3); border-radius: 9999px; }
+.smooth-scroll::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.5); }

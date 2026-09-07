@@ -54,5 +54,5 @@ export const update = async (epfNo: string, addCode: string, addMonth: number, a
 };
 
 export const remove = async (epfNo: string, addCode: string, addMonth: number, addYear: string): Promise<void> => {
-  await api.delete(`/transaction-additions/${epfNo}/${addCode}`);
+  await api.delete(`/transaction-additions/${encodeURIComponent(epfNo)}/${encodeURIComponent(addCode)}`);
 };

@@ -4,6 +4,7 @@ import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Toggle from '../../components/Toggle'
+import NumericInput from '../../components/NumericInput'
 import SearchInput from '../../components/SearchInput'
 import { list, create, update, remove } from '../../mocks/deductions'
 import { validateNameField } from '../../utils/validators'
@@ -51,7 +52,7 @@ export default function DeductionsPage() {
           </div>
           <div>
             <label className="block text-xs text-slate-600">Amount</label>
-            <input type="number" className="mt-1 w-full form-input mono-numeric" value={form.amount||0} onChange={e=>setForm({...form,amount:Number(e.target.value)})} />
+            <NumericInput className="mt-1 w-full form-input mono-numeric" value={form.amount||0} onChange={e=>setForm({...form,amount:Number(e.target.value)})} />
           </div>
           <div className="flex items-center gap-2">
             <Toggle checked={!!form.isLoan} onChange={v=>setForm({...form,isLoan:v})} label="Is Loan" />

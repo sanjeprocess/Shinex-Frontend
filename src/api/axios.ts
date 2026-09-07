@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { toast } from 'sonner'
+import { canEdit, getCurrentUser } from '../utils/permissions'
 
 const getStoredToken = () => {
   try {
@@ -21,13 +22,8 @@ const getBaseUrl = () => {
     if (meta && meta.env && meta.env.VITE_API_URL) {
       return meta.env.VITE_API_URL
     }
-    // Local development mode (npm run dev)
-    if (meta && meta.env && meta.env.DEV) {
-      return 'http://localhost:8080/api'
-    }
   } catch {}
-  // Hosted Production default (Uses Amplify /api proxy to avoid Mixed Content HTTP/HTTPS blocking)
-  return '/api'
+  return 'http://localhost:8080/api'
 }
 
 const api = axios.create({
@@ -41,6 +37,13 @@ const api = axios.create({
 
 // ── Request: attach auth token ────────────────────────────────────────────────
 api.interceptors.request.use((config) => {
+  const method = (config.method || 'get').toLowerCase()
+  const isWrite = ['post', 'put', 'patch', 'delete'].includes(method)
+  const isAuthRequest = String(config.url || '').startsWith('/auth/')
+  if (isWrite && !isAuthRequest && !canEdit()) {
+    toast.error(getCurrentUser().accessLevel === 'READ_ONLY' ? 'Your account is read-only.' : 'Your account does not have permission to edit.')
+    return Promise.reject(new Error('Insufficient permissions'))
+  }
   const token = getStoredToken()
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`
@@ -56,7 +59,9 @@ api.interceptors.response.use(
       toast.error("Can't reach the server. Please check your connection and try again.")
     } else {
       const status: number = error.response.status
-      if (status >= 500) {
+      if (status === 409) {
+        toast.error('Cannot delete this item as it is linked to other records in the system.')
+      } else if (status >= 500) {
         toast.error('Something went wrong on the server. Please try again.')
       } else if (status >= 400) {
         const data = error.response.data

@@ -133,10 +133,14 @@ export const update = async (id: string, patch: Partial<Attendance>): Promise<At
   return { id, ...patch } as Attendance;
 };
 
+export const bulkSave = async (records: Attendance[]): Promise<void> => {
+  await api.post('/attendance/bulk', records);
+};
+
 export const remove = async (id: string): Promise<void> => {
   const parts = id.split('_');
   if (parts.length >= 4) {
     const [year, month, epfNo, dayIn] = parts;
-    await api.delete(`/attendance/${year}/${month}/${epfNo}/${dayIn}`);
+    await api.delete(`/attendance/${encodeURIComponent(year)}/${encodeURIComponent(month)}/${encodeURIComponent(epfNo)}/${encodeURIComponent(dayIn)}`);
   }
 };

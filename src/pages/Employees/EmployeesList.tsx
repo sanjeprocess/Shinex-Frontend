@@ -5,6 +5,7 @@ import SlideOver from '../../components/SlideOver'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Toggle from '../../components/Toggle'
 import SearchInput from '../../components/SearchInput'
+import NumericInput from '../../components/NumericInput'
 import { list as listEmployees, create as createEmployee, update as updateEmployee, remove as removeEmployee } from '../../services/employeeService'
 import { list as listSections } from '../../mocks/sections'
 import { list as listCustomers } from '../../mocks/customers'
@@ -44,7 +45,6 @@ export default function EmployeesList() {
     branchCode: '',
     swift: '',
 
-    bCardYes: false,
     deathDonation: false
   }
 
@@ -58,7 +58,7 @@ export default function EmployeesList() {
   const [customers, setCustomers] = useState<any[]>([])
   const [centerList, setCenterList] = useState<any[]>([])
   const [q, setQ] = useState('')
-  const [errors, setErrors] = useState<{ epfNo?: string; firstName?: string; lastName?: string; bankName?: string }>({})
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({})
 
   useEffect(() => {
     refresh()
@@ -93,7 +93,7 @@ export default function EmployeesList() {
 
   // Save: explicit validation, call create/update, close, toast, refresh
   function validateEmployee() {
-    const next: { epfNo?: string; firstName?: string; lastName?: string; bankName?: string } = {}
+    const next: Record<string, string> = {}
 
     if (!String(form.epfNo || '').trim()) next.epfNo = 'EPF No is required'
 
@@ -103,7 +103,15 @@ export default function EmployeesList() {
       const nameError = validateNameField(form.firstName || '', 'First name')
       if (nameError) next.firstName = nameError
     }
+    if (!String(form.dateOfBirth || '').trim()) next.dateOfBirth = 'Date of Birth is required'
+    if (!String(form.gender || '').trim()) next.gender = 'Gender is required'
+    if (!String(form.plantCode || '').trim()) next.plantCode = 'Please select an Employee Plant'
+    if (!String(form.businessCenter || '').trim()) next.businessCenter = 'Please select a Business Center'
+    if (!String(form.sectionCode || '').trim()) next.sectionCode = 'Please select a Section'
+    if (!String(form.hiredDate || '').trim()) next.hiredDate = 'Hired Date is required'
+    if (!String(form.hiredMonth || '').trim()) next.hiredMonth = 'Please select Hired Month'
 
+    if (!String(form.lastName || '').trim()) next.lastName = 'Last Name is required'
     const lastNameError = validateNameField(form.lastName || '', 'Last name')
     if (lastNameError) next.lastName = lastNameError
 
@@ -111,12 +119,15 @@ export default function EmployeesList() {
     if (bankNameError) next.bankName = bankNameError
 
     setErrors(next)
-    return Object.keys(next).length === 0
+    return next
   }
 
   async function handleSave() {
-    if (!validateEmployee()) {
-      toast.error('Please complete the required fields')
+    const validationErrors = validateEmployee()
+    if (Object.keys(validationErrors).length > 0) {
+      const missingFields = Object.keys(validationErrors)
+        .map(key => ({ epfNo: 'EPF No', firstName: 'First Name', lastName: 'Last Name', dateOfBirth: 'Date of Birth', gender: 'Gender', plantCode: 'Employee Plant', businessCenter: 'Business Center', sectionCode: 'Section', hiredDate: 'Hired Date', hiredMonth: 'Hired Month' } as Record<string, string>)[key] || key)
+      toast.error(`Please complete required fields: ${missingFields.join(', ')}`)
       return
     }
     try {
@@ -176,7 +187,7 @@ export default function EmployeesList() {
             <h4 className="font-semibold mb-2">Personal</h4>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs text-slate-600">EPF No</label>
+                <label className="block text-xs text-slate-600">EPF No <span className="text-red-500">*</span></label>
                 <input type="text" value={form.epfNo || ''} onChange={e => { setForm({ ...form, epfNo: e.target.value }); if (errors.epfNo) setErrors(prev => ({ ...prev, epfNo: undefined })) }} className={`mt-1 w-full form-input mono-numeric ${errors.epfNo ? 'border-red-300 ring-2 ring-red-100' : ''}`} disabled={isEditing} />
                 {errors.epfNo && <p className="mt-1 text-xs text-red-500">{errors.epfNo}</p>}
               </div>
@@ -185,22 +196,24 @@ export default function EmployeesList() {
                 <input type="text" value={form.nicNo || ''} onChange={e => setForm({ ...form, nicNo: e.target.value })} className="mt-1 w-full form-input" />
               </div>
               <div>
-                <label className="block text-xs text-slate-600">First Name</label>
+                <label className="block text-xs text-slate-600">First Name <span className="text-red-500">*</span></label>
                 <input type="text" value={form.firstName || ''} onChange={e => { if (/\d/.test(e.target.value)) { toast.error('First name cannot contain numbers.'); return } setForm({ ...form, firstName: e.target.value }); if (errors.firstName) setErrors(prev => ({ ...prev, firstName: undefined })) }} className={`mt-1 w-full form-input ${errors.firstName ? 'border-red-300 ring-2 ring-red-100' : ''}`} />
                 {errors.firstName && <p className="mt-1 text-xs text-red-500">{errors.firstName}</p>}
               </div>
               <div>
-                <label className="block text-xs text-slate-600">Last Name</label>
+                <label className="block text-xs text-slate-600">Last Name <span className="text-red-500">*</span></label>
                 <input type="text" value={form.lastName || ''} onChange={e => { if (/\d/.test(e.target.value)) { toast.error('Last name cannot contain numbers.'); return } setForm({ ...form, lastName: e.target.value }); if (errors.lastName) setErrors(prev => ({ ...prev, lastName: undefined })) }} className={`mt-1 w-full form-input ${errors.lastName ? 'border-red-300 ring-2 ring-red-100' : ''}`} />
                 {errors.lastName && <p className="mt-1 text-xs text-red-500">{errors.lastName}</p>}
               </div>
               <div>
-                <label className="block text-xs text-slate-600">Date of Birth</label>
-                <input type="date" value={form.dateOfBirth || ''} onChange={e => setForm({ ...form, dateOfBirth: e.target.value })} className="mt-1 w-full form-input" />
+                <label className="block text-xs text-slate-600">Date of Birth <span className="text-red-500">*</span></label>
+                <input type="date" value={form.dateOfBirth || ''} onChange={e => { setForm({ ...form, dateOfBirth: e.target.value }); setErrors(prev => ({ ...prev, dateOfBirth: undefined })) }} className={`mt-1 w-full form-input ${errors.dateOfBirth ? 'border-red-500 bg-red-50' : ''}`} />
+                {errors.dateOfBirth && <p className="mt-1 text-xs text-red-500">{errors.dateOfBirth}</p>}
               </div>
               <div>
-                <label className="block text-xs text-slate-600">Gender</label>
-                <select value={form.gender || 'Male'} onChange={e => setForm({ ...form, gender: e.target.value })} className="mt-1 w-full form-input">
+                <label className="block text-xs text-slate-600">Gender <span className="text-red-500">*</span></label>
+                <select value={form.gender || ''} onChange={e => { setForm({ ...form, gender: e.target.value }); setErrors(prev => ({ ...prev, gender: undefined })) }} className={`mt-1 w-full form-input ${errors.gender ? 'border-red-500 bg-red-50' : ''}`}>
+                  <option value="">Select gender</option>
                   <option>Male</option>
                   <option>Female</option>
                 </select>
@@ -212,37 +225,61 @@ export default function EmployeesList() {
             <h4 className="font-semibold mb-2">Employment</h4>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs text-slate-600">Plant / Customer</label>
-                <select value={form.plantCode || ''} onChange={e => setForm({ ...form, plantCode: e.target.value })} className="mt-1 w-full form-input">
+                <label className="block text-xs text-slate-600">Employee Plant <span className="text-red-500">*</span></label>
+                <select value={form.plantCode || ''} onChange={e => { setForm({ ...form, plantCode: e.target.value }); setErrors(prev => ({ ...prev, plantCode: undefined })) }} className={`mt-1 w-full form-input ${errors.plantCode ? 'border-red-500 bg-red-50' : ''}`}>
                   <option value="">Select</option>
                   {customers.map(c => <option key={c.code} value={c.code}>{c.code} / {c.name}</option>)}
                 </select>
+                {errors.plantCode && <p className="mt-1 text-xs text-red-500">{errors.plantCode}</p>}
               </div>
               <div>
-                <label className="block text-xs text-slate-600">Section</label>
-                <select value={form.sectionCode || ''} onChange={e => setForm({ ...form, sectionCode: e.target.value })} className="mt-1 w-full form-input">
+                <label className="block text-xs text-slate-600">Plant Name</label>
+                <input
+                  value={customers.find(c => c.code === form.plantCode)?.name || ''}
+                  readOnly
+                  placeholder="Select a plant"
+                  className="mt-1 w-full form-input bg-slate-50 cursor-default"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-600">Section <span className="text-red-500">*</span></label>
+                <select value={form.sectionCode || ''} onChange={e => { setForm({ ...form, sectionCode: e.target.value }); setErrors(prev => ({ ...prev, sectionCode: undefined })) }} className={`mt-1 w-full form-input ${errors.sectionCode ? 'border-red-500 bg-red-50' : ''}`}>
                   <option value="">Select</option>
                   {sections.map(s => <option key={s.code} value={s.code}>{s.code} / {s.name}</option>)}
                 </select>
+                {errors.sectionCode && <p className="mt-1 text-xs text-red-500">{errors.sectionCode}</p>}
               </div>
               <div>
-                <label className="block text-xs text-slate-600">Business Center</label>
-                <input value={(centerList.find(c => c.code === form.businessCenter)?.code ? `${centerList.find(c => c.code === form.businessCenter)?.code} / ${centerList.find(c => c.code === form.businessCenter)?.name}` : form.businessCenter) || ''} readOnly className="mt-1 w-full form-input bg-slate-50 cursor-default" />
+                <label className="block text-xs text-slate-600">Business Center <span className="text-red-500">*</span></label>
+                <input value={(centerList.find(c => c.code === form.businessCenter)?.code ? `${centerList.find(c => c.code === form.businessCenter)?.code} / ${centerList.find(c => c.code === form.businessCenter)?.name}` : form.businessCenter) || ''} readOnly className={`mt-1 w-full form-input bg-slate-50 cursor-default ${errors.businessCenter ? 'border-red-500 bg-red-50' : ''}`} />
+                {errors.businessCenter && <p className="mt-1 text-xs text-red-500">{errors.businessCenter}</p>}
               </div>
               <div>
-                <label className="block text-xs text-slate-600">Hired Date</label>
-                <input type="date" value={form.hiredDate || ''} onChange={e => setForm({ ...form, hiredDate: e.target.value })} className="mt-1 w-full form-input" />
+                <label className="block text-xs text-slate-600">Hired Date <span className="text-red-500">*</span></label>
+                <input type="date" value={form.hiredDate || ''} onChange={e => { setForm({ ...form, hiredDate: e.target.value }); setErrors(prev => ({ ...prev, hiredDate: undefined })) }} className={`mt-1 w-full form-input ${errors.hiredDate ? 'border-red-500 bg-red-50' : ''}`} />
+                {errors.hiredDate && <p className="mt-1 text-xs text-red-500">{errors.hiredDate}</p>}
               </div>
               <div>
-                <label className="block text-xs text-slate-600">Hired Month</label>
-                <select value={form.hiredMonth || ''} onChange={e => setForm({ ...form, hiredMonth: e.target.value })} className="mt-1 w-full form-input">
+                <label className="block text-xs text-slate-600">Hired Month <span className="text-red-500">*</span></label>
+                <select value={form.hiredMonth || ''} onChange={e => { setForm({ ...form, hiredMonth: e.target.value }); setErrors(prev => ({ ...prev, hiredMonth: undefined })) }} className={`mt-1 w-full form-input ${errors.hiredMonth ? 'border-red-500 bg-red-50' : ''}`}>
                   <option value="">Select month</option>
                   {['January','February','March','April','May','June','July','August','September','October','November','December'].map(m => <option key={m}>{m}</option>)}
                 </select>
+                {errors.hiredMonth && <p className="mt-1 text-xs text-red-500">{errors.hiredMonth}</p>}
               </div>
-              <div className="flex items-center gap-2">
-                <label className="block text-xs text-slate-600">Employee Status</label>
-                <div>
+              <div className="col-span-2 pt-3 border-t border-slate-200 flex flex-wrap items-center gap-6">
+                <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!form.deathDonation}
+                    onChange={e => setForm({ ...form, deathDonation: e.target.checked })}
+                    className="w-4 h-4 text-[#2F6F5E] rounded border-slate-300 focus:ring-[#3F9884]"
+                  />
+                  <span className="font-semibold text-slate-800">Death Donation</span>
+                </label>
+
+                <div className="flex items-center gap-2 ml-auto">
+                  <label className="text-xs font-semibold text-slate-800">Employee Status (Active)</label>
                   <Toggle checked={!!form.statusActive} onChange={v => setForm({ ...form, statusActive: v })} />
                 </div>
               </div>
@@ -254,20 +291,20 @@ export default function EmployeesList() {
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="block text-xs text-slate-600">Basic Salary</label>
-                <input type="number" value={form.basicSalary || 0} onChange={e => { if (!/^\d*\.?\d*$/.test(e.target.value)) { toast.error('Basic salary must be a number.'); return } setForm({ ...form, basicSalary: Number(e.target.value) }) }} className="mt-1 w-full form-input mono-numeric" />
+                <NumericInput value={form.basicSalary || 0} onChange={e => { setForm({ ...form, basicSalary: Number(e.target.value) }) }} className="mt-1 w-full form-input mono-numeric" />
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Day Allowance</label>
-                <input type="number" value={form.dayAllowance || 0} onChange={e => { if (!/^\d*\.?\d*$/.test(e.target.value)) { toast.error('Day allowance must be a number.'); return } setForm({ ...form, dayAllowance: Number(e.target.value) }) }} className="mt-1 w-full form-input mono-numeric" />
+                <NumericInput value={form.dayAllowance || 0} onChange={e => setForm({ ...form, dayAllowance: Number(e.target.value) })} className="mt-1 w-full form-input mono-numeric" />
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Night Allowance</label>
-                <input type="number" value={form.nightAllowance || 0} onChange={e => { if (!/^\d*\.?\d*$/.test(e.target.value)) { toast.error('Night allowance must be a number.'); return } setForm({ ...form, nightAllowance: Number(e.target.value) }) }} className="mt-1 w-full form-input mono-numeric" />
+                <NumericInput value={form.nightAllowance || 0} onChange={e => setForm({ ...form, nightAllowance: Number(e.target.value) })} className="mt-1 w-full form-input mono-numeric" />
               </div>
             </div>
             <div className="mt-2">
               <label className="block text-xs text-slate-600">Sunday / Poya Extra Payment</label>
-              <input type="number" value={form.sundayPoyaExtra || 0} onChange={e => { if (!/^\d*\.?\d*$/.test(e.target.value)) { toast.error('Sunday/Poya extra payment must be a number.'); return } setForm({ ...form, sundayPoyaExtra: Number(e.target.value) }) }} className="mt-1 w-40 form-input mono-numeric" />
+              <NumericInput value={form.sundayPoyaExtra || 0} onChange={e => setForm({ ...form, sundayPoyaExtra: Number(e.target.value) })} className="mt-1 w-40 form-input mono-numeric" />
             </div>
           </section>
 

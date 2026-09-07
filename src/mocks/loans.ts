@@ -81,7 +81,7 @@ export const update = async (id: string, patch: Partial<LoanRecord>): Promise<Lo
 };
 
 export const remove = async (id: string): Promise<void> => {
-  await api.delete(`/loans/${id}`);
+  await api.delete(`/loans/${encodeURIComponent(id)}`);
   logAuditAction({
     action: 'DELETE',
     module: 'LOAN',

@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { Sun, Sunset, Moon, Star } from 'lucide-react'
 import SearchInput from '../../components/SearchInput'
+import NumericInput from '../../components/NumericInput'
 import DataTable from '../../components/DataTable'
 import SlideOver from '../../components/SlideOver'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -14,10 +15,12 @@ import {
   list as listAttendance,
   create as createAttendance,
   update as updateAttendance,
+  bulkSave as bulkSaveAttendance,
   remove as removeAttendance,
   Attendance
 } from '../../mocks/attendance'
 import { v4 as uuid } from 'uuid'
+import * as XLSX from 'xlsx'
 
 const SHIFT_ICONS: Record<string, any> = {
   'Day': Sun,
@@ -50,6 +53,73 @@ function normalizeLocalDateTime(dateValue?: string, fallbackTime?: string): stri
   const baseDate = dateValue.includes('T') ? dateValue.split('T')[0] : dateValue;
   const time = (fallbackTime || '00:00').trim();
   return `${baseDate}T${time}`.length === 16 ? `${baseDate}T${time}:00` : `${baseDate}T${time}`;
+}
+
+const excelFieldMap: Record<string, keyof Attendance> = {
+  attyear: 'atttYear', attmonth: 'attMonth', epfno: 'epfNo', plantcode: 'plantCode',
+  workingdays: 'workingDays', basicsalary: 'basicSalary', dayallowance: 'dayAllowance',
+  nightallowance: 'nightAllowance', dayin: 'dayIn', timein: 'timeIn', dayout: 'dayOut',
+  timeout: 'timeOut', halfday: 'halfDay', totalworkinghours: 'totalWorkingHours', totalot: 'totalOt',
+  normalday: 'normalDay', saturdaypoya: 'saturdayPoya', specialday: 'specialDay',
+  dayshift: 'dayShift', secondshift: 'secondShift', nightshift: 'nightShift', fullnight: 'fullNight',
+  noofmeal: 'noOfMeal', totalmealvalue: 'totalMealValue', statutoryholidays: 'statutoryHolidays',
+  sundaypoyaextra: 'sundayPoyaExtra', businesscenter: 'businessCenter'
+}
+
+function excelDate(value: unknown): string {
+  if (value instanceof Date) return value.toISOString().slice(0, 10)
+  if (typeof value === 'number') {
+    const date = XLSX.SSF.parse_date_code(value)
+    return date ? `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}` : ''
+  }
+  const text = String(value ?? '').trim()
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10)
+  return text
+}
+
+function excelTime(value: unknown): string {
+  if (typeof value === 'number') {
+    const totalSeconds = Math.round(value * 86400)
+    return `${String(Math.floor(totalSeconds / 3600) % 24).padStart(2, '0')}:${String(Math.floor(totalSeconds / 60) % 60).padStart(2, '0')}:${String(totalSeconds % 60).padStart(2, '0')}`
+  }
+  const text = String(value ?? '').trim()
+  return /^\d{1,2}:\d{2}(:\d{2})?$/.test(text) ? (text.length === 5 ? `${text}:00` : text) : text
+}
+
+function parseAttendanceRows(data: unknown[][], businessCenter: string): Attendance[] {
+  if (!data.length) return []
+  const headers = data[0].map(value => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, ''))
+  return data.slice(1).filter(row => row.some(Boolean)).map((row, index) => {
+    const record: Partial<Attendance> = {
+      id: uuid(), atttYear: '', attMonth: '', epfNo: '', plantCode: '', dayIn: '',
+      timeIn: '', businessCenter
+    }
+    headers.forEach((header, column) => {
+      const field = excelFieldMap[header]
+      if (!field) return
+      const value = row[column]
+      if (field === 'dayIn') record[field] = excelDate(value)
+      else if (field === 'dayOut') record[field] = excelDate(value)
+      else if (field === 'timeIn' || field === 'timeOut') record[field] = excelTime(value)
+      else if (['workingDays', 'basicSalary', 'dayAllowance', 'nightAllowance', 'halfDay', 'totalWorkingHours', 'totalOt', 'noOfMeal', 'totalMealValue', 'statutoryHolidays', 'sundayPoyaExtra'].includes(field)) {
+        const number = Number(String(value ?? '').replace(/^0+(?=\d)/, ''))
+        record[field] = Number.isFinite(number) ? number : 0
+      } else if (field === 'businessCenter') record[field] = String(value ?? '').trim() || businessCenter
+      else record[field] = String(value ?? '').trim()
+    })
+    return {
+      ...defaultAttendanceRecord,
+      ...record,
+      id: record.id || `${record.epfNo || 'row'}-${index}`,
+      attMonth: record.attMonth || '01',
+      businessCenter: record.businessCenter || businessCenter
+    } as Attendance
+  })
+}
+
+const defaultAttendanceRecord: Attendance = {
+  id: '', atttYear: '', attMonth: '', epfNo: '', plantCode: '', dayIn: '', timeIn: '',
+  businessCenter: ''
 }
 
 export default function AttendancePage() {
@@ -103,6 +173,8 @@ export default function AttendancePage() {
   const [employeeList, setEmployeeList] = useState<any[]>([])
   const [customerList, setCustomerList] = useState<any[]>([])
   const [bcList, setBcList] = useState<any[]>([])
+  const [uploadRows, setUploadRows] = useState<Attendance[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     refresh()
@@ -126,6 +198,76 @@ export default function AttendancePage() {
 
   function refresh() {
     listAttendance().then(setRows)
+  }
+
+  async function handleExcelUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true })
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const parsed = parseAttendanceRows(XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true }), localStorage.getItem('hsb_active_bc') || defaultForm.businessCenter)
+      if (!parsed.length) {
+        toast.error('The selected file contains no attendance rows.')
+        return
+      }
+      setUploadRows(parsed)
+      toast.success(`${parsed.length} attendance rows loaded for review`)
+    } catch (error) {
+      console.error('Attendance Excel import failed', error)
+      toast.error('Unable to read the selected Excel file.')
+    }
+  }
+
+  function updateUploadRow(index: number, patch: Partial<Attendance>) {
+    setUploadRows(previous => previous.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
+  }
+
+  async function handleBulkSave() {
+    if (!uploadRows.length) {
+      toast.error('Upload an attendance file first.')
+      return
+    }
+    const invalid = uploadRows.findIndex(row => !row.epfNo.trim() || !row.plantCode.trim() || !row.dayIn || !row.timeIn)
+    if (invalid >= 0) {
+      toast.error(`Please complete required fields in row ${invalid + 1}.`)
+      return
+    }
+    try {
+      await bulkSaveAttendance(uploadRows)
+      toast.success(`${uploadRows.length} attendance rows saved`)
+      setUploadRows([])
+      refresh()
+    } catch (error: any) {
+      console.error('Bulk attendance save failed', error)
+      toast.error(String(error?.response?.data?.message || 'Bulk attendance save failed'))
+    }
+  }
+
+  function exportUploadRows() {
+    if (!uploadRows.length) {
+      toast.error('There are no uploaded rows to export.')
+      return
+    }
+    const exportRows = uploadRows.map(row => {
+      const { id, ...record } = row
+      return {
+        Attt_Year: record.atttYear, Att_Month: record.attMonth, EPF_No: record.epfNo,
+        Plant_Code: record.plantCode, Working_Days: record.workingDays, Basic_Salary: record.basicSalary,
+        Day_Allowance: record.dayAllowance, Night_Allowance: record.nightAllowance, Day_in: record.dayIn,
+        Time_IN: record.timeIn, Day_out: record.dayOut, Time_Out: record.timeOut, Half_Day: record.halfDay,
+        Total_Working_Hours: record.totalWorkingHours, Total_OT: record.totalOt, Normal_Day: record.normalDay,
+        Saturday_Poya: record.saturdayPoya, Special_Day: record.specialDay, Day_shift: record.dayShift,
+        second_Shift: record.secondShift, Night_Shift: record.nightShift, Full_Night: record.fullNight,
+        No_of_Meal: record.noOfMeal, Total_Meal_Value: record.totalMealValue,
+        Statutory_holidays: record.statutoryHolidays, Sunday_Poya_Extra: record.sundayPoyaExtra,
+        Business_Center: record.businessCenter
+      }
+    })
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportRows), 'Attendance')
+    XLSX.writeFile(workbook, 'attendance-updated.xlsx')
   }
 
   function getDefaultEmployeeValues(employee?: any) {
@@ -379,6 +521,10 @@ export default function AttendancePage() {
         <h2 className="text-xl font-semibold">Attendance Logs</h2>
         <div className="flex items-center gap-2">
           <SearchInput value={q} onChange={setQ} placeholder="Search by name, EPF..." />
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleExcelUpload} className="hidden" />
+          <button type="button" className="bg-slate-700 text-white px-3 py-1 rounded-md btn-press" onClick={() => fileInputRef.current?.click()}>Excel File Upload</button>
+          {uploadRows.length > 0 && <button type="button" className="bg-[#2F6F5E] text-white px-3 py-1 rounded-md btn-press" onClick={handleBulkSave}>Emp Attendance Update</button>}
+          {uploadRows.length > 0 && <button type="button" className="bg-[#C08A2E] text-white px-3 py-1 rounded-md btn-press" onClick={exportUploadRows}>Export Updated Excel</button>}
           <button type="button" className="bg-[#2F6F5E] text-white px-3 py-1 rounded-md btn-press" onClick={handleAdd}>Add Entry</button>
         </div>
       </div>
@@ -439,15 +585,15 @@ export default function AttendancePage() {
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div>
                 <label className="block text-slate-600">Working Days (Plant)</label>
-                <input type="number" value={form.workingDays || 0} onChange={e => handleNumericInput('workingDays', 'Working days', e.target.value)} className="mt-1 w-full form-input" />
+                <NumericInput integer value={form.workingDays || 0} onChange={e => handleNumericInput('workingDays', 'Working days', e.target.value)} className="mt-1 w-full form-input" />
               </div>
               <div>
                 <label className="block text-slate-600">No Of Staff (Plant)</label>
-                <input type="number" value={form.noOfStaff || 0} onChange={e => handleNumericInput('noOfStaff', 'No of staff', e.target.value)} className="mt-1 w-full form-input" />
+                <NumericInput integer value={form.noOfStaff || 0} onChange={e => handleNumericInput('noOfStaff', 'No of staff', e.target.value)} className="mt-1 w-full form-input" />
               </div>
               <div>
                 <label className="block text-slate-600">Das for Att Allowance</label>
-                <input type="number" value={form.dasForAttAllowance || 0} onChange={e => handleNumericInput('dasForAttAllowance', 'Attendance allowance days', e.target.value)} className="mt-1 w-full form-input" />
+                <NumericInput integer value={form.dasForAttAllowance || 0} onChange={e => handleNumericInput('dasForAttAllowance', 'Attendance allowance days', e.target.value)} className="mt-1 w-full form-input" />
               </div>
               <div className="flex items-center justify-between p-1 bg-white border rounded mt-3">
                 <span className="text-slate-600 font-medium">Auto OT Calculation</span>
@@ -466,15 +612,15 @@ export default function AttendancePage() {
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="block text-xs text-slate-600">Basic Salary</label>
-                <input type="number" value={form.basicSalary || 0} onChange={e => handleNumericInput('basicSalary', 'Basic salary', e.target.value)} className="mt-1 w-full form-input text-right font-mono mono-numeric" />
+                <NumericInput value={form.basicSalary || 0} onChange={e => handleNumericInput('basicSalary', 'Basic salary', e.target.value)} className="mt-1 w-full form-input text-right font-mono mono-numeric" />
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Day Allowance</label>
-                <input type="number" value={form.dayAllowance || 0} onChange={e => handleNumericInput('dayAllowance', 'Day allowance', e.target.value)} className="mt-1 w-full form-input text-right font-mono mono-numeric" />
+                <NumericInput value={form.dayAllowance || 0} onChange={e => handleNumericInput('dayAllowance', 'Day allowance', e.target.value)} className="mt-1 w-full form-input text-right font-mono mono-numeric" />
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Night Allowance</label>
-                <input type="number" value={form.nightAllowance || 0} onChange={e => handleNumericInput('nightAllowance', 'Night allowance', e.target.value)} className="mt-1 w-full form-input text-right font-mono mono-numeric" />
+                <NumericInput value={form.nightAllowance || 0} onChange={e => handleNumericInput('nightAllowance', 'Night allowance', e.target.value)} className="mt-1 w-full form-input text-right font-mono mono-numeric" />
               </div>
             </div>
           </section>
@@ -538,7 +684,7 @@ export default function AttendancePage() {
               </div>
               <div className="col-span-2">
                 <label className="block text-slate-600 mb-1">Sunday Poya Extra Payment</label>
-                <input type="number" value={form.sundayPoyaExtra || 0} onChange={e => handleNumericInput('sundayPoyaExtra', 'Sunday/Poya extra payment', e.target.value)} className="w-full form-input" />
+                <NumericInput value={form.sundayPoyaExtra || 0} onChange={e => handleNumericInput('sundayPoyaExtra', 'Sunday/Poya extra payment', e.target.value)} className="w-full form-input" />
               </div>
             </div>
           </section>
@@ -571,11 +717,11 @@ export default function AttendancePage() {
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="block text-xs text-slate-600">No of Meals</label>
-                <input type="number" value={form.noOfMeal || 0} onChange={e => handleNumericInput('noOfMeal', 'No of meals', e.target.value)} className="mt-1 w-full form-input text-right mono-numeric" />
+                <NumericInput integer value={form.noOfMeal || 0} onChange={e => handleNumericInput('noOfMeal', 'No of meals', e.target.value)} className="mt-1 w-full form-input text-right mono-numeric" />
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Total Meal Value</label>
-                <input type="number" value={form.totalMealValue || 0} onChange={e => handleNumericInput('totalMealValue', 'Total meal value', e.target.value)} className="mt-1 w-full form-input text-right mono-numeric" />
+                <NumericInput value={form.totalMealValue || 0} onChange={e => handleNumericInput('totalMealValue', 'Total meal value', e.target.value)} className="mt-1 w-full form-input text-right mono-numeric" />
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Late Allow No</label>
@@ -591,6 +737,48 @@ export default function AttendancePage() {
           </div>
         </div>
       </SlideOver>
+
+      {uploadRows.length > 0 && (
+        <section className="mt-5 rounded-lg border bg-white shadow-flat">
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <h3 className="font-semibold">Uploaded Attendance Preview ({uploadRows.length})</h3>
+            <button type="button" className="text-sm text-slate-500 hover:text-slate-900" onClick={() => setUploadRows([])}>Clear</button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-[1050px] w-full text-xs">
+              <thead className="bg-slate-50 text-left text-slate-600">
+                <tr>
+                  <th className="px-3 py-2">EPF No</th><th className="px-3 py-2">Date</th><th className="px-3 py-2">Time In</th>
+                  <th className="px-3 py-2">Time Out</th><th className="px-3 py-2">Working Days</th><th className="px-3 py-2">Total Hours</th>
+                  <th className="px-3 py-2">Total OT</th><th className="px-3 py-2">Meals</th><th className="px-3 py-2">Shift</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {uploadRows.map((row, index) => (
+                  <tr key={row.id}>
+                    <td className="px-3 py-2">{row.epfNo}</td>
+                    <td className="px-3 py-2"><input type="date" value={row.dayIn || ''} onChange={e => updateUploadRow(index, { dayIn: e.target.value })} className="form-input w-36" /></td>
+                    <td className="px-3 py-2"><input type="time" step="1" value={row.timeIn || ''} onChange={e => updateUploadRow(index, { timeIn: e.target.value })} className="form-input w-28" /></td>
+                    <td className="px-3 py-2"><input type="time" step="1" value={(row.timeOut || '').slice(0, 8)} onChange={e => updateUploadRow(index, { timeOut: e.target.value })} className="form-input w-28" /></td>
+                    <td className="px-3 py-2"><NumericInput integer value={row.workingDays ?? ''} onChange={e => updateUploadRow(index, { workingDays: Number(e.target.value || 0) })} className="form-input w-24" /></td>
+                    <td className="px-3 py-2"><NumericInput value={row.totalWorkingHours ?? ''} onChange={e => updateUploadRow(index, { totalWorkingHours: Number(e.target.value || 0) })} className="form-input w-24" /></td>
+                    <td className="px-3 py-2"><NumericInput value={row.totalOt ?? ''} onChange={e => updateUploadRow(index, { totalOt: Number(e.target.value || 0) })} className="form-input w-20" /></td>
+                    <td className="px-3 py-2"><NumericInput integer value={row.noOfMeal ?? ''} onChange={e => updateUploadRow(index, { noOfMeal: Number(e.target.value || 0) })} className="form-input w-20" /></td>
+                    <td className="px-3 py-2">
+                      <select value={row.dayShift === 'Y' ? 'Day' : row.secondShift === 'Y' ? '2nd' : row.nightShift === 'Y' ? 'Night' : 'Full Night'} onChange={e => {
+                        const shift = e.target.value
+                        updateUploadRow(index, { dayShift: shift === 'Day' ? 'Y' : 'N', secondShift: shift === '2nd' ? 'Y' : 'N', nightShift: shift === 'Night' ? 'Y' : 'N', fullNight: shift === 'Full Night' ? 'Y' : 'N' })
+                      }} className="form-input w-28">
+                        <option>Day</option><option>2nd</option><option>Night</option><option>Full Night</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <ConfirmDialog open={!!confirm} title="Delete Entry" message="Are you sure you want to delete this attendance log?" onConfirm={handleDeleteConfirm} onCancel={() => setConfirm(null)} />
     </div>

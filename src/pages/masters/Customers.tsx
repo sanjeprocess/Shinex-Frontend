@@ -4,6 +4,7 @@ import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchInput from '../../components/SearchInput'
+import NumericInput from '../../components/NumericInput'
 import { list, create, update, remove } from '../../mocks/customers'
 import { validateNameField } from '../../utils/validators'
 
@@ -18,7 +19,16 @@ export default function CustomersPage() {
 
   useEffect(() => { list().then(setRows) }, [])
   function refresh(){ list().then(setRows) }
-  function onOpenCreate() { setErrors({}); setForm({code:'',name:'',address1:''}); setEditing(null); setOpen(true) }
+  function onOpenCreate() {
+    setErrors({})
+    setForm({
+      code: '', name: '', address1: '', address2: '', address3: '', email: '',
+      contactName: '', contactNo: '', workingDays: '', otAuto: false,
+      minStaffQty: '', attendanceAllowance: '', daysToWorkForAllowance: ''
+    })
+    setEditing(null)
+    setOpen(true)
+  }
   function onEdit(row:any){ setErrors({}); setForm(row); setEditing(row.code); setOpen(true) }
   function validate(){ const next: { code?: string; name?: string; contactName?: string } = {}; if(!String(form.code || '').trim()) next.code='Code is required'; if(!String(form.name || '').trim()) { next.name='Name is required' } else { const nameError = validateNameField(String(form.name || ''), 'Name'); if (nameError) next.name = nameError } const contactNameError = validateNameField(String(form.contactName || ''), 'Contact name'); if (contactNameError) next.contactName = contactNameError; setErrors(next); return Object.keys(next).length===0 }
   async function onSave(){ if(!validate()){ toast.error('Please complete the required fields'); return } try { if(editing) await update(editing, form); else await create(form); toast.success('Plant saved'); setOpen(false); refresh() } catch (error) { console.error('Save plant failed', error); toast.error('Failed to save plant — please try again') } }
@@ -36,7 +46,8 @@ export default function CustomersPage() {
       <DataTable columns={[{key:'code',label:'Code',className:'mono-numeric'},{key:'name',label:'Name'},{key:'contactName',label:'Contact Name'},{key:'contactNo',label:'Contact No'},{key:'id',label:'Actions'}]} data={rows.filter(r=> (r.code + ' ' + r.name + ' ' + (r.contactName||'')).toLowerCase().includes(q.toLowerCase())).map(r=>({code:r.code,name:r.name,contactName:r.contactName,contactNo:r.contactNo,id:r.code}))} onEdit={(id)=>{ const row = rows.find(r=>r.code===id); if(row) onEdit(row) }} onDelete={(id)=>setConfirm(id)} />
 
       <Modal title="Add / Edit Plant" open={open} onClose={()=>setOpen(false)}>
-        <div className="space-y-3">
+        <div className="max-h-[70vh] overflow-y-auto overscroll-contain scroll-smooth plant-form-scroll">
+          <div className="space-y-3">
           <div>
             <label className="block text-xs text-slate-600">Code</label>
             <input className={`mt-1 w-full form-input mono-numeric ${errors.code ? 'border-red-300 ring-2 ring-red-100' : ''}`} value={form.code||''} onChange={e=>{ setForm({...form,code:e.target.value}); if (errors.code) setErrors(prev => ({ ...prev, code: undefined })) }} />
@@ -54,12 +65,49 @@ export default function CustomersPage() {
           </div>
           <div>
             <label className="block text-xs text-slate-600">Contact No</label>
-            <input className="mt-1 w-full form-input mono-numeric" value={form.contactNo||''} onChange={e=>setForm({...form,contactNo:e.target.value})} />
+            <input className="mt-1 w-full form-input mono-numeric" value={form.contactNo||''} onChange={e=>setForm({...form,contactNo:e.target.value.replace(/[^0-9+]/g, '')})} />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button onClick={()=>setOpen(false)} className="px-3 py-1 rounded-md border">Cancel</button>
-            <button onClick={onSave} className="px-3 py-1 rounded-md bg-[#2F6F5E] text-white">Save</button>
+          <div>
+            <label className="block text-xs text-slate-600">Address 1</label>
+            <input className="mt-1 w-full form-input" value={form.address1||''} onChange={e=>setForm({...form,address1:e.target.value})} />
           </div>
+          <div>
+            <label className="block text-xs text-slate-600">Address 2</label>
+            <input className="mt-1 w-full form-input" value={form.address2||''} onChange={e=>setForm({...form,address2:e.target.value})} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-600">Address 3</label>
+            <input className="mt-1 w-full form-input" value={form.address3||''} onChange={e=>setForm({...form,address3:e.target.value})} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-600">Email</label>
+            <input type="email" className="mt-1 w-full form-input" value={form.email||''} onChange={e=>setForm({...form,email:e.target.value})} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-600">Working Days</label>
+            <NumericInput integer className="mt-1 w-full form-input mono-numeric" value={form.workingDays ?? ''} onChange={e=>setForm({...form,workingDays:e.target.value === '' ? '' : Number(e.target.value)})} />
+          </div>
+          <div className="flex items-center gap-2 pt-5">
+            <input type="checkbox" checked={!!form.otAuto} onChange={e=>setForm({...form,otAuto:e.target.checked})} className="w-4 h-4" />
+            <label className="text-xs text-slate-700">Auto OT Calculation</label>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-600">Min Staff Quantity</label>
+            <NumericInput integer className="mt-1 w-full form-input mono-numeric" value={form.minStaffQty ?? ''} onChange={e=>setForm({...form,minStaffQty:e.target.value === '' ? '' : Number(e.target.value)})} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-600">Attendance Allowance</label>
+            <NumericInput className="mt-1 w-full form-input mono-numeric" value={form.attendanceAllowance ?? ''} onChange={e=>setForm({...form,attendanceAllowance:e.target.value})} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-600">Days to Work for Att Allowance</label>
+            <NumericInput integer className="mt-1 w-full form-input mono-numeric" value={form.daysToWorkForAllowance ?? ''} onChange={e=>setForm({...form,daysToWorkForAllowance:e.target.value === '' ? '' : Number(e.target.value)})} />
+          </div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button onClick={()=>setOpen(false)} className="px-3 py-1 rounded-md border">Cancel</button>
+          <button onClick={onSave} className="px-3 py-1 rounded-md bg-[#2F6F5E] text-white">Save</button>
         </div>
       </Modal>
 

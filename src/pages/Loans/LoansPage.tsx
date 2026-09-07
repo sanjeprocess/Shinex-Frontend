@@ -5,6 +5,7 @@ import Modal from '../../components/Modal'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchInput from '../../components/SearchInput'
 import SearchableEmployeeSelect from '../../components/shared/SearchableEmployeeSelect'
+import NumericInput from '../../components/NumericInput'
 import { list as listLoans, create as createLoan, update as updateLoan, remove as removeLoan, LoanRecord } from '../../mocks/loans'
 import { list as listEmployees } from '../../mocks/employees'
 
@@ -132,7 +133,7 @@ export default function LoansPage() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-xl font-semibold text-slate-800">Employee Loan Transactions</h2>
-          <p className="text-xs text-slate-500">Manage employee loans, start dates, and durations (TBL_T_Lone)</p>
+          <p className="text-xs text-slate-500"></p>
         </div>
         <div className="flex items-center gap-2">
           <SearchInput value={q} onChange={setQ} placeholder="Search loans by ID, EPF or employee..." />
@@ -189,8 +190,7 @@ export default function LoansPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-slate-600 font-medium">Loan Amount (LKR)</label>
-              <input
-                type="number"
+              <NumericInput
                 className={`mt-1 w-full form-input ${errors.loanAmount ? 'border-red-300 ring-2 ring-red-100' : ''}`}
                 value={form.loanAmount || ''}
                 onChange={e => setForm({ ...form, loanAmount: Number(e.target.value) })}
@@ -200,8 +200,7 @@ export default function LoansPage() {
 
             <div>
               <label className="block text-xs text-slate-600 font-medium">Duration (Months)</label>
-              <input
-                type="number"
+              <NumericInput integer
                 className="mt-1 w-full form-input"
                 value={form.loanDuration || ''}
                 onChange={e => setForm({ ...form, loanDuration: Number(e.target.value) })}

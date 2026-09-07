@@ -48,5 +48,5 @@ export const update = async (code: string, patch: Partial<AdditionType>): Promis
 };
 
 export const remove = async (code: string): Promise<void> => {
-  await api.delete(`/addition-types/${code}`);
+  await api.delete(`/addition-types/${encodeURIComponent(code)}`);
 };

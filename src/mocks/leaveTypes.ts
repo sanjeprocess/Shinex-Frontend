@@ -10,8 +10,8 @@ export const list = async (): Promise<LeaveType[]> => {
     const res = await api.get('/leave-types');
     if (res.data && Array.isArray(res.data)) {
       return res.data.map((l: any) => ({
-        code: (l.leaveTypeCode || l.code || '').trim(),
-        name: (l.leaveTypeName || l.name || '').trim()
+        code: (l.leaveType || l.leaveTypeCode || l.code || '').trim(),
+        name: (l.leaveName || l.leaveTypeName || l.name || '').trim()
       }));
     }
   } catch (err) {
@@ -21,17 +21,18 @@ export const list = async (): Promise<LeaveType[]> => {
 };
 
 export const create = async (record: LeaveType): Promise<LeaveType> => {
-  const payload = { leaveTypeCode: record.code, leaveTypeName: record.name };
+  const payload = { leaveType: record.code.trim(), leaveName: record.name.trim() };
   await api.post('/leave-types', payload);
   return record;
 };
 
 export const update = async (code: string, patch: Partial<LeaveType>): Promise<LeaveType> => {
-  const payload = { leaveTypeCode: code, leaveTypeName: patch.name };
-  await api.put(`/leave-types/${code}`, payload);
-  return { code, ...patch } as LeaveType;
+  const normalizedCode = code.trim();
+  const payload = { leaveType: normalizedCode, leaveName: patch.name?.trim() };
+  await api.put(`/leave-types/${encodeURIComponent(normalizedCode)}`, payload);
+  return { code: normalizedCode, ...patch } as LeaveType;
 };
 
 export const remove = async (code: string): Promise<void> => {
-  await api.delete(`/leave-types/${code}`);
+  await api.delete(`/leave-types/${encodeURIComponent(code)}`);
 };

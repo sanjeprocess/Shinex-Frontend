@@ -5,6 +5,7 @@ import Modal from '../../components/Modal'
 import SearchInput from '../../components/SearchInput'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableEmployeeSelect from '../../components/shared/SearchableEmployeeSelect'
+import NumericInput from '../../components/NumericInput'
 import { list as listEmployees } from '../../mocks/employees'
 import { list as listLeaveTypes } from '../../mocks/leaveTypes'
 import {
@@ -57,6 +58,9 @@ const createEmptyForm = (): LeaveForm => {
 }
 
 export default function Leaves() {
+ const today = new Date().toISOString().split('T')[0]
+ const userRole = (typeof window !== 'undefined' ? localStorage.getItem('hsb_user_role') : '') || ''
+ const isSuperAdmin = ['SUPERADMIN', 'SUPER_ADMIN'].includes(userRole.toUpperCase())
  const [rows, setRows] = useState<LeaveRecord[]>([])
  const [employees, setEmployees] = useState<Employee[]>([])
  const [leaveTypes, setLeaveTypes] = useState<any[]>([])
@@ -72,6 +76,13 @@ export default function Leaves() {
    listEmployees().then(setEmployees)
    listLeaveTypes().then(setLeaveTypes)
  }, [])
+
+ useEffect(() => {
+   setForm(prev => ({
+     ...prev,
+     leaveDays: calculateLeaveDays(prev.leaveStartDate, prev.leaveEndDate)
+   }))
+ }, [form.leaveStartDate, form.leaveEndDate])
 
  function refresh() {
    listLeaves().then(setRows)
@@ -107,6 +118,12 @@ export default function Leaves() {
    if (!String(form.leaveType || '').trim()) next.leaveType = 'Leave type is required'
    if (!String(form.leaveStartDate || '').trim()) next.leaveStartDate = 'Start date is required'
    if (!String(form.leaveEndDate || '').trim()) next.leaveEndDate = 'End date is required'
+   if (!isSuperAdmin && form.leaveStartDate && form.leaveStartDate < today) {
+     next.leaveStartDate = 'Regular Admins/Users cannot select past dates for leave.'
+   }
+   if (form.leaveStartDate && form.leaveEndDate && form.leaveEndDate < form.leaveStartDate) {
+     next.leaveEndDate = 'End date cannot be earlier than start date'
+   }
    setErrors(next)
    return Object.keys(next).length === 0
  }
@@ -117,7 +134,7 @@ export default function Leaves() {
      return
    }
 
-   const leaveDays = Number(form.leaveDays || calculateLeaveDays(form.leaveStartDate, form.leaveEndDate))
+    const leaveDays = calculateLeaveDays(form.leaveStartDate, form.leaveEndDate)
    const payload: LeaveRecord = {
      id: editingId || '',
      leaveYear: form.leaveYear,
@@ -144,9 +161,13 @@ export default function Leaves() {
      }
      setOpen(false)
      refresh()
-   } catch (error) {
+   } catch (error: any) {
      console.error('Save leave failed', error)
-     toast.error('Save failed')
+     const status = error?.response?.status
+     const message = error?.response?.data?.message || error?.response?.data?.error
+     toast.error(status === 403
+       ? 'Only Super Admins are authorized to apply for backdated leave.'
+       : String(message || 'Save failed'))
    }
  }
 
@@ -162,7 +183,7 @@ export default function Leaves() {
  }
 
  const employeeMap = useMemo(() => new Map(employees.map(emp => [emp.epfNo, emp])), [employees])
- const leaveTypeMap = useMemo(() => new Map(leaveTypes.map(type => [type.code, type])), [leaveTypes])
+ const leaveTypeMap = useMemo(() => new Map(leaveTypes.map(type => [type.code.trim(), type])), [leaveTypes])
 
  const filteredRows = useMemo(() => {
    const normalized = q.trim().toLowerCase()
@@ -224,7 +245,8 @@ export default function Leaves() {
      </div>
 
      <Modal title={editingId ? 'Edit Leave' : 'Add Leave'} open={open} onClose={() => setOpen(false)}>
-       <div className="space-y-4">
+       <div className="flex min-h-0 flex-col">
+         <div className="leave-modal-body flex-1 overflow-y-auto overscroll-contain scroll-smooth px-1 py-1 space-y-4">
          <div className="space-y-2">
            <label className="block text-xs font-medium uppercase tracking-wide text-slate-600">Employee</label>
            <SearchableEmployeeSelect
@@ -243,7 +265,9 @@ export default function Leaves() {
            >
              <option value="">Select leave type</option>
              {leaveTypes.map(type => (
-               <option key={type.code} value={type.code}>{type.code} - {type.name}</option>
+               <option key={type.code.trim()} value={type.code.trim()}>
+                 {type.name.trim()} ({type.code.trim()})
+               </option>
              ))}
            </select>
            {errors.leaveType && <p className="mt-1 text-xs text-red-500">{errors.leaveType}</p>}
@@ -285,6 +309,7 @@ export default function Leaves() {
              <input
                type="date"
                value={form.leaveStartDate}
+               min={!isSuperAdmin ? today : undefined}
                onChange={e => {
                  const start = e.target.value
                  const end = form.leaveEndDate
@@ -293,7 +318,11 @@ export default function Leaves() {
                    leaveStartDate: start,
                    leaveDays: start && end ? calculateLeaveDays(start, end) : prev.leaveDays
                  }))
-                 if (errors.leaveStartDate) setErrors(prev => ({ ...prev, leaveStartDate: undefined }))
+                 if (!isSuperAdmin && start < today) {
+                   setErrors(prev => ({ ...prev, leaveStartDate: 'Regular Admins/Users cannot select past dates for leave.' }))
+                 } else if (errors.leaveStartDate) {
+                   setErrors(prev => ({ ...prev, leaveStartDate: undefined }))
+                 }
                }}
                className={`w-full form-input ${errors.leaveStartDate ? 'border-red-300 ring-2 ring-red-100' : ''}`}
              />
@@ -305,6 +334,7 @@ export default function Leaves() {
              <input
                type="date"
                value={form.leaveEndDate}
+               min={form.leaveStartDate || undefined}
                onChange={e => {
                  const end = e.target.value
                  const start = form.leaveStartDate
@@ -323,11 +353,10 @@ export default function Leaves() {
 
          <div className="space-y-2">
            <label className="block text-xs font-medium uppercase tracking-wide text-slate-600">Leave Days</label>
-           <input
-             type="number"
+           <NumericInput integer
+             readOnly
              min={0}
              value={form.leaveDays}
-             onChange={e => setForm(prev => ({ ...prev, leaveDays: Number(e.target.value || 0) }))}
              className="w-full form-input mono-numeric"
            />
          </div>
@@ -341,7 +370,8 @@ export default function Leaves() {
            />
          </div>
 
-         <div className="flex justify-end gap-2 pt-2">
+         </div>
+         <div className="flex shrink-0 justify-end gap-3 border-t bg-gray-50 px-1 py-4">
            <button type="button" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm" onClick={() => setOpen(false)}>
              Cancel
            </button>
