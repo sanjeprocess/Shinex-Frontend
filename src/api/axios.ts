@@ -17,9 +17,12 @@ const getStoredToken = () => {
 }
 
 const getBaseUrl = () => {
-  const url = import.meta.env.VITE_API_URL
-  if (url) return url
-  return 'http://localhost:8080/api'
+  // In production (Amplify): use relative /api path so Amplify proxy rewrites
+  // handle forwarding to the backend. This avoids Mixed Content (HTTPS→HTTP) errors.
+  // In local dev: VITE_API_URL is set via .env, or falls back to localhost proxy.
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
+  if (import.meta.env.DEV) return 'http://localhost:8080/api'
+  return '/api'  // Production: relative path → Amplify proxy forwards to backend
 }
 
 const api = axios.create({
