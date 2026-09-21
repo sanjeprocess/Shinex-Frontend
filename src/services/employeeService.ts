@@ -2,8 +2,11 @@ import { Employee } from '../types/employee';
 import api from '../api/axios';
 import { logAuditAction } from '../utils/auditLogger';
 
-export const list = async (): Promise<Employee[]> => {
-  const response = await api.get<Employee[]>('/employees');
+export const list = async (businessCenter?: string): Promise<Employee[]> => {
+  const activeBc = businessCenter || localStorage.getItem('hsb_active_bc') || '';
+  const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
+  const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
+  const response = await api.get<Employee[]>('/employees', { params });
   return response.data;
 };
 

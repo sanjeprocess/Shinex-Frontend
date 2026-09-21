@@ -49,7 +49,7 @@ export default function Layout() {
               {bcOpen && (
                 <div className="absolute top-full right-0 mt-2 z-[9999] w-80 overflow-hidden rounded-md border border-gray-200 bg-white shadow-xl">
                   <ul>
-                    {centers.map(c=> <li key={c.code}><button className="w-full text-left px-3 py-2 text-sm" onClick={()=>{ setBc(c.code); localStorage.setItem('hsb_active_bc', c.code); setBcOpen(false) }}>{c.code} / {c.name}</button></li>)}
+                    {centers.map(c=> <li key={c.code}><button className="w-full text-left px-3 py-2 text-sm hover:bg-slate-100" onClick={()=>{ setBc(c.code); localStorage.setItem('hsb_active_bc', c.code); setBcOpen(false); window.location.reload(); }}>{c.code} / {c.name}</button></li>)}
                   </ul>
                 </div>
               )}
