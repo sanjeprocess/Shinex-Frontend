@@ -58,10 +58,10 @@ export default function Login() {
         canManageUsers: response.data.canManageUsers === true
       }))
 
-      if (response.data.clientBusinessCode) {
-        localStorage.setItem('hsb_active_bc', response.data.clientBusinessCode)
-      } else if (selectedBc) {
+      if (selectedBc) {
         localStorage.setItem('hsb_active_bc', selectedBc)
+      } else if (response.data.clientBusinessCode && response.data.clientBusinessCode !== 'ALL' && response.data.clientBusinessCode !== '130013') {
+        localStorage.setItem('hsb_active_bc', response.data.clientBusinessCode)
       } else {
         localStorage.setItem('hsb_active_bc', 'ALL')
       }

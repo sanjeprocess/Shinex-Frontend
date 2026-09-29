@@ -11,7 +11,20 @@ export default function Layout() {
   const [profileOpen, setProfileOpen] = useState(false)
   const [bcOpen, setBcOpen] = useState(false)
   const navigate = useNavigate()
-  useEffect(() => { listBC().then(list => { setCenters(list); const saved = localStorage.getItem('hsb_active_bc'); if (saved && list.some(x=>x.code===saved)) { setBc(saved) } else { setBc(list[0]?.code || null); if (list[0]) localStorage.setItem('hsb_active_bc', list[0].code) } }) }, [])
+  useEffect(() => {
+    listBC().then(list => {
+      setCenters(list)
+      const saved = localStorage.getItem('hsb_active_bc')
+      if (saved && (saved === 'ALL' || list.some(x => x.code === saved))) {
+        setBc(saved)
+      } else if (saved) {
+        setBc(saved)
+      } else {
+        setBc('ALL')
+        localStorage.setItem('hsb_active_bc', 'ALL')
+      }
+    })
+  }, [])
 
   const rootRef = React.useRef<HTMLDivElement | null>(null)
   useEffect(()=>{
@@ -43,12 +56,17 @@ export default function Layout() {
             <div className="relative z-50">
               <button onClick={()=>setBcOpen(!bcOpen)} className="inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border">
                 <span className="w-2 h-2 rounded-full bg-[#3F9884]" />
-                <strong className="text-sm">{centers.find(c=>c.code===bc)?.name || bc}</strong>
+                <strong className="text-sm">{bc === 'ALL' ? 'All Business Centers' : (centers.find(c=>c.code===bc)?.name || bc)}</strong>
                 <svg className="ml-2" width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </button>
               {bcOpen && (
                 <div className="absolute top-full right-0 mt-2 z-[9999] w-80 overflow-hidden rounded-md border border-gray-200 bg-white shadow-xl">
                   <ul>
+                    <li>
+                      <button className="w-full text-left px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-slate-100 border-b" onClick={()=>{ setBc('ALL'); localStorage.setItem('hsb_active_bc', 'ALL'); setBcOpen(false); window.location.reload(); }}>
+                        ALL / All Business Centers
+                      </button>
+                    </li>
                     {centers.map(c=> <li key={c.code}><button className="w-full text-left px-3 py-2 text-sm hover:bg-slate-100" onClick={()=>{ setBc(c.code); localStorage.setItem('hsb_active_bc', c.code); setBcOpen(false); window.location.reload(); }}>{c.code} / {c.name}</button></li>)}
                   </ul>
                 </div>
