@@ -37,9 +37,12 @@ export type Attendance = {
   businessCenter: string;      // Business_Center (NCHAR(100))
 };
 
-export const list = async (): Promise<Attendance[]> => {
+export const list = async (businessCenter?: string): Promise<Attendance[]> => {
   try {
-    const res = await api.get('/attendance');
+    const activeBc = businessCenter || localStorage.getItem('hsb_active_bc') || '';
+    const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
+    const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
+    const res = await api.get('/attendance', { params });
     if (res.data && Array.isArray(res.data)) {
       return res.data.map((a: any) => ({
         id: `${a.attYear || a.atttYear}_${a.attMonth}_${a.epfNo}_${a.dayIn}`,
@@ -105,7 +108,11 @@ function normalizeLocalDateTime(dateValue?: string, fallbackTime?: string): stri
 }
 
 export const create = async (rec: Attendance): Promise<Attendance> => {
+  const activeBc = localStorage.getItem('hsb_active_bc') || '';
+  const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
   const payload = {
+    ...rec,
+    businessCenter: rec.businessCenter || cleanBc,
     ...rec,
     attYear: rec.atttYear || '2026',
     dayOut: normalizeLocalDateTime(rec.dayOut, rec.timeOut),

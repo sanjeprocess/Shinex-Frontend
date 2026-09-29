@@ -109,8 +109,10 @@ export default function AuditLogPage() {
               <option value="ATTENDANCE">Attendance</option>
               <option value="LOAN">Loans</option>
               <option value="SECTION">Sections</option>
-              <option value="ADDITION">Additions</option>
-              <option value="DEDUCTION">Deductions</option>
+              <option value="ADDITION">Addition Types (Master)</option>
+              <option value="TRANSACTION_ADDITION">Transaction Additions</option>
+              <option value="DEDUCTION">Deduction Types (Master)</option>
+              <option value="TRANSACTION_DEDUCTION">Transaction Deductions</option>
               <option value="LEAVE">Leaves</option>
               <option value="BUSINESS_CENTER">Business Centers</option>
             </select>

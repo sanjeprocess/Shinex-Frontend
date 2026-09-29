@@ -3,9 +3,12 @@ import { Employee } from '../types/employee';
 
 export const employees: Employee[] = [];
 
-export const list = async (): Promise<Employee[]> => {
+export const list = async (businessCenter?: string): Promise<Employee[]> => {
   try {
-    const res = await api.get('/employees');
+    const activeBc = businessCenter || localStorage.getItem('hsb_active_bc') || '';
+    const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
+    const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
+    const res = await api.get('/employees', { params });
     if (res.data && Array.isArray(res.data)) {
       return res.data.map((e: any) => ({
         epfNo: (e.epfNo || '').trim(),

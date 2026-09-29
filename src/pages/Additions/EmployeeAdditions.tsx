@@ -16,6 +16,7 @@ import {
  type TransactionAddition
 } from '../../mocks/transactionAdditions'
 import type { Employee } from '../../types/employee'
+import { logAuditAction } from '../../utils/auditLogger'
 
 type FormState = {
  epfNo: string
@@ -114,14 +115,31 @@ export default function EmployeeAdditions() {
      addYear: form.addYear
    }
 
+   const employee = employees.find(e => e.epfNo === form.epfNo)
+   const employeeName = employee ? `${employee.firstName} ${employee.lastName || ''}`.trim() : form.epfNo
+   const additionType = types.find((t: any) => t.code === form.addCode)
+   const additionName = additionType ? `${form.addCode} - ${additionType.name}` : form.addCode
+
    try {
      if (editingKey) {
        const target = rows.find(item => rowKey(item) === editingKey)
        if (!target) return
        await updateTransactionAddition(target.epfNo, target.addCode, target.addMonth, target.addYear, payload)
+       await logAuditAction({
+         action: 'UPDATE',
+         module: 'TRANSACTION_ADDITION',
+         entityId: `${form.epfNo}|${form.addCode}`,
+         details: `Transaction Addition updated for ${employeeName} (EPF: ${form.epfNo}). Type: ${additionName}. Amount: LKR ${Number(form.addAmount).toLocaleString('en-LK', { minimumFractionDigits: 2 })}. Period: ${String(form.addMonth).padStart(2, '0')}/${form.addYear}. BC: ${payload.businessCenter}.`
+       })
        toast.success('Addition updated')
      } else {
        await createTransactionAddition(payload)
+       await logAuditAction({
+         action: 'CREATE',
+         module: 'TRANSACTION_ADDITION',
+         entityId: `${form.epfNo}|${form.addCode}`,
+         details: `Transaction Addition created for ${employeeName} (EPF: ${form.epfNo}). Type: ${additionName}. Amount: LKR ${Number(form.addAmount).toLocaleString('en-LK', { minimumFractionDigits: 2 })}. Period: ${String(form.addMonth).padStart(2, '0')}/${form.addYear}. BC: ${payload.businessCenter}.`
+       })
        toast.success('Addition added')
      }
      setOpen(false)
@@ -140,7 +158,18 @@ export default function EmployeeAdditions() {
      return
    }
 
+   const employee = employeeMap.get(row.epfNo)
+   const employeeName = employee ? `${employee.firstName} ${employee.lastName || ''}`.trim() : row.epfNo
+   const additionType = additionTypeMap.get(row.addCode)
+   const additionName = additionType ? `${row.addCode} - ${additionType.name}` : row.addCode
+
    removeTransactionAddition(row.epfNo, row.addCode, row.addMonth, row.addYear).then(() => {
+     logAuditAction({
+       action: 'DELETE',
+       module: 'TRANSACTION_ADDITION',
+       entityId: `${row.epfNo}|${row.addCode}`,
+       details: `Transaction Addition deleted for ${employeeName} (EPF: ${row.epfNo}). Type: ${additionName}. Period: ${String(row.addMonth).padStart(2, '0')}/${row.addYear}. BC: ${row.businessCenter || '—'}.`
+     }).catch(() => {})
      setDeleteKey(null)
      refresh()
      toast.success('Addition deleted')
@@ -191,7 +220,25 @@ export default function EmployeeAdditions() {
    }
  })
 
- return (
+ 
+  useEffect(() => {
+    const handleBc = () => {
+      if (typeof refresh === 'function') refresh();
+      if (typeof loadData === 'function') loadData();
+      if (typeof fetchEmployees === 'function') fetchEmployees();
+      if (typeof listEmployees === 'function' && typeof setEmployees === 'function') {
+        listEmployees().then(setEmployees).catch(() => {});
+      }
+    };
+    window.addEventListener('hsb_bc_change', handleBc);
+    window.addEventListener('storage', handleBc);
+    return () => {
+      window.removeEventListener('hsb_bc_change', handleBc);
+      window.removeEventListener('storage', handleBc);
+    };
+  }, []);
+
+  return (
    <div>
      <div className="mb-4 flex items-center justify-between gap-3">
        <h2 className="text-xl font-semibold text-slate-800">Transaction Additions</h2>
@@ -226,7 +273,7 @@ export default function EmployeeAdditions() {
          <div className="flex-1 overflow-y-auto px-1 py-1 space-y-4 smooth-scroll overscroll-contain">
          <div className="space-y-2">
            <label className="block text-xs font-medium uppercase tracking-wide text-slate-600">Employee</label>
-           <SearchableEmployeeSelect value={form.epfNo || undefined} onChange={(epf) => { setForm(prev => ({ ...prev, epfNo: epf || '' })); if (errors.epfNo) setErrors(prev => ({ ...prev, epfNo: undefined })) }} />
+           <SearchableEmployeeSelect employees={employees} value={form.epfNo || undefined} onChange={(epf) => { setForm(prev => ({ ...prev, epfNo: epf || '' })); if (errors.epfNo) setErrors(prev => ({ ...prev, epfNo: undefined })) }} />
            {errors.epfNo && <p className="mt-1 text-xs text-red-500">{errors.epfNo}</p>}
          </div>
 
@@ -247,13 +294,19 @@ export default function EmployeeAdditions() {
 
          <div className="grid grid-cols-2 gap-3">
            <div className="space-y-2">
-             <label className="block text-xs font-medium uppercase tracking-wide text-slate-600">Amount</label>
-             <NumericInput
-               step="0.01"
-               value={form.addAmount}
-               onChange={e => setForm(prev => ({ ...prev, addAmount: Number(e.target.value || 0) }))}
-               className="w-full form-input mono-numeric"
-             />
+              <label className="block text-xs font-medium uppercase tracking-wide text-slate-600">Amount (LKR)</label>
+              <NumericInput
+                step="0.01"
+                min="0"
+                max="9999999.99"
+                placeholder="0.00"
+                value={form.addAmount}
+                onChange={e => {
+                  const val = Math.min(Number(e.target.value || 0), 9999999.99)
+                  setForm(prev => ({ ...prev, addAmount: val }))
+                }}
+                className="w-full form-input mono-numeric"
+              />
            </div>
 
            <div className="space-y-2">

@@ -6,12 +6,25 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import Toggle from '../../components/Toggle'
 import SearchInput from '../../components/SearchInput'
 import NumericInput from '../../components/NumericInput'
-import { list as listEmployees, create as createEmployee, update as updateEmployee, remove as removeEmployee } from '../../services/employeeService'
+import { list as listEmployees, create as createEmployee, update as updateEmployee, remove as removeEmployee, getNextEpfNo } from '../../services/employeeService'
 import { list as listSections } from '../../mocks/sections'
 import { list as listCustomers } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
 import { Employee } from '../../types/employee'
 import { validateNameField } from '../../utils/validators'
+
+export function calculateAge(dobString: string): number | null {
+  if (!dobString) return null
+  const birthDate = new Date(dobString)
+  if (isNaN(birthDate.getTime())) return null
+  const today = new Date()
+  let age = today.getFullYear() - birthDate.getFullYear()
+  const m = today.getMonth() - birthDate.getMonth()
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    age--
+  }
+  return age >= 0 ? age : null
+}
 
 export default function EmployeesList() {
   // explicit, strongly-typed form state matching Employee type
@@ -65,19 +78,37 @@ export default function EmployeesList() {
     listSections().then(setSections)
     listCustomers().then(setCustomers)
     listBC().then(setCenterList)
+
+    const handleBcChange = () => {
+      refresh()
+    }
+    window.addEventListener('hsb_bc_change', handleBcChange)
+    window.addEventListener('storage', handleBcChange)
+    return () => {
+      window.removeEventListener('hsb_bc_change', handleBcChange)
+      window.removeEventListener('storage', handleBcChange)
+    }
   }, [])
 
   function refresh() { listEmployees().then(setRows) }
 
-  // Add: reset form to full explicit defaults and open
-  function handleAdd() {
+  // Add: reset form to full explicit defaults, auto-generate EPF No, and open
+  async function handleAdd() {
+    const activeBc = localStorage.getItem('hsb_active_bc') || ''
     const empty = { ...defaultEmployee }
-    // ensure business center is set from header context at add-time
-    empty.businessCenter = localStorage.getItem('hsb_active_bc') || empty.businessCenter
+    empty.businessCenter = activeBc && activeBc !== 'ALL' ? activeBc : (centerList[0]?.code || '')
+
+    try {
+      const generatedEpf = await getNextEpfNo(empty.businessCenter)
+      empty.epfNo = generatedEpf
+    } catch (e) {
+      console.warn('Could not auto-generate EPF No', e)
+    }
+
     setForm(empty)
     setIsEditing(false)
     setEditingEpf(null)
-    // open after state set
+    setErrors({})
     setOpen(true)
   }
 
@@ -158,13 +189,27 @@ export default function EmployeesList() {
     return hay.includes(q.toLowerCase())
   })
 
+  const activeBc = localStorage.getItem('hsb_active_bc') || 'ALL'
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold">Employees</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold text-slate-800">Employees</h2>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-[#2F6F5E] border border-emerald-200 shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-[#3F9884]"></span>
+              Total Employees: <strong className="mono-numeric text-sm">{rows.length}</strong>
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mt-1">
+            Active Scope: <span className="font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">{activeBc === 'ALL' ? 'All Business Centers' : activeBc}</span>
+            {q.trim() && <span className="ml-2 text-slate-400 italic">(Showing {filtered.length} of {rows.length})</span>}
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <SearchInput value={q} onChange={setQ} placeholder="Search by name, EPF No, or NIC..." />
-          <button type="button" className="bg-[#2F6F5E] text-white px-3 py-1 rounded-md btn-press" onClick={handleAdd}>Add</button>
+          <button type="button" className="bg-[#2F6F5E] hover:bg-[#25584a] text-white px-3.5 py-1.5 rounded-md font-medium text-sm transition shadow-sm" onClick={handleAdd}>+ Add Employee</button>
         </div>
       </div>
 
@@ -187,7 +232,7 @@ export default function EmployeesList() {
             <h4 className="font-semibold mb-2">Personal</h4>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs text-slate-600">EPF No <span className="text-red-500">*</span></label>
+                <label className="block text-xs text-slate-600 flex items-center justify-between"><span>EPF No <span className="text-red-500">*</span></span>{!isEditing && <span className="text-[10px] text-[#2F6F5E] font-medium bg-emerald-50 px-1.5 py-0.5 rounded">Auto-generated</span>}</label>
                 <input type="text" value={form.epfNo || ''} onChange={e => { setForm({ ...form, epfNo: e.target.value }); if (errors.epfNo) setErrors(prev => ({ ...prev, epfNo: undefined })) }} className={`mt-1 w-full form-input mono-numeric ${errors.epfNo ? 'border-red-300 ring-2 ring-red-100' : ''}`} disabled={isEditing} />
                 {errors.epfNo && <p className="mt-1 text-xs text-red-500">{errors.epfNo}</p>}
               </div>
@@ -211,12 +256,23 @@ export default function EmployeesList() {
                 {errors.dateOfBirth && <p className="mt-1 text-xs text-red-500">{errors.dateOfBirth}</p>}
               </div>
               <div>
+                <label className="block text-xs text-slate-600">Age <span className="text-slate-400 font-normal">(Auto-calculated)</span></label>
+                <input
+                  type="text"
+                  value={calculateAge(form.dateOfBirth) !== null ? `${calculateAge(form.dateOfBirth)} years` : ''}
+                  readOnly
+                  placeholder="Auto-calculated from DOB"
+                  className="mt-1 w-full form-input bg-slate-50 text-slate-700 font-medium cursor-default"
+                />
+              </div>
+              <div className="col-span-2">
                 <label className="block text-xs text-slate-600">Gender <span className="text-red-500">*</span></label>
                 <select value={form.gender || ''} onChange={e => { setForm({ ...form, gender: e.target.value }); setErrors(prev => ({ ...prev, gender: undefined })) }} className={`mt-1 w-full form-input ${errors.gender ? 'border-red-500 bg-red-50' : ''}`}>
                   <option value="">Select gender</option>
                   <option>Male</option>
                   <option>Female</option>
                 </select>
+                {errors.gender && <p className="mt-1 text-xs text-red-500">{errors.gender}</p>}
               </div>
             </div>
           </section>
@@ -251,16 +307,72 @@ export default function EmployeesList() {
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Business Center <span className="text-red-500">*</span></label>
-                <input value={(centerList.find(c => c.code === form.businessCenter)?.code ? `${centerList.find(c => c.code === form.businessCenter)?.code} / ${centerList.find(c => c.code === form.businessCenter)?.name}` : form.businessCenter) || ''} readOnly className={`mt-1 w-full form-input bg-slate-50 cursor-default ${errors.businessCenter ? 'border-red-500 bg-red-50' : ''}`} />
+                {(!form.businessCenter || localStorage.getItem('hsb_active_bc') === 'ALL') ? (
+                  <select
+                    value={form.businessCenter || ''}
+                    onChange={async e => {
+                      const newBc = e.target.value;
+                      setForm(prev => ({ ...prev, businessCenter: newBc }));
+                      setErrors(prev => ({ ...prev, businessCenter: undefined }));
+                      if (!isEditing) {
+                        try {
+                          const nextEpf = await getNextEpfNo(newBc);
+                          setForm(prev => ({ ...prev, businessCenter: newBc, epfNo: nextEpf }));
+                        } catch {}
+                      }
+                    }}
+                    className={`mt-1 w-full form-input ${errors.businessCenter ? 'border-red-500 bg-red-50' : ''}`}
+                  >
+                    <option value="">Select Business Center</option>
+                    {centerList.map(c => <option key={c.code} value={c.code}>{c.code} / {c.name}</option>)}
+                  </select>
+                ) : (
+                  <input
+                    value={(centerList.find(c => c.code === form.businessCenter)?.code ? `${centerList.find(c => c.code === form.businessCenter)?.code} / ${centerList.find(c => c.code === form.businessCenter)?.name}` : form.businessCenter) || ''}
+                    readOnly
+                    className={`mt-1 w-full form-input bg-slate-50 cursor-default ${errors.businessCenter ? 'border-red-500 bg-red-50' : ''}`}
+                  />
+                )}
                 {errors.businessCenter && <p className="mt-1 text-xs text-red-500">{errors.businessCenter}</p>}
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Hired Date <span className="text-red-500">*</span></label>
-                <input type="date" value={form.hiredDate || ''} onChange={e => { setForm({ ...form, hiredDate: e.target.value }); setErrors(prev => ({ ...prev, hiredDate: undefined })) }} className={`mt-1 w-full form-input ${errors.hiredDate ? 'border-red-500 bg-red-50' : ''}`} />
+                <input 
+                  type="date" 
+                  value={form.hiredDate || ''} 
+                  onChange={e => { 
+                    const dateVal = e.target.value;
+                    let autoMonth = '';
+                    if (dateVal) {
+                      const parts = dateVal.split('-');
+                      if (parts.length >= 2) {
+                        const monthIdx = parseInt(parts[1], 10) - 1;
+                        const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+                        if (monthIdx >= 0 && monthIdx < 12) {
+                          autoMonth = months[monthIdx];
+                        }
+                      }
+                    }
+                    setForm(prev => ({ 
+                      ...prev, 
+                      hiredDate: dateVal, 
+                      hiredMonth: autoMonth || prev.hiredMonth 
+                    })); 
+                    setErrors(prev => ({ 
+                      ...prev, 
+                      hiredDate: undefined,
+                      ...(autoMonth ? { hiredMonth: undefined } : {})
+                    })); 
+                  }} 
+                  className={`mt-1 w-full form-input ${errors.hiredDate ? 'border-red-500 bg-red-50' : ''}`} 
+                />
                 {errors.hiredDate && <p className="mt-1 text-xs text-red-500">{errors.hiredDate}</p>}
               </div>
               <div>
-                <label className="block text-xs text-slate-600">Hired Month <span className="text-red-500">*</span></label>
+                <label className="block text-xs text-slate-600 flex items-center justify-between">
+                  <span>Hired Month <span className="text-red-500">*</span></span>
+                  {form.hiredMonth && <span className="text-[10px] text-[#2F6F5E] font-medium bg-emerald-50 px-1 rounded">Auto-generated</span>}
+                </label>
                 <select value={form.hiredMonth || ''} onChange={e => { setForm({ ...form, hiredMonth: e.target.value }); setErrors(prev => ({ ...prev, hiredMonth: undefined })) }} className={`mt-1 w-full form-input ${errors.hiredMonth ? 'border-red-500 bg-red-50' : ''}`}>
                   <option value="">Select month</option>
                   {['January','February','March','April','May','June','July','August','September','October','November','December'].map(m => <option key={m}>{m}</option>)}

@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import api from '../../api/axios'
-import { useQuery } from '@tanstack/react-query'
-import { employees as fallbackEmployees } from '../../mocks/employees'
+import { list as listEmployees } from '../../services/employeeService'
 import { sections } from '../../mocks/sections'
 import { customers } from '../../mocks/customers'
 import type { Employee } from '../../types/employee'
@@ -17,35 +15,50 @@ type EmployeeContext = {
 export default function SearchableEmployeeSelect({
   value,
   onChange,
-  placeholder = 'Search employee by EPF or name'
+  employees: passedEmployees,
+  placeholder = 'Search employee by EPF or name',
+  className = ''
 }: {
   value?: string | null;
   onChange: (epf: string | null, context?: EmployeeContext) => void;
-  placeholder?: string
+  employees?: Employee[];
+  placeholder?: string;
+  className?: string;
 }) {
-  const { data: list = [], isLoading } = useQuery(['master', 'employees'], async () => {
-    try {
-      const res = await api.get('/master/employees')
-      return res.data || []
-    } catch (err) {
-      return []
-    }
-  })
-
+  const [fetchedEmployees, setFetchedEmployees] = useState<Employee[]>([])
+  const [isLoading, setIsLoading] = useState(false)
   const [q, setQ] = useState('')
   const [isOpen, setIsOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  useEffect(() => {
+    if (!passedEmployees || passedEmployees.length === 0) {
+      const activeBc = localStorage.getItem('hsb_active_bc') || '';
+      const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
+      setIsLoading(true);
+      listEmployees(cleanBc)
+        .then(setFetchedEmployees)
+        .catch(() => {})
+        .finally(() => setIsLoading(false));
+    }
+  }, [passedEmployees])
+
   const employeeCatalog = useMemo(() => {
-    const merged = [...fallbackEmployees, ...list]
+    const raw = (passedEmployees && passedEmployees.length > 0) ? passedEmployees : fetchedEmployees;
+    const activeBc = localStorage.getItem('hsb_active_bc') || '';
+    const cleanBc = activeBc ? activeBc.split(' / ')[0].trim().toUpperCase() : '';
+
     const map = new Map<string, Employee>()
-    merged.forEach((employee: Employee) => {
+    raw.forEach((employee: Employee) => {
       if (employee?.epfNo) {
-        map.set(employee.epfNo, { ...map.get(employee.epfNo), ...employee })
+        const eBc = (employee.businessCenter || '').trim().toUpperCase();
+        if (!cleanBc || cleanBc === 'ALL' || !eBc || eBc === cleanBc || eBc.startsWith(cleanBc) || cleanBc.startsWith(eBc)) {
+          map.set(employee.epfNo.trim(), employee)
+        }
       }
     })
     return Array.from(map.values())
-  }, [list])
+  }, [passedEmployees, fetchedEmployees])
 
   const selectedEmployee = useMemo(
     () => employeeCatalog.find((employee: Employee) => employee.epfNo === value) || null,
@@ -54,7 +67,7 @@ export default function SearchableEmployeeSelect({
 
   useEffect(() => {
     if (selectedEmployee) {
-      setQ(`${selectedEmployee.epfNo} - ${selectedEmployee.firstName} ${selectedEmployee.lastName || ''}`.trim())
+      setQ(selectedEmployee.epfNo + ' - ' + selectedEmployee.firstName + ' ' + (selectedEmployee.lastName || '').trim())
     } else if (!value) {
       setQ('')
     }
@@ -75,7 +88,7 @@ export default function SearchableEmployeeSelect({
 
     const sectionName = sections.find((section: any) => section.code === selectedEmployee.sectionCode)?.name || '—'
     const plantName = customers.find((customer: any) => customer.code === selectedEmployee.plantCode)?.name || '—'
-    const employeeName = `${selectedEmployee.firstName || ''} ${selectedEmployee.lastName || ''}`.trim() || '—'
+    const employeeName = (selectedEmployee.firstName + ' ' + (selectedEmployee.lastName || '')).trim() || '—'
     const businessCenter = selectedEmployee.businessCenter || localStorage.getItem('hsb_active_bc') || '—'
 
     return {
@@ -91,7 +104,7 @@ export default function SearchableEmployeeSelect({
     const s = q.trim().toLowerCase()
     if (!s) return employeeCatalog
     return employeeCatalog.filter((employee: Employee) => (
-      `${employee.epfNo} ${employee.firstName || ''} ${employee.lastName || ''}`.toLowerCase().includes(s)
+      (employee.epfNo + ' ' + (employee.firstName || '') + ' ' + (employee.lastName || '')).toLowerCase().includes(s)
     ))
   }, [employeeCatalog, q])
 
@@ -103,13 +116,13 @@ export default function SearchableEmployeeSelect({
       return
     }
 
-    const label = `${employee.epfNo} - ${employee.firstName} ${employee.lastName || ''}`.trim()
+    const label = (employee.epfNo + ' - ' + employee.firstName + ' ' + (employee.lastName || '')).trim()
     setQ(label)
     setIsOpen(false)
 
     const context: EmployeeContext = {
       epfNo: employee.epfNo,
-      employeeName: `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || '—',
+      employeeName: (employee.firstName + ' ' + (employee.lastName || '')).trim() || '—',
       sectionName: sections.find((section: any) => section.code === employee.sectionCode)?.name || '—',
       plantName: customers.find((customer: any) => customer.code === employee.plantCode)?.name || '—',
       businessCenter: employee.businessCenter || localStorage.getItem('hsb_active_bc') || '—'
@@ -119,7 +132,7 @@ export default function SearchableEmployeeSelect({
   }
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className={'relative ' + className}>
       <div className="relative">
         <input
           value={q}
@@ -156,7 +169,7 @@ export default function SearchableEmployeeSelect({
                   key={employee.epfNo}
                   type="button"
                   onClick={() => handleSelect(employee)}
-                  className={`w-full text-left px-3 py-2.5 hover:bg-slate-50 transition-colors ${value === employee.epfNo ? 'bg-slate-100 font-semibold' : ''}`}
+                  className={'w-full text-left px-3 py-2.5 hover:bg-slate-50 transition-colors ' + (value === employee.epfNo ? 'bg-slate-100 font-semibold' : '')}
                 >
                   <div className="text-sm font-medium text-slate-800">{employee.epfNo} - {employee.firstName} {employee.lastName || ''}</div>
                   <div className="text-[11px] text-slate-500">{employee.businessCenter || 'No BC'} | Plant: {employee.plantCode || 'N/A'}</div>

@@ -16,9 +16,12 @@ export type LeaveRecord = {
   days?: number;
 };
 
-export const list = async (): Promise<LeaveRecord[]> => {
+export const list = async (businessCenter?: string): Promise<LeaveRecord[]> => {
   try {
-    const res = await api.get('/leaves');
+    const activeBc = businessCenter || localStorage.getItem('hsb_active_bc') || '';
+    const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
+    const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
+    const res = await api.get('/leaves', { params });
     if (res.data && Array.isArray(res.data)) {
       return res.data.map((l: any) => ({
         id: l.leaveId ? String(l.leaveId) : `${l.leaveYear}_${l.leaveMonth}_${l.empNo}_${l.leaveStartDate}`,
@@ -59,7 +62,7 @@ export const create = async (record: LeaveRecord): Promise<LeaveRecord> => {
     leaveDays: Number(record.leaveDays ?? record.days ?? 0),
     leaveStartDate: String(record.leaveStartDate || record.start || '').slice(0, 10),
     leaveEndDate: String(record.leaveEndDate || record.end || '').slice(0, 10),
-    businessCenter: String(record.businessCenter || '').trim().slice(0, 100)
+    businessCenter: String(record.businessCenter || (localStorage.getItem('hsb_active_bc') || '').split(' / ')[0].trim()).trim().slice(0, 100)
   };
   const res = await api.post('/leaves', payload);
   return { ...record, id: res.data?.leaveId ? String(res.data.leaveId) : record.id };

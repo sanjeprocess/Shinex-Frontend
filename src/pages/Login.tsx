@@ -32,10 +32,14 @@ export default function Login() {
       toast.error('Username and password are required')
       return
     }
+    if (!selectedBc) {
+      toast.error('Please select a Business Center to log in')
+      return
+    }
     setSubmitting(true)
     setErrorMessage('')
     try {
-      const businessCode = selectedBc ? selectedBc.split(' / ')[0].trim() : ''
+      const businessCode = selectedBc.split(' / ')[0].trim()
       const response = await api.post('/auth/login', {
         loginName,
         password: enteredPassword,
@@ -48,7 +52,7 @@ export default function Login() {
         fullName: response.data.fullName || response.data.loginName || loginName,
         nicNumber: response.data.nicNumber || '',
         role: response.data.role || 'ADMIN',
-        businessCenterName: response.data.clientBusinessCode || selectedBc || 'All Business Centers'
+        businessCenterName: selectedBc
       }))
       localStorage.setItem('hsb_user_role', response.data.role || 'ADMIN')
       localStorage.setItem('hsb_user_permissions', JSON.stringify({
@@ -58,13 +62,8 @@ export default function Login() {
         canManageUsers: response.data.canManageUsers === true
       }))
 
-      if (selectedBc) {
-        localStorage.setItem('hsb_active_bc', selectedBc)
-      } else if (response.data.clientBusinessCode && response.data.clientBusinessCode !== 'ALL' && response.data.clientBusinessCode !== '130013') {
-        localStorage.setItem('hsb_active_bc', response.data.clientBusinessCode)
-      } else {
-        localStorage.setItem('hsb_active_bc', 'ALL')
-      }
+      localStorage.setItem('hsb_active_bc', businessCode)
+      window.dispatchEvent(new CustomEvent('hsb_bc_change', { detail: businessCode }))
 
       toast.success(`Welcome back, ${response.data.loginName || loginName}!`)
       navigate('/')
@@ -82,22 +81,20 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-[#12161C]">
       <div className="w-full max-w-2xl p-8 bg-[#1B2028] rounded-xl shadow-modal flex gap-6">
         {/* Logo / lockup */}
-        <div className="flex-shrink-0 flex items-center gap-3 pr-4 border-r border-slate-700">
-          <svg width="56" height="56" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-            <circle cx="32" cy="32" r="30" fill="#2F6F5E" />
-            <path d="M20 36c6-8 18-10 24-6" stroke="#F7F6F3" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <div>
-            <div className="text-2xl font-semibold text-[#F7F6F3]">Shinex</div>
-            <div className="text-xs text-slate-400">POWERED BY HSB HOLDINGS</div>
-          </div>
+        <div className="flex-shrink-0 flex flex-col items-center justify-center gap-2 pr-4 border-r border-slate-700">
+          <img
+            src="/shinex_logo.png"
+            alt="Shinex"
+            className="h-14 w-auto object-contain"
+          />
+          <div className="text-[10px] text-slate-400 tracking-widest uppercase">Powered by HSB Holdings</div>
         </div>
 
         <div className="flex-1">
           <h1 className="text-2xl font-semibold mb-4 text-[#3F9884]">Sign in</h1>
           <form className="space-y-4" onSubmit={onSubmit}>
             <div>
-              <label className="block text-xs text-slate-300">Username</label>
+              <label className="block text-xs text-slate-300">Username *</label>
               <input
                 name="username"
                 autoComplete="username"
@@ -107,7 +104,7 @@ export default function Login() {
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-300">Password</label>
+              <label className="block text-xs text-slate-300">Password *</label>
               <input
                 name="password"
                 type="password"
@@ -126,14 +123,15 @@ export default function Login() {
             )}
             <div>
               <label className="block text-xs text-slate-300">
-                Business Center <span className="text-slate-500">(Optional for Superadmin)</span>
+                Business Center / Company Scope *
               </label>
               <select
                 value={selectedBc}
                 onChange={e => setSelectedBc(e.target.value)}
                 className="mt-1 w-full border border-slate-600 rounded-md px-3 py-2 bg-transparent text-white appearance-none focus:outline-none focus:border-[#3F9884]"
+                required
               >
-                <option value="" className="text-slate-900">None / All Business Centers (Superadmin)</option>
+                <option value="" className="text-slate-900">-- Select Business Center --</option>
                 {bcList.map(b => (
                   <option key={b.code} value={b.code} className="text-slate-900">
                     {b.code} / {b.name}

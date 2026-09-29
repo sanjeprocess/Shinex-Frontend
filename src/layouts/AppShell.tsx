@@ -15,18 +15,28 @@ export default function AppShell() {
 
   const rootRef = React.useRef<HTMLDivElement | null>(null)
 
+  const userRole = localStorage.getItem('hsb_user_role') || ''
+  const isSuperAdmin = userRole === 'SUPERADMIN'
+
   useEffect(() => {
     listBC().then(list => {
       setCenters(list)
       const saved = localStorage.getItem('hsb_active_bc')
-      if (saved && list.some(x=>x.code===saved)) {
+      if (saved && (saved === 'ALL' || list.some(x => x.code === saved || x.name === saved))) {
         setBc(saved)
-      } else {
+      } else if (list.length > 0) {
         setBc(list[0]?.code || null)
         if (list[0]) localStorage.setItem('hsb_active_bc', list[0].code)
       }
     })
   }, [])
+
+  function switchBc(newBc: string) {
+    setBc(newBc)
+    localStorage.setItem('hsb_active_bc', newBc)
+    setBcOpen(false)
+    window.dispatchEvent(new CustomEvent('hsb_bc_change', { detail: newBc }))
+  }
 
   useEffect(()=>{
     function onDoc(e: MouseEvent){ if (!rootRef.current) return; if (!rootRef.current.contains(e.target as Node)) { setProfileOpen(false); setBcOpen(false) } }
@@ -52,14 +62,35 @@ export default function AppShell() {
 
           <div className="flex items-center gap-4">
             <div className="relative">
-              <button onClick={()=>setBcOpen(!bcOpen)} className="inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border">
+              <button onClick={()=>setBcOpen(!bcOpen)} className="inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border hover:border-slate-400 transition-colors">
                 <span className="w-2 h-2 rounded-full bg-[#3F9884]" />
-                <strong className="text-sm">{bc}</strong>
+                <strong className="text-sm">{bc === 'ALL' ? 'All Business Centers' : (centers.find(c => c.code === bc)?.name ? `${bc} - ${centers.find(c => c.code === bc)?.name}` : bc)}</strong>
               </button>
               {bcOpen && (
-               <div className="absolute top-full right-0 mt-2 z-50 w-64 bg-white border rounded shadow-float">
-                  <ul>
-                   {centers.map(c=> <li key={c.code}><button type="button" className="w-full text-left px-3 py-2 text-sm" onClick={()=>{ setBc(c.code); localStorage.setItem('hsb_active_bc', c.code); setBcOpen(false) }}>{c.code} / {c.name}</button></li>)}
+               <div className="absolute top-full right-0 mt-2 z-50 w-72 bg-white border rounded shadow-float max-h-80 overflow-y-auto">
+                  <ul className="divide-y divide-slate-100">
+                   {isSuperAdmin && (
+                     <li>
+                       <button
+                         type="button"
+                         className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-50 font-medium ${bc === 'ALL' ? 'text-[#2F6F5E] bg-emerald-50' : ''}`}
+                         onClick={() => switchBc('ALL')}
+                       >
+                         All Business Centers
+                       </button>
+                     </li>
+                   )}
+                   {centers.map(c=> (
+                     <li key={c.code}>
+                       <button
+                         type="button"
+                         className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-50 ${bc === c.code ? 'text-[#2F6F5E] bg-emerald-50 font-medium' : ''}`}
+                         onClick={() => switchBc(c.code)}
+                       >
+                         {c.code} / {c.name}
+                       </button>
+                     </li>
+                   ))}
                   </ul>
                 </div>
               )}

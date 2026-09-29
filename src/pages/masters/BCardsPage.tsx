@@ -142,6 +142,24 @@ export default function BCardsPage() {
     (c.businessCenter && c.businessCenter.toLowerCase().includes(search.toLowerCase()))
   );
 
+  
+  useEffect(() => {
+    const handleBc = () => {
+      if (typeof refresh === 'function') refresh();
+      if (typeof loadData === 'function') loadData();
+      if (typeof fetchEmployees === 'function') fetchEmployees();
+      if (typeof listEmployees === 'function' && typeof setEmployees === 'function') {
+        listEmployees().then(setEmployees).catch(() => {});
+      }
+    };
+    window.addEventListener('hsb_bc_change', handleBc);
+    window.addEventListener('storage', handleBc);
+    return () => {
+      window.removeEventListener('hsb_bc_change', handleBc);
+      window.removeEventListener('storage', handleBc);
+    };
+  }, []);
+
   return (
     <div className="space-y-6">
       {/* Header Banner */}

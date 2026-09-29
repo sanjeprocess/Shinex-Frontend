@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
-import { Sun, Sunset, Moon, Star } from 'lucide-react'
+import { Sun, Sunset, Moon, Star, ArrowRightLeft } from 'lucide-react'
 import SearchInput from '../../components/SearchInput'
 import NumericInput from '../../components/NumericInput'
 import DataTable from '../../components/DataTable'
@@ -11,6 +11,7 @@ import SearchableEmployeeSelect from '../../components/shared/SearchableEmployee
 import { list as listEmployees } from '../../services/employeeService'
 import { list as listCustomers } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
+import { list as listTransfers, PlantTransfer } from '../../mocks/plantTransfers'
 import {
   list as listAttendance,
   create as createAttendance,
@@ -173,32 +174,45 @@ export default function AttendancePage() {
   const [employeeList, setEmployeeList] = useState<any[]>([])
   const [customerList, setCustomerList] = useState<any[]>([])
   const [bcList, setBcList] = useState<any[]>([])
+  const [transfers, setTransfers] = useState<PlantTransfer[]>([])
   const [uploadRows, setUploadRows] = useState<Attendance[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    refresh()
-    listEmployees().then((employees) => {
-      setEmployeeList(employees)
-      const firstEmployee = employees.find((employee) => employee?.epfNo)
-      if (!firstEmployee) return
-      setForm((prev) => ({
-        ...prev,
-        epfNo: prev.epfNo || firstEmployee.epfNo,
-        plantCode: prev.plantCode || firstEmployee.plantCode || '',
-        businessCenter: prev.businessCenter || firstEmployee.businessCenter || localStorage.getItem('hsb_active_bc') || '001',
-        basicSalary: prev.basicSalary && prev.basicSalary !== 0 ? prev.basicSalary : (firstEmployee.basicSalary || 0),
-        dayAllowance: prev.dayAllowance && prev.dayAllowance !== 0 ? prev.dayAllowance : (firstEmployee.dayAllowance || 0),
-        nightAllowance: prev.nightAllowance && prev.nightAllowance !== 0 ? prev.nightAllowance : (firstEmployee.nightAllowance || 0)
-      }))
-    })
-    listCustomers().then(setCustomerList)
-    listBC().then(setBcList)
-  }, [])
-
   function refresh() {
-    listAttendance().then(setRows)
+    const activeBc = localStorage.getItem('hsb_active_bc') || '';
+    const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
+
+    listAttendance().then(setRows).catch(console.error);
+    listTransfers(cleanBc).then(setTransfers).catch(console.error);
+    listEmployees(cleanBc).then((employees) => {
+      setEmployeeList(employees);
+      const firstEmployee = employees.find((employee) => employee?.epfNo);
+      if (firstEmployee) {
+        setForm((prev) => ({
+          ...prev,
+          epfNo: prev.epfNo && employees.some(e => e.epfNo === prev.epfNo) ? prev.epfNo : firstEmployee.epfNo,
+          plantCode: prev.plantCode || firstEmployee.plantCode || '',
+          businessCenter: cleanBc || firstEmployee.businessCenter || '001',
+          basicSalary: prev.basicSalary && prev.basicSalary !== 0 ? prev.basicSalary : (firstEmployee.basicSalary || 0),
+          dayAllowance: prev.dayAllowance && prev.dayAllowance !== 0 ? prev.dayAllowance : (firstEmployee.dayAllowance || 0),
+          nightAllowance: prev.nightAllowance && prev.nightAllowance !== 0 ? prev.nightAllowance : (firstEmployee.nightAllowance || 0)
+        }));
+      }
+    }).catch(console.error);
+    listCustomers(cleanBc).then(setCustomerList).catch(console.error);
+    listBC().then(setBcList).catch(console.error);
   }
+
+  useEffect(() => {
+    refresh();
+    const handleBc = () => refresh();
+    window.addEventListener('hsb_bc_change', handleBc);
+    window.addEventListener('storage', handleBc);
+    return () => {
+      window.removeEventListener('hsb_bc_change', handleBc);
+      window.removeEventListener('storage', handleBc);
+    };
+  }, []);
 
   async function handleExcelUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -341,18 +355,26 @@ export default function AttendancePage() {
     }
 
     const { hours, ot } = computeHours(form.timeIn || '', form.timeOut || '')
+    let yr = form.atttYear
+    let mo = form.attMonth
+    if (form.dayIn && form.dayIn.includes('-')) {
+      const parts = form.dayIn.split('-')
+      yr = parts[0]
+      mo = parts[1]
+    }
+
     const toSave: Attendance = {
       ...form,
-      dayOut: normalizeLocalDateTime(form.dayOut, form.timeOut) || form.dayOut,
+      atttYear: yr || form.atttYear || '2026',
+      attMonth: mo || form.attMonth || '01',
+      dayOut: normalizeLocalDateTime(form.dayOut || form.dayIn, form.timeOut) || form.dayIn,
       totalWorkingHours: hours,
       totalOt: ot
     }
 
     const duplicate = !isEditing && rows.some((row) => 
       row.epfNo === toSave.epfNo &&
-      row.dayIn === toSave.dayIn &&
-      row.attMonth === toSave.attMonth &&
-      row.atttYear === toSave.atttYear
+      row.dayIn === toSave.dayIn
     )
 
     if (duplicate) {
@@ -403,32 +425,65 @@ export default function AttendancePage() {
     setForm(prev => ({ ...prev, [field]: Number(value) }))
   }
 
+  const relevantPlants = useMemo(() => {
+    if (!form.epfNo) return customerList;
+    const emp = employeeList.find(e => e.epfNo === form.epfNo);
+    const empTransfers = transfers.filter(t => t.epfNo === form.epfNo);
+
+    const codes = new Set<string>();
+    if (emp?.plantCode) codes.add(emp.plantCode.split(' ')[0].trim());
+    if (form.plantCode) codes.add(form.plantCode.split(' ')[0].trim());
+    empTransfers.forEach(t => {
+      if (t.fromPlant) codes.add(t.fromPlant.split(' ')[0].trim());
+      if (t.toPlant) codes.add(t.toPlant.split(' ')[0].trim());
+    });
+
+    const relevant = customerList.filter(c => codes.has(c.code));
+    return relevant.length > 0 ? relevant : customerList;
+  }, [form.epfNo, form.plantCode, employeeList, transfers, customerList]);
+
   function handleEmployeeChange(epf: string | null) {
     if (!epf) return
     const emp = employeeList.find(e => e.epfNo === epf)
+    const activeTransfer = transfers.find(t => t.epfNo === epf && t.status === 'Active')
+
+    let effectivePlant = emp?.plantCode || form.plantCode || ''
+    if (activeTransfer?.toPlant) {
+      const targetCode = activeTransfer.toPlant.split(' ')[0].trim()
+      if (customerList.some(c => c.code === targetCode)) {
+        effectivePlant = targetCode
+      } else if (customerList.length > 0) {
+        effectivePlant = activeTransfer.toPlant
+      }
+    }
+
     if (emp) {
       setForm(prev => ({
         ...prev,
         epfNo: epf,
-        plantCode: emp.plantCode || prev.plantCode || '',
+        plantCode: effectivePlant,
         businessCenter: emp.businessCenter || prev.businessCenter || localStorage.getItem('hsb_active_bc') || '001',
         basicSalary: emp.basicSalary || 0,
         dayAllowance: emp.dayAllowance || 0,
         nightAllowance: emp.nightAllowance || 0
       }))
     } else {
-      setForm(prev => ({ ...prev, epfNo: epf }))
+      setForm(prev => ({ ...prev, epfNo: epf, plantCode: effectivePlant }))
     }
   }
 
-  const selectedDayType = form.normalDay === 'Y' ? 'Normal' : (form.saturdayPoya === 'Y' ? 'SaturdayPoya' : 'Special')
+  const selectedDayType = form.normalDay === 'Y' ? 'Normal' : (form.saturdayPoya === 'Y' ? 'SaturdayPoya' : (form.specialDay === 'Y' ? 'Special' : 'Normal'))
 
   function handleDayTypeChange(type: 'Normal' | 'SaturdayPoya' | 'Special') {
+    const dailyRate = form.basicSalary || 0;
+    const poyaExtraPayment = Math.round(dailyRate * 1.5 * 100) / 100;
+
     setForm(prev => ({
       ...prev,
       normalDay: type === 'Normal' ? 'Y' : 'N',
       saturdayPoya: type === 'SaturdayPoya' ? 'Y' : 'N',
-      specialDay: type === 'Special' ? 'Y' : 'N'
+      specialDay: type === 'Special' ? 'Y' : 'N',
+      sundayPoyaExtra: type === 'SaturdayPoya' ? (prev.sundayPoyaExtra && prev.sundayPoyaExtra > 0 ? prev.sundayPoyaExtra : poyaExtraPayment) : prev.sundayPoyaExtra
     }))
   }
 
@@ -564,18 +619,62 @@ export default function AttendancePage() {
                 </select>
               </div>
               <div className="col-span-2">
-                <label className="block text-xs text-slate-600">Plant / Customer</label>
-                <select value={form.plantCode} onChange={e => { setForm({ ...form, plantCode: e.target.value }); if (errors.plantCode) setErrors(prev => ({ ...prev, plantCode: undefined })) }} className={`mt-1 w-full form-input ${errors.plantCode ? 'border-red-300 ring-2 ring-red-100' : ''}`}>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Employee *</label>
+                <SearchableEmployeeSelect employees={employeeList} value={form.epfNo} onChange={(epf) => { handleEmployeeChange(epf || ''); if (errors.epfNo) setErrors(prev => ({ ...prev, epfNo: undefined })) }} />
+                {errors.epfNo && <p className="mt-1 text-xs text-red-500">{errors.epfNo}</p>}
+              </div>
+              <div className="col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs text-slate-600">Plant / Customer *</label>
+                  {form.epfNo && relevantPlants.length > 0 && relevantPlants.length < customerList.length && (
+                    <span className="text-[10px] text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded font-medium border border-teal-200">
+                      Showing {relevantPlants.length} Assigned {relevantPlants.length === 1 ? 'Plant' : 'Plants'} for Employee
+                    </span>
+                  )}
+                </div>
+                <select 
+                  value={form.plantCode} 
+                  onChange={e => { 
+                    setForm({ ...form, plantCode: e.target.value }); 
+                    if (errors.plantCode) setErrors(prev => ({ ...prev, plantCode: undefined })) 
+                  }} 
+                  className={`w-full form-input ${errors.plantCode ? 'border-red-300 ring-2 ring-red-100' : ''}`}
+                >
                   <option value="">Select plant</option>
-                  {customerList.map(c => <option key={c.code} value={c.code}>{c.code} / {c.name}</option>)}
+                  {relevantPlants.map(c => {
+                    const emp = employeeList.find(e => e.epfNo === form.epfNo);
+                    const isHome = emp?.plantCode === c.code;
+                    const isTransfer = transfers.some(t => t.epfNo === form.epfNo && t.toPlant?.includes(c.code));
+                    const tag = isHome ? ' (Home Plant)' : (isTransfer ? ' (Transferred Plant)' : '');
+                    return (
+                      <option key={c.code} value={c.code}>
+                        {c.code} - {c.name}{tag}
+                      </option>
+                    );
+                  })}
+                  {relevantPlants.length < customerList.length && (
+                    <optgroup label="── All Other Plants ──">
+                      {customerList.filter(c => !relevantPlants.some(r => r.code === c.code)).map(c => (
+                        <option key={c.code} value={c.code}>{c.code} - {c.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
                 {errors.plantCode && <p className="mt-1 text-xs text-red-500">{errors.plantCode}</p>}
               </div>
-              <div className="col-span-2">
-                <label className="block text-xs text-slate-600 mb-1">Employee</label>
-                <SearchableEmployeeSelect value={form.epfNo} onChange={(epf) => { handleEmployeeChange(epf || ''); if (errors.epfNo) setErrors(prev => ({ ...prev, epfNo: undefined })) }} />
-                {errors.epfNo && <p className="mt-1 text-xs text-red-500">{errors.epfNo}</p>}
-              </div>
+
+              {/* Active Plant Transfer Banner */}
+              {transfers.find(t => t.epfNo === form.epfNo && t.status === 'Active') && (
+                <div className="col-span-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2.5 shadow-xs">
+                  <ArrowRightLeft className="text-amber-600 shrink-0" size={16} />
+                  <div className="text-xs">
+                    <span className="font-bold text-amber-900">Active Cross-Plant Transfer:</span>
+                    <span className="text-amber-800 ml-1">
+                      Assigned to <strong>{transfers.find(t => t.epfNo === form.epfNo && t.status === 'Active')?.toPlant}</strong> ({transfers.find(t => t.epfNo === form.epfNo && t.status === 'Active')?.daysWorked} days worked).
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
@@ -631,7 +730,29 @@ export default function AttendancePage() {
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-xs text-slate-600">Day In (Date)</label>
-                <input type="date" value={form.dayIn} onChange={e => { setForm({ ...form, dayIn: e.target.value }); if (errors.dayIn) setErrors(prev => ({ ...prev, dayIn: undefined })) }} className={`mt-1 w-full form-input ${errors.dayIn ? 'border-red-300 ring-2 ring-red-100' : ''}`} />
+                <input
+                  type="date"
+                  value={form.dayIn}
+                  onChange={e => {
+                    const newDate = e.target.value;
+                    let yr = form.atttYear;
+                    let mo = form.attMonth;
+                    if (newDate && newDate.includes('-')) {
+                      const parts = newDate.split('-');
+                      yr = parts[0];
+                      mo = parts[1];
+                    }
+                    setForm(prev => ({
+                      ...prev,
+                      dayIn: newDate,
+                      atttYear: yr,
+                      attMonth: mo,
+                      dayOut: !prev.dayOut || prev.dayOut === prev.dayIn ? newDate : prev.dayOut
+                    }));
+                    if (errors.dayIn) setErrors(prev => ({ ...prev, dayIn: undefined }));
+                  }}
+                  className={`mt-1 w-full form-input ${errors.dayIn ? 'border-red-300 ring-2 ring-red-100' : ''}`}
+                />
                 {errors.dayIn && <p className="mt-1 text-xs text-red-500">{errors.dayIn}</p>}
               </div>
               <div>

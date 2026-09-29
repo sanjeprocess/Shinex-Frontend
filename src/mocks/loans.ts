@@ -15,9 +15,12 @@ export type LoanRecord = {
 
 export const loans: LoanRecord[] = [];
 
-export const list = async (): Promise<LoanRecord[]> => {
+export const list = async (businessCenter?: string): Promise<LoanRecord[]> => {
   try {
-    const res = await api.get('/loans');
+    const activeBc = businessCenter || localStorage.getItem('hsb_active_bc') || '';
+    const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
+    const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
+    const res = await api.get('/loans', { params });
     if (res.data && Array.isArray(res.data)) {
       return res.data.map((l: any) => ({
         id: (l.loanId || l.id || '').trim(),
@@ -49,7 +52,7 @@ export const create = async (record: LoanRecord): Promise<LoanRecord> => {
     loanAmount: record.loanAmount,
     loanStartDate: record.loanStartDate,
     loanDuration: record.loanDuration,
-    businessUnit: record.businessUnit || record.businessCenter
+    businessUnit: record.businessUnit || record.businessCenter || (localStorage.getItem('hsb_active_bc') || '').split(' / ')[0].trim()
   };
   await api.post('/loans', payload);
   logAuditAction({

@@ -17,13 +17,13 @@ const MENU = [
   ] },
   { label: 'Transaction', items: [
     { label: 'Attendance', to: '/attendance' },
+    { label: 'Plant Transfers & Roaming', to: '/plant-transfers' },
     { label: 'Additions', to: '/employee-additions' },
     { label: 'Deductions', to: '/employee-deductions' },
     { label: 'Leave', to: '/leaves' },
     { label: 'Loans', to: '/loans' },
   ] },
   { label: 'Process', items: [
-    { label: 'Payroll Run', to: '/payroll' },
     { label: 'Employee Monthly Summary', to: '/monthly-breakdown' },
     { label: 'System Audit Trail', to: '/audit-logs' },
   ] },

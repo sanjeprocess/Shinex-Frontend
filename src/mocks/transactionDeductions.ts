@@ -10,9 +10,12 @@ export type TransactionDeduction = {
   addYear: string;
 };
 
-export const list = async (): Promise<TransactionDeduction[]> => {
+export const list = async (businessCenter?: string): Promise<TransactionDeduction[]> => {
   try {
-    const res = await api.get('/transaction-deductions');
+    const activeBc = businessCenter || localStorage.getItem('hsb_active_bc') || '';
+    const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
+    const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
+    const res = await api.get('/transaction-deductions', { params });
     if (res.data && Array.isArray(res.data)) {
       return res.data.map((d: any) => ({
         epfNo: (d.epfNo || '').trim(),
@@ -31,7 +34,11 @@ export const list = async (): Promise<TransactionDeduction[]> => {
 };
 
 export const create = async (record: TransactionDeduction): Promise<TransactionDeduction> => {
+  const activeBc = localStorage.getItem('hsb_active_bc') || '';
+  const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
   const payload = {
+    ...record,
+    businessCenter: record.businessCenter || cleanBc,
     ...record,
     everyMonth: record.everyMonth === true ? 'Y' : record.everyMonth === false ? 'N' : record.everyMonth
   };

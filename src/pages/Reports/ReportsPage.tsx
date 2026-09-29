@@ -113,6 +113,24 @@ export default function ReportsPage() {
     window.print()
   }
 
+  
+  useEffect(() => {
+    const handleBc = () => {
+      if (typeof refresh === 'function') refresh();
+      if (typeof loadData === 'function') loadData();
+      if (typeof fetchEmployees === 'function') fetchEmployees();
+      if (typeof listEmployees === 'function' && typeof setEmployees === 'function') {
+        listEmployees().then(setEmployees).catch(() => {});
+      }
+    };
+    window.addEventListener('hsb_bc_change', handleBc);
+    window.addEventListener('storage', handleBc);
+    return () => {
+      window.removeEventListener('hsb_bc_change', handleBc);
+      window.removeEventListener('storage', handleBc);
+    };
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-[#12161C] to-[#1B2028] text-white p-6 rounded-2xl shadow-lg border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">

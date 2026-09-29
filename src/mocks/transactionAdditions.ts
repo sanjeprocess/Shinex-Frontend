@@ -10,9 +10,12 @@ export type TransactionAddition = {
   addYear: string;
 };
 
-export const list = async (): Promise<TransactionAddition[]> => {
+export const list = async (businessCenter?: string): Promise<TransactionAddition[]> => {
   try {
-    const res = await api.get('/transaction-additions');
+    const activeBc = businessCenter || localStorage.getItem('hsb_active_bc') || '';
+    const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
+    const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
+    const res = await api.get('/transaction-additions', { params });
     if (res.data && Array.isArray(res.data)) {
       return res.data.map((a: any) => ({
         epfNo: (a.epfNo || '').trim(),
@@ -31,7 +34,11 @@ export const list = async (): Promise<TransactionAddition[]> => {
 };
 
 export const create = async (record: TransactionAddition): Promise<TransactionAddition> => {
+  const activeBc = localStorage.getItem('hsb_active_bc') || '';
+  const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
   const payload = {
+    ...record,
+    businessCenter: record.businessCenter || cleanBc,
     ...record,
     addMonth: String(record.addMonth),
     everyMonth: record.everyMonth === true ? 'Y' : record.everyMonth === false ? 'N' : record.everyMonth

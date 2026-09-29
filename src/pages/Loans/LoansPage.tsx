@@ -128,6 +128,24 @@ export default function LoansPage() {
       }
     })
 
+  
+  useEffect(() => {
+    const handleBc = () => {
+      if (typeof refresh === 'function') refresh();
+      if (typeof loadData === 'function') loadData();
+      if (typeof fetchEmployees === 'function') fetchEmployees();
+      if (typeof listEmployees === 'function' && typeof setEmployees === 'function') {
+        listEmployees().then(setEmployees).catch(() => {});
+      }
+    };
+    window.addEventListener('hsb_bc_change', handleBc);
+    window.addEventListener('storage', handleBc);
+    return () => {
+      window.removeEventListener('hsb_bc_change', handleBc);
+      window.removeEventListener('storage', handleBc);
+    };
+  }, []);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">

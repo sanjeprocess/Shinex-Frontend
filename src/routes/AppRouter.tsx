@@ -22,6 +22,7 @@ import EmployeeHistoryPage from '../pages/Reports/EmployeeHistoryPage'
 import AuditLogPage from '../pages/Audit/AuditLogPage'
 import AdminControlPage from '../pages/Admin/AdminControlPage'
 import MonthlyBreakdown from '../pages/Process/MonthlyBreakdown'
+import PlantTransfersPage from '../pages/Process/PlantTransfers'
 import { getCurrentUser } from '../utils/permissions'
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -61,6 +62,7 @@ export default function AppRouter() {
         <Route path="employee-deductions" element={<SiteAccessRoute><EmployeeDeductions /></SiteAccessRoute>} />
         <Route path="leaves" element={<SiteAccessRoute><LeavesPage /></SiteAccessRoute>} />
         <Route path="loans" element={<SiteAccessRoute><LoansPage /></SiteAccessRoute>} />
+        <Route path="plant-transfers" element={<SiteAccessRoute><PlantTransfersPage /></SiteAccessRoute>} />
         <Route path="monthly-breakdown" element={<SiteAccessRoute><MonthlyBreakdown /></SiteAccessRoute>} />
 
         {/* Reports & Audit */}

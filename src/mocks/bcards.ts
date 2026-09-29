@@ -13,9 +13,12 @@ export type BCardRecord = {
   businessCenter?: string;
 };
 
-export const list = async (): Promise<BCardRecord[]> => {
+export const list = async (businessCenter?: string): Promise<BCardRecord[]> => {
   try {
-    const res = await api.get('/bcards');
+    const activeBc = businessCenter || localStorage.getItem('hsb_active_bc') || '';
+    const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
+    const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
+    const res = await api.get('/bcards', { params });
     if (res.data && Array.isArray(res.data)) {
       return res.data.map((b: any) => ({
         epfNo: (b.epfNo || '').trim(),
@@ -56,7 +59,7 @@ export const create = async (b: BCardRecord): Promise<BCardRecord> => {
     bSignDate: b.bSignDate || null,
     bIssue: b.bIssue || 'N',
     bIssueDate: b.bIssueDate || null,
-    businessCenter: b.businessCenter || '001'
+    businessCenter: b.businessCenter || (localStorage.getItem('hsb_active_bc') || '').split(' / ')[0].trim() || '001'
   };
   await api.post('/bcards', payload);
   return b;
