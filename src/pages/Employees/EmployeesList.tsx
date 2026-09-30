@@ -15,7 +15,7 @@ import { Employee } from '../../types/employee'
 import { validateNameField } from '../../utils/validators'
 import { processImageFile } from '../../utils/imageUtils'
 
-export function calculateAge(dobString: string): number | null {
+function calculateAge(dobString: string): number | null {
   if (!dobString) return null
   const birthDate = new Date(dobString)
   if (isNaN(birthDate.getTime())) return null
