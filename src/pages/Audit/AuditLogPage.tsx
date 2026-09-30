@@ -74,7 +74,7 @@ export default function AuditLogPage() {
             <span className="bg-[#2F6F5E] text-white text-xs font-semibold px-2.5 py-0.5 rounded-full">System Audit Trail</span>
             <span className="text-slate-400 text-xs">Live Database Tracking</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">System Change & Audit History</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-white">System Audit Trail</h1>
           <p className="text-sm text-slate-400 mt-0.5">Track every addition, modification, and deletion with admin timestamps and change details.</p>
         </div>
 

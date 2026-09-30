@@ -24,13 +24,12 @@ const MENU = [
     { label: 'Loans', to: '/loans' },
   ] },
   { label: 'Process', items: [
-    { label: 'Employee Monthly Summary', to: '/monthly-breakdown' },
     { label: 'System Audit Trail', to: '/audit-logs' },
   ] },
   { label: 'Reports', items: [
     { label: 'General Reports', to: '/reports' },
+    { label: 'Employee Monthly Summary', to: '/monthly-breakdown' },
     { label: 'Employee History Dossier', to: '/employee-history' },
-    { label: 'System Change History', to: '/audit-logs' },
   ] },
 ]
 

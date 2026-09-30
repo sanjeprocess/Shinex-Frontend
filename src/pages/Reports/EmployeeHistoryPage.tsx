@@ -542,21 +542,35 @@ export default function EmployeeHistoryPage() {
         <div className="space-y-6">
           {/* Master Employee Summary Card */}
           <div className="bg-white p-6 rounded-2xl shadow-flat border border-slate-200">
-            <div className="flex items-center justify-between mb-4 pb-2 border-b">
-              <h3 className="text-base font-bold text-slate-800">Master Profile — {employee.epfNo}</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  Current Plant: {employee.plantCode || 'Main Plant'}
-                </span>
-                {employee.statusActive !== false ? (
-                  <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-blue-50 text-blue-800 border border-blue-200 flex items-center gap-1">
-                    <CheckCircle size={12} /> Active Employee
-                  </span>
-                ) : (
-                  <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-slate-100 text-slate-600">
-                    Inactive
-                  </span>
-                )}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-4 pb-4 border-b">
+              {employee.photoUrl ? (
+                <img src={employee.photoUrl} alt="Employee Avatar" className="w-16 h-16 rounded-full object-cover border-2 border-[#2F6F5E] shadow-sm flex-shrink-0" />
+              ) : (
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#2F6F5E] to-[#3F9884] text-white flex items-center justify-center font-bold text-lg uppercase shadow-sm flex-shrink-0">
+                  {(employee.firstName?.[0] || 'E') + (employee.lastName?.[0] || '')}
+                </div>
+              )}
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-base font-bold text-slate-800">{employee.firstName} {employee.lastName || ''} ({employee.epfNo})</h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      Current Plant: {employee.plantCode || 'Main Plant'}
+                    </span>
+                    {employee.statusActive !== false ? (
+                      <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-blue-50 text-blue-800 border border-blue-200 flex items-center gap-1">
+                        <CheckCircle size={12} /> Active Employee
+                      </span>
+                    ) : (
+                      <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-slate-100 text-slate-600">
+                        Inactive
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  NIC: <span className="font-medium text-slate-700">{employee.nicNo || '—'}</span> &bull; Section: <span className="font-medium text-slate-700">{employee.sectionCode || '—'}</span> &bull; BC: <span className="font-medium text-slate-700">{employee.businessCenter || activeBc}</span>
+                </p>
               </div>
             </div>
 

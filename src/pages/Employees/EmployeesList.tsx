@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { Camera, Upload, Trash2, User } from 'lucide-react'
 import DataTable from '../../components/DataTable'
 import SlideOver from '../../components/SlideOver'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -10,8 +11,10 @@ import { list as listEmployees, create as createEmployee, update as updateEmploy
 import { list as listSections } from '../../mocks/sections'
 import { list as listCustomers } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
+import SearchableSectionSelect from '../../components/shared/SearchableSectionSelect'
 import { Employee } from '../../types/employee'
 import { validateNameField } from '../../utils/validators'
+import { processImageFile } from '../../utils/imageUtils'
 
 export function calculateAge(dobString: string): number | null {
   if (!dobString) return null
@@ -39,6 +42,7 @@ export default function EmployeesList() {
     homeContact: '',
     mobile: '',
     email: '',
+    photoUrl: '',
 
     plantCode: '',
     sectionCode: '',
@@ -72,6 +76,30 @@ export default function EmployeesList() {
   const [centerList, setCenterList] = useState<any[]>([])
   const [q, setQ] = useState('')
   const [errors, setErrors] = useState<Record<string, string | undefined>>({})
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState(false)
+  const photoInputRef = useRef<HTMLInputElement>(null)
+
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      setIsProcessingPhoto(true)
+      const base64 = await processImageFile(file, 400, 400, 0.85)
+      setForm(prev => ({ ...prev, photoUrl: base64 }))
+      toast.success('Photo uploaded successfully')
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to upload photo')
+    } finally {
+      setIsProcessingPhoto(false)
+      if (photoInputRef.current) photoInputRef.current.value = ''
+    }
+  }
+
+  const handleRemovePhoto = () => {
+    setForm(prev => ({ ...prev, photoUrl: '' }))
+    if (photoInputRef.current) photoInputRef.current.value = ''
+    toast.success('Photo removed')
+  }
 
   useEffect(() => {
     refresh()
@@ -81,6 +109,7 @@ export default function EmployeesList() {
 
     const handleBcChange = () => {
       refresh()
+      listSections().then(setSections)
     }
     window.addEventListener('hsb_bc_change', handleBcChange)
     window.addEventListener('storage', handleBcChange)
@@ -89,6 +118,7 @@ export default function EmployeesList() {
       window.removeEventListener('storage', handleBcChange)
     }
   }, [])
+
 
   function refresh() { listEmployees().then(setRows) }
 
@@ -216,18 +246,94 @@ export default function EmployeesList() {
       <DataTable
         columns={[
           { key: 'epfNo', label: 'Emp No', className: 'mono-numeric' },
-          { key: 'name', label: 'Name' },
+          { key: 'name', label: 'Employee Name & Photo' },
           { key: 'section', label: 'Section' },
           { key: 'plant', label: 'Plant' },
           { key: 'id', label: 'Actions' }
         ]}
-        data={filtered.map(r => ({ epfNo: r.epfNo, name: `${r.firstName} ${r.lastName || ''}`, section: r.sectionCode, plant: r.plantCode, id: r.epfNo }))}
+        data={filtered.map(r => ({
+          epfNo: r.epfNo,
+          name: (
+            <div className="flex items-center gap-3">
+              {r.photoUrl ? (
+                <img src={r.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-slate-200 shadow-2xs flex-shrink-0" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#2F6F5E] to-[#3F9884] text-white flex items-center justify-center font-bold text-xs uppercase shadow-2xs flex-shrink-0">
+                  {(r.firstName?.[0] || 'E') + (r.lastName?.[0] || '')}
+                </div>
+              )}
+              <div>
+                <div className="font-semibold text-slate-800 leading-snug">{r.firstName} {r.lastName || ''}</div>
+                <div className="text-[11px] text-slate-400 font-mono">{r.nicNo || 'No NIC'}</div>
+              </div>
+            </div>
+          ),
+          section: r.sectionCode,
+          plant: r.plantCode,
+          id: r.epfNo
+        }))}
         onEdit={(id) => handleEdit(id)}
         onDelete={(id) => setConfirm(id)}
       />
 
       <SlideOver open={open} onClose={() => setOpen(false)} title={isEditing ? 'Edit Employee' : 'Add Employee'}>
         <div className="space-y-4">
+          <section className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200">
+            <div className="flex items-center gap-4">
+              <div className="relative group">
+                {form.photoUrl ? (
+                  <img
+                    src={form.photoUrl}
+                    alt="Profile Preview"
+                    className="w-16 h-16 rounded-full object-cover border-2 border-[#2F6F5E] shadow-sm"
+                  />
+                ) : (
+                  <div className="w-16 h-16 rounded-full bg-slate-200 text-slate-400 flex flex-col items-center justify-center border-2 border-dashed border-slate-300">
+                    <User size={28} />
+                  </div>
+                )}
+                {isProcessingPhoto && (
+                  <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center text-white text-[10px] font-medium">
+                    ...
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1">
+                <h4 className="text-xs font-semibold text-slate-800">Profile Photo</h4>
+                <p className="text-[11px] text-slate-500 mb-2">Upload employee photo (JPG, PNG, WebP)</p>
+                
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/png, image/jpeg, image/webp"
+                    className="hidden"
+                    onChange={handlePhotoSelect}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-medium shadow-2xs transition"
+                  >
+                    <Camera size={13} className="text-[#2F6F5E]" />
+                    {form.photoUrl ? 'Change Photo' : 'Upload Photo'}
+                  </button>
+                  {form.photoUrl && (
+                    <button
+                      type="button"
+                      onClick={handleRemovePhoto}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md hover:bg-red-50 text-red-600 text-xs font-medium transition"
+                    >
+                      <Trash2 size={13} />
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section>
             <h4 className="font-semibold mb-2">Personal</h4>
             <div className="grid grid-cols-2 gap-2">
@@ -298,12 +404,24 @@ export default function EmployeesList() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-600">Section <span className="text-red-500">*</span></label>
-                <select value={form.sectionCode || ''} onChange={e => { setForm({ ...form, sectionCode: e.target.value }); setErrors(prev => ({ ...prev, sectionCode: undefined })) }} className={`mt-1 w-full form-input ${errors.sectionCode ? 'border-red-500 bg-red-50' : ''}`}>
-                  <option value="">Select</option>
-                  {sections.map(s => <option key={s.code} value={s.code}>{s.code} / {s.name}</option>)}
-                </select>
-                {errors.sectionCode && <p className="mt-1 text-xs text-red-500">{errors.sectionCode}</p>}
+                <label className="block text-xs text-slate-600 mb-1">Section <span className="text-red-500">*</span></label>
+                <SearchableSectionSelect
+                  value={form.sectionCode || ''}
+                  businessCenter={form.businessCenter}
+                  sections={sections}
+                  placeholder="Search section by code/name..."
+                  error={errors.sectionCode}
+                  onChange={(selectedCode, selectedSection) => {
+                    setForm(prev => ({
+                      ...prev,
+                      sectionCode: selectedCode,
+                      ...(selectedSection && selectedSection.basicSalary != null && Number(selectedSection.basicSalary) > 0
+                        ? { basicSalary: Number(selectedSection.basicSalary) }
+                        : {})
+                    }));
+                    if (errors.sectionCode) setErrors(prev => ({ ...prev, sectionCode: undefined }));
+                  }}
+                />
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Business Center <span className="text-red-500">*</span></label>

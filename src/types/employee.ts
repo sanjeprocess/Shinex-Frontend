@@ -29,4 +29,5 @@ export interface Employee {
   swift?: string;
 
   deathDonation?: boolean;
+  photoUrl?: string;
 }

@@ -55,20 +55,28 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (!error.response) {
-      toast.error("Can't reach the server. Please check your connection and try again.")
+      toast.error("Can't reach the server. Please check your connection and try again.", {
+        id: 'network-error'
+      })
     } else {
       const status: number = error.response.status
       const isAuthEndpoint = String(error.config?.url || '').includes('/auth/')
       if ((status === 401 || status === 403) && !isAuthEndpoint && window.location.pathname !== '/login') {
         localStorage.removeItem('hsb_auth_token')
-        toast.error('Session expired or unauthorized. Please sign in again.')
+        toast.error('Session expired or unauthorized. Please sign in again.', {
+          id: 'auth-error'
+        })
         window.location.href = '/login'
         return Promise.reject(error)
       }
       if (status === 409) {
-        toast.error('Cannot delete this item as it is linked to other records in the system.')
+        toast.error('Cannot delete this item as it is linked to other records in the system.', {
+          id: 'conflict-error'
+        })
       } else if (status >= 500) {
-        toast.error('Something went wrong on the server. Please try again.')
+        toast.error('Something went wrong on the server. Please try again.', {
+          id: 'server-error'
+        })
       } else if (status >= 400) {
         const data = error.response.data
         const backendMessage =

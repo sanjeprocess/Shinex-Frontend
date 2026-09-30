@@ -1,24 +1,41 @@
 import api from '../api/axios';
 
-export type Section = { code: string; name: string; businessCenter?: string };
+export type Section = { 
+  code: string; 
+  name: string; 
+  businessCenter?: string;
+  basicSalary?: number;
+};
 
 export const sections: Section[] = [];
 
 const LOCAL_SECTIONS_META_KEY = 'hsb_sections_meta';
 
-function getLocalSectionMeta(): Record<string, string> {
+type SectionMeta = { bc?: string; basicSalary?: number };
+
+function getLocalSectionMeta(): Record<string, SectionMeta> {
   try {
     const raw = localStorage.getItem(LOCAL_SECTIONS_META_KEY);
-    return raw ? JSON.parse(raw) : {};
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    const result: Record<string, SectionMeta> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof v === 'string') {
+        result[k] = { bc: v };
+      } else if (v && typeof v === 'object') {
+        result[k] = v as SectionMeta;
+      }
+    }
+    return result;
   } catch {
     return {};
   }
 }
 
-function saveLocalSectionMeta(code: string, bc: string) {
+function saveLocalSectionMeta(code: string, bc: string, basicSalary?: number) {
   try {
     const current = getLocalSectionMeta();
-    current[code.trim()] = bc;
+    current[code.trim()] = { bc, basicSalary: basicSalary != null ? Number(basicSalary) : 0 };
     localStorage.setItem(LOCAL_SECTIONS_META_KEY, JSON.stringify(current));
   } catch {}
 }
@@ -34,11 +51,16 @@ export const list = async (businessCenter?: string): Promise<Section[]> => {
     if (res.data && Array.isArray(res.data)) {
       const mapped = res.data.map((s: any) => {
         const code = (s.sectionCode || s.code || '').trim();
-        const bc = (s.businessCenter || localMeta[code] || '').trim();
+        const meta = localMeta[code] || {};
+        const bc = (s.businessCenter || meta.bc || '').trim();
+        const basicSalary = s.basicSalary != null && s.basicSalary !== '' 
+          ? Number(s.basicSalary) 
+          : (meta.basicSalary != null ? Number(meta.basicSalary) : 0);
         return {
           code,
           name: (s.sectionName || s.name || '').trim(),
-          businessCenter: bc
+          businessCenter: bc,
+          basicSalary: basicSalary
         };
       });
 
@@ -62,36 +84,73 @@ export const getByCode = async (c: string): Promise<Section | undefined> => {
   return all.find(s => s.code === c);
 };
 
+export const getNextSectionCode = async (businessCenter?: string): Promise<string> => {
+  try {
+    const res = await api.get('/sections/next-code', { params: { businessCenter } });
+    if (res.data && typeof res.data === 'string' && res.data.trim()) {
+      return res.data.trim();
+    }
+  } catch (err) {
+    console.warn('API get next section code fallback', err);
+  }
+
+  // Fallback calculation from client-side list
+  const currentSections = await list();
+  let maxNum = 0;
+  for (const s of currentSections) {
+    if (s.code) {
+      const digits = s.code.replace(/\D/g, '');
+      if (digits) {
+        const n = parseInt(digits, 10);
+        if (n > maxNum) maxNum = n;
+      }
+    }
+  }
+  return String(maxNum + 1).padStart(3, '0');
+};
+
 export const create = async (s: Section): Promise<Section> => {
   const activeBc = localStorage.getItem('hsb_active_bc') || '001';
   const cleanBc = activeBc.split(' / ')[0].trim();
   const bc = s.businessCenter || cleanBc;
+  const basicSalary = s.basicSalary != null ? Number(s.basicSalary) : 0;
 
-  saveLocalSectionMeta(s.code, bc);
+  saveLocalSectionMeta(s.code, bc, basicSalary);
 
-  const payload = { sectionCode: s.code, sectionName: s.name, businessCenter: bc };
+  const payload = { 
+    sectionCode: s.code, 
+    sectionName: s.name, 
+    businessCenter: bc,
+    basicSalary: basicSalary
+  };
   try {
     await api.post('/sections', payload);
   } catch (err) {
     console.warn('API create section fallback', err);
   }
-  return { ...s, businessCenter: bc };
+  return { ...s, businessCenter: bc, basicSalary };
 };
 
 export const update = async (code: string, patch: Partial<Section>): Promise<Section> => {
   const activeBc = localStorage.getItem('hsb_active_bc') || '001';
   const cleanBc = activeBc.split(' / ')[0].trim();
   const bc = patch.businessCenter || cleanBc;
+  const basicSalary = patch.basicSalary != null ? Number(patch.basicSalary) : undefined;
 
-  saveLocalSectionMeta(code, bc);
+  saveLocalSectionMeta(code, bc, basicSalary);
 
-  const payload = { sectionCode: code, sectionName: patch.name, businessCenter: bc };
+  const payload = { 
+    sectionCode: code, 
+    sectionName: patch.name, 
+    businessCenter: bc,
+    ...(basicSalary != null ? { basicSalary } : {})
+  };
   try {
     await api.put(`/sections/${encodeURIComponent(code)}`, payload);
   } catch (err) {
     console.warn('API update section fallback', err);
   }
-  return { code, ...patch, businessCenter: bc } as Section;
+  return { code, ...patch, businessCenter: bc, ...(basicSalary != null ? { basicSalary } : {}) } as Section;
 };
 
 export const remove = async (code: string): Promise<void> => {
@@ -108,3 +167,4 @@ export const remove = async (code: string): Promise<void> => {
     console.warn('API delete section fallback', err);
   }
 };
+
