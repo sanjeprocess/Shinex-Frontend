@@ -97,10 +97,21 @@ export default function Dashboard() {
     { name: 'Full Night', value: fullNightShifts || 1, color: '#9333EA', icon: Star }
   ];
 
-  const bySection = sections.map(s => ({
-    name: s.name,
-    count: employees.filter(e => e.sectionCode === s.code).length
-  })).filter(s => s.count > 0 || sections.length <= 6);
+  const bySection = useMemo(() => {
+    return sections.map(s => {
+      const sCode = (s.code || '').trim().toLowerCase();
+      const sName = (s.name || '').trim().toLowerCase();
+      const count = employees.filter(e => {
+        const eSec = (e.sectionCode || e.section || '').trim().toLowerCase();
+        return eSec && (eSec === sCode || eSec === sName);
+      }).length;
+      return {
+        name: s.name || s.code,
+        code: s.code,
+        count
+      };
+    });
+  }, [sections, employees]);
 
   const upcomingLeaves = leaves
     .filter(l => (l.start || l.leaveStartDate || '') >= today)
@@ -256,19 +267,49 @@ export default function Dashboard() {
               </span>
             </div>
 
-            <div style={{ height: 220 }}>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={bySection} barSize={28}>
-                  <XAxis dataKey="name" stroke="#64748B" fontSize={11} tickLine={false} />
-                  <YAxis stroke="#64748B" fontSize={11} tickLine={false} axisLine={false} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1E293B', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '12px' }}
-                    itemStyle={{ color: '#5EEAD4' }}
-                  />
-                  <Bar dataKey="count" name="Staff Count" fill="#2F6F5E" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            {bySection.length === 0 ? (
+              <div className="h-[220px] flex flex-col items-center justify-center text-center p-4 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                <Building2 size={28} className="text-slate-400 mb-2" />
+                <p className="text-xs font-medium text-slate-600">No sections found for this Business Center</p>
+                <Link to="/sections" className="text-xs text-teal-600 hover:underline font-semibold mt-1">
+                  + Create your first Section
+                </Link>
+              </div>
+            ) : (
+              <div style={{ height: 220, width: '100%', minHeight: 220 }}>
+                <ResponsiveContainer width="100%" height={220} minHeight={220}>
+                  <BarChart data={bySection} barSize={Math.max(16, Math.min(36, Math.floor(280 / (bySection.length || 1))))} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+                    <XAxis 
+                      dataKey="name" 
+                      stroke="#64748B" 
+                      fontSize={11} 
+                      tickLine={false}
+                      interval={0}
+                      tick={({ x, y, payload }) => (
+                        <text 
+                          x={x} 
+                          y={y + 12} 
+                          textAnchor="middle" 
+                          fill="#64748B" 
+                          fontSize={11}
+                          className="font-medium"
+                        >
+                          {payload.value && payload.value.length > 12 ? `${payload.value.slice(0, 11)}…` : payload.value}
+                        </text>
+                      )}
+                    />
+                    <YAxis allowDecimals={false} stroke="#64748B" fontSize={11} tickLine={false} axisLine={false} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1E293B', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '12px' }}
+                      itemStyle={{ color: '#5EEAD4' }}
+                      formatter={(value: any) => [`${value} Staff`, 'Headcount']}
+                      labelFormatter={(label) => `Section: ${label}`}
+                    />
+                    <Bar dataKey="count" name="Staff Count" fill="#2F6F5E" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
 
           {/* Cross-Plant Roaming & Transfers Active Feed */}
