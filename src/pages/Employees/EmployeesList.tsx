@@ -6,10 +6,11 @@ import SlideOver from '../../components/SlideOver'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Toggle from '../../components/Toggle'
 import SearchInput from '../../components/SearchInput'
-import NumericInput from '../../components/NumericInput'
 import { list as listEmployees, create as createEmployee, update as updateEmployee, remove as removeEmployee, getNextEpfNo } from '../../services/employeeService'
+import { list as listSections, Section } from '../../mocks/sections'
 import { list as listCustomers } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
+import SearchableSectionSelect from '../../components/shared/SearchableSectionSelect'
 import { Employee } from '../../types/employee'
 import { validateNameField } from '../../utils/validators'
 import { processImageFile } from '../../utils/imageUtils'
@@ -69,6 +70,7 @@ export default function EmployeesList() {
   const [isEditing, setIsEditing] = useState(false)
   const [editingEpf, setEditingEpf] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<string | null>(null)
+  const [sections, setSections] = useState<Section[]>([])
   const [customers, setCustomers] = useState<any[]>([])
   const [centerList, setCenterList] = useState<any[]>([])
   const [q, setQ] = useState('')
@@ -100,11 +102,13 @@ export default function EmployeesList() {
 
   useEffect(() => {
     refresh()
+    listSections().then(setSections)
     listCustomers().then(setCustomers)
     listBC().then(setCenterList)
 
     const handleBcChange = () => {
       refresh()
+      listSections().then(setSections)
     }
     window.addEventListener('hsb_bc_change', handleBcChange)
     window.addEventListener('storage', handleBcChange)
@@ -395,6 +399,24 @@ export default function EmployeesList() {
                   readOnly
                   placeholder="Select a plant"
                   className="mt-1 w-full form-input bg-slate-50 cursor-default"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">Section Name</label>
+                <SearchableSectionSelect
+                  value={form.sectionCode || ''}
+                  businessCenter={form.businessCenter}
+                  sections={sections}
+                  placeholder="Search section name or code..."
+                  onChange={(selectedCode, selectedSection) => {
+                    setForm(prev => ({
+                      ...prev,
+                      sectionCode: selectedCode,
+                      ...(selectedSection && selectedSection.basicSalary != null && Number(selectedSection.basicSalary) > 0
+                        ? { basicSalary: Number(selectedSection.basicSalary) }
+                        : {})
+                    }));
+                  }}
                 />
               </div>
               <div>
