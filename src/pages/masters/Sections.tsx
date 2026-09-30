@@ -66,12 +66,24 @@ export default function SectionsPage() {
     if (!code.trim()) next.code = 'Code is required'
     if (!name.trim()) {
       next.name = 'Section name is required'
+    } else {
+      const cleanName = name.trim().toLowerCase()
+      const targetBc = (businessCenter || getActiveBc()).trim().toUpperCase()
+      const duplicate = rows.find(r => {
+        if (editing && r.code === editing) return false
+        const rBc = (r.businessCenter || '').trim().toUpperCase()
+        const isSameBc = !targetBc || targetBc === 'ALL' || !rBc || rBc === targetBc
+        return isSameBc && (r.name || '').trim().toLowerCase() === cleanName
+      })
+      if (duplicate) {
+        next.name = `A section named "${name.trim()}" already exists in this Business Center (Code: ${duplicate.code})`
+      }
     }
     if (basicSalary !== '' && Number(basicSalary) < 0) {
       next.basicSalary = 'Basic salary cannot be negative'
     }
     setErrors(next)
-    return Object.keys(next).length === 0
+    return Object.keys(next).length === 0 ? null : next
   }
 
   function resetForm() {
@@ -85,8 +97,9 @@ export default function SectionsPage() {
 
   function onAdd(e: React.FormEvent) {
     e.preventDefault()
-    if (!validate()) {
-      toast.error('Please complete the required fields')
+    const errs = validate()
+    if (errs) {
+      toast.error(errs.name || errs.code || errs.basicSalary || 'Please complete the required fields')
       return
     }
     const targetBc = businessCenter || getActiveBc()
@@ -97,7 +110,10 @@ export default function SectionsPage() {
         refresh()
         toast.success('Section added successfully')
       })
-      .catch(() => toast.error('Failed to save section — please try again'))
+      .catch((err: any) => {
+        const msg = err?.response?.data?.message || (typeof err?.response?.data === 'string' ? err.response.data : null) || err?.message || 'Failed to save section — please try again'
+        toast.error(msg)
+      })
   }
 
   function onEdit(row: Section) {
@@ -111,8 +127,9 @@ export default function SectionsPage() {
 
   function onSaveEdit() {
     if (!editing) return
-    if (!validate()) {
-      toast.error('Please complete the required fields')
+    const errs = validate()
+    if (errs) {
+      toast.error(errs.name || errs.code || errs.basicSalary || 'Please complete the required fields')
       return
     }
     const targetBc = businessCenter || getActiveBc()
@@ -123,7 +140,10 @@ export default function SectionsPage() {
         refresh()
         toast.success('Section updated successfully')
       })
-      .catch(() => toast.error('Failed to update section — please try again'))
+      .catch((err: any) => {
+        const msg = err?.response?.data?.message || (typeof err?.response?.data === 'string' ? err.response.data : null) || err?.message || 'Failed to update section — please try again'
+        toast.error(msg)
+      })
   }
 
   function onDeleteConfirm() {

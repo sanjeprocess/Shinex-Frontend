@@ -115,19 +115,14 @@ export const create = async (s: Section): Promise<Section> => {
   const bc = s.businessCenter || cleanBc;
   const basicSalary = s.basicSalary != null ? Number(s.basicSalary) : 0;
 
-  saveLocalSectionMeta(s.code, bc, basicSalary);
-
   const payload = { 
     sectionCode: s.code, 
     sectionName: s.name, 
     businessCenter: bc,
     basicSalary: basicSalary
   };
-  try {
-    await api.post('/sections', payload);
-  } catch (err) {
-    console.warn('API create section fallback', err);
-  }
+  await api.post('/sections', payload);
+  saveLocalSectionMeta(s.code, bc, basicSalary);
   return { ...s, businessCenter: bc, basicSalary };
 };
 
@@ -137,19 +132,14 @@ export const update = async (code: string, patch: Partial<Section>): Promise<Sec
   const bc = patch.businessCenter || cleanBc;
   const basicSalary = patch.basicSalary != null ? Number(patch.basicSalary) : undefined;
 
-  saveLocalSectionMeta(code, bc, basicSalary);
-
   const payload = { 
     sectionCode: code, 
     sectionName: patch.name, 
     businessCenter: bc,
     ...(basicSalary != null ? { basicSalary } : {})
   };
-  try {
-    await api.put(`/sections/${encodeURIComponent(code)}`, payload);
-  } catch (err) {
-    console.warn('API update section fallback', err);
-  }
+  await api.put(`/sections/${encodeURIComponent(code)}`, payload);
+  saveLocalSectionMeta(code, bc, basicSalary);
   return { code, ...patch, businessCenter: bc, ...(basicSalary != null ? { basicSalary } : {}) } as Section;
 };
 
