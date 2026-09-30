@@ -37,7 +37,8 @@ export default function SearchableSectionSelect({
     const raw = (passedSections && passedSections.length > 0) ? passedSections : fetchedSections
     const cleanBc = businessCenter ? businessCenter.split(' / ')[0].trim().toUpperCase() : ''
 
-    return raw.filter(s => {
+    return (raw || []).filter(s => {
+      if (!s || !s.code) return false
       if (!cleanBc || cleanBc === 'ALL') return true
       const sBc = (s.businessCenter || '').trim().toUpperCase()
       if (!sBc) return true
@@ -46,13 +47,13 @@ export default function SearchableSectionSelect({
   }, [passedSections, fetchedSections, businessCenter])
 
   const selectedSection = useMemo(
-    () => sectionCatalog.find(s => s.code === value) || null,
+    () => (sectionCatalog || []).find(s => s && s.code === value) || null,
     [sectionCatalog, value]
   )
 
   useEffect(() => {
     if (selectedSection) {
-      setQ(`${selectedSection.code} / ${selectedSection.name}`)
+      setQ(`${selectedSection.code} / ${selectedSection.name || ''}`)
     } else if (!value) {
       setQ('')
     }
@@ -69,13 +70,15 @@ export default function SearchableSectionSelect({
   }, [])
 
   const filtered = useMemo(() => {
-    if (!q.trim()) return sectionCatalog
+    if (!q.trim()) return sectionCatalog || []
     const lower = q.toLowerCase()
-    return sectionCatalog.filter(s =>
-      s.code.toLowerCase().includes(lower) ||
-      s.name.toLowerCase().includes(lower) ||
-      (s.businessCenter && s.businessCenter.toLowerCase().includes(lower))
-    )
+    return (sectionCatalog || []).filter(s => {
+      if (!s) return false
+      const c = (s.code || '').toLowerCase()
+      const n = (s.name || '').toLowerCase()
+      const bc = (s.businessCenter || '').toLowerCase()
+      return c.includes(lower) || n.includes(lower) || bc.includes(lower)
+    })
   }, [sectionCatalog, q])
 
   return (
