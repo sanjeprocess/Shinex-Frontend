@@ -102,13 +102,13 @@ export default function EmployeesList() {
 
   useEffect(() => {
     refresh()
-    listSections().then(setSections)
-    listCustomers().then(setCustomers)
-    listBC().then(setCenterList)
+    listSections().then(res => setSections(Array.isArray(res) ? res : [])).catch(() => setSections([]))
+    listCustomers().then(res => setCustomers(Array.isArray(res) ? res : [])).catch(() => setCustomers([]))
+    listBC().then(res => setCenterList(Array.isArray(res) ? res : [])).catch(() => setCenterList([]))
 
     const handleBcChange = () => {
       refresh()
-      listSections().then(setSections)
+      listSections().then(res => setSections(Array.isArray(res) ? res : [])).catch(() => setSections([]))
     }
     window.addEventListener('hsb_bc_change', handleBcChange)
     window.addEventListener('storage', handleBcChange)
@@ -118,8 +118,14 @@ export default function EmployeesList() {
     }
   }, [])
 
-
-  function refresh() { listEmployees().then(setRows) }
+  function refresh() {
+    listEmployees()
+      .then(res => setRows(Array.isArray(res) ? res : []))
+      .catch(err => {
+        console.warn('Failed to load employees', err)
+        setRows([])
+      })
+  }
 
   // Add: reset form to full explicit defaults, auto-generate EPF No, and open
   async function handleAdd() {
@@ -212,9 +218,10 @@ export default function EmployeesList() {
   }
 
   // client-side filtering
-  const filtered = rows.filter(r => {
-    const hay = `${r.epfNo} ${r.firstName} ${r.lastName || ''} ${r.nicNo || ''}`.toLowerCase()
-    return hay.includes(q.toLowerCase())
+  const filtered = (rows || []).filter(r => {
+    if (!r) return false
+    const hay = `${r.epfNo || ''} ${r.firstName || ''} ${r.lastName || ''} ${r.nicNo || ''}`.toLowerCase()
+    return hay.includes((q || '').toLowerCase().trim())
   })
 
   const activeBc = localStorage.getItem('hsb_active_bc') || 'ALL'
@@ -227,12 +234,12 @@ export default function EmployeesList() {
             <h2 className="text-xl font-bold text-slate-800">Employees</h2>
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-[#2F6F5E] border border-emerald-200 shadow-xs">
               <span className="w-2 h-2 rounded-full bg-[#3F9884]"></span>
-              Total Employees: <strong className="mono-numeric text-sm">{rows.length}</strong>
+              Total Employees: <strong className="mono-numeric text-sm">{(rows || []).length}</strong>
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
             Active Scope: <span className="font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">{activeBc === 'ALL' ? 'All Business Centers' : activeBc}</span>
-            {q.trim() && <span className="ml-2 text-slate-400 italic">(Showing {filtered.length} of {rows.length})</span>}
+            {q.trim() && <span className="ml-2 text-slate-400 italic">(Showing {filtered.length} of {(rows || []).length})</span>}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -249,26 +256,26 @@ export default function EmployeesList() {
           { key: 'plant', label: 'Plant' },
           { key: 'id', label: 'Actions' }
         ]}
-        data={filtered.map(r => ({
-          epfNo: r.epfNo,
+        data={(filtered || []).map(r => ({
+          epfNo: r?.epfNo || '',
           name: (
             <div className="flex items-center gap-3">
-              {r.photoUrl ? (
+              {r?.photoUrl ? (
                 <img src={r.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-slate-200 shadow-2xs flex-shrink-0" />
               ) : (
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#2F6F5E] to-[#3F9884] text-white flex items-center justify-center font-bold text-xs uppercase shadow-2xs flex-shrink-0">
-                  {(r.firstName?.[0] || 'E') + (r.lastName?.[0] || '')}
+                  {(r?.firstName?.[0] || 'E') + (r?.lastName?.[0] || '')}
                 </div>
               )}
               <div>
-                <div className="font-semibold text-slate-800 leading-snug">{r.firstName} {r.lastName || ''}</div>
-                <div className="text-[11px] text-slate-400 font-mono">{r.nicNo || 'No NIC'}</div>
+                <div className="font-semibold text-slate-800 leading-snug">{r?.firstName || ''} {r?.lastName || ''}</div>
+                <div className="text-[11px] text-slate-400 font-mono">{r?.nicNo || 'No NIC'}</div>
               </div>
             </div>
           ),
-          section: r.sectionCode,
-          plant: r.plantCode,
-          id: r.epfNo
+          section: r?.sectionCode || '—',
+          plant: r?.plantCode || '—',
+          id: r?.epfNo || ''
         }))}
         onEdit={(id) => handleEdit(id)}
         onDelete={(id) => setConfirm(id)}
