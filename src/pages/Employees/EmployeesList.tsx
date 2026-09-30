@@ -8,10 +8,8 @@ import Toggle from '../../components/Toggle'
 import SearchInput from '../../components/SearchInput'
 import NumericInput from '../../components/NumericInput'
 import { list as listEmployees, create as createEmployee, update as updateEmployee, remove as removeEmployee, getNextEpfNo } from '../../services/employeeService'
-import { list as listSections } from '../../mocks/sections'
 import { list as listCustomers } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
-import SearchableSectionSelect from '../../components/shared/SearchableSectionSelect'
 import { Employee } from '../../types/employee'
 import { validateNameField } from '../../utils/validators'
 import { processImageFile } from '../../utils/imageUtils'
@@ -71,7 +69,6 @@ export default function EmployeesList() {
   const [isEditing, setIsEditing] = useState(false)
   const [editingEpf, setEditingEpf] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<string | null>(null)
-  const [sections, setSections] = useState<any[]>([])
   const [customers, setCustomers] = useState<any[]>([])
   const [centerList, setCenterList] = useState<any[]>([])
   const [q, setQ] = useState('')
@@ -103,13 +100,11 @@ export default function EmployeesList() {
 
   useEffect(() => {
     refresh()
-    listSections().then(setSections)
     listCustomers().then(setCustomers)
     listBC().then(setCenterList)
 
     const handleBcChange = () => {
       refresh()
-      listSections().then(setSections)
     }
     window.addEventListener('hsb_bc_change', handleBcChange)
     window.addEventListener('storage', handleBcChange)
@@ -168,7 +163,6 @@ export default function EmployeesList() {
     if (!String(form.gender || '').trim()) next.gender = 'Gender is required'
     if (!String(form.plantCode || '').trim()) next.plantCode = 'Please select an Employee Plant'
     if (!String(form.businessCenter || '').trim()) next.businessCenter = 'Please select a Business Center'
-    if (!String(form.sectionCode || '').trim()) next.sectionCode = 'Please select a Section'
     if (!String(form.hiredDate || '').trim()) next.hiredDate = 'Hired Date is required'
     if (!String(form.hiredMonth || '').trim()) next.hiredMonth = 'Please select Hired Month'
 
@@ -187,7 +181,7 @@ export default function EmployeesList() {
     const validationErrors = validateEmployee()
     if (Object.keys(validationErrors).length > 0) {
       const missingFields = Object.keys(validationErrors)
-        .map(key => ({ epfNo: 'EPF No', firstName: 'First Name', lastName: 'Last Name', dateOfBirth: 'Date of Birth', gender: 'Gender', plantCode: 'Employee Plant', businessCenter: 'Business Center', sectionCode: 'Section', hiredDate: 'Hired Date', hiredMonth: 'Hired Month' } as Record<string, string>)[key] || key)
+        .map(key => ({ epfNo: 'EPF No', firstName: 'First Name', lastName: 'Last Name', dateOfBirth: 'Date of Birth', gender: 'Gender', plantCode: 'Employee Plant', businessCenter: 'Business Center', hiredDate: 'Hired Date', hiredMonth: 'Hired Month' } as Record<string, string>)[key] || key)
       toast.error(`Please complete required fields: ${missingFields.join(', ')}`)
       return
     }
@@ -401,26 +395,6 @@ export default function EmployeesList() {
                   readOnly
                   placeholder="Select a plant"
                   className="mt-1 w-full form-input bg-slate-50 cursor-default"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-600 mb-1">Section <span className="text-red-500">*</span></label>
-                <SearchableSectionSelect
-                  value={form.sectionCode || ''}
-                  businessCenter={form.businessCenter}
-                  sections={sections}
-                  placeholder="Search section by code/name..."
-                  error={errors.sectionCode}
-                  onChange={(selectedCode, selectedSection) => {
-                    setForm(prev => ({
-                      ...prev,
-                      sectionCode: selectedCode,
-                      ...(selectedSection && selectedSection.basicSalary != null && Number(selectedSection.basicSalary) > 0
-                        ? { basicSalary: Number(selectedSection.basicSalary) }
-                        : {})
-                    }));
-                    if (errors.sectionCode) setErrors(prev => ({ ...prev, sectionCode: undefined }));
-                  }}
                 />
               </div>
               <div>
