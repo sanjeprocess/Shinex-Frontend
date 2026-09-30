@@ -161,10 +161,6 @@ export const remove = async (code: string): Promise<void> => {
     localStorage.setItem(LOCAL_SECTIONS_META_KEY, JSON.stringify(current));
   } catch {}
 
-  try {
-    await api.delete(`/sections/${encodeURIComponent(cleanCode)}`);
-  } catch (err) {
-    console.warn('API delete section fallback', err);
-  }
+  await api.delete(`/sections/${encodeURIComponent(cleanCode)}`);
 };
 
