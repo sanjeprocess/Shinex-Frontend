@@ -220,7 +220,7 @@ export default function EmployeeHistoryPage() {
     
     // Total shifts worked
     const totalAttendanceDays = filteredAttendanceList.reduce((acc, curr) => acc + (curr.halfDay === 1 || curr.halfDay === 0.5 ? 0.5 : 1), 0)
-    const normalDays = filteredAttendanceList.length > 0 ? totalAttendanceDays : 26
+    const normalDays = totalAttendanceDays
     const normalAmount = Math.round(normalDays * normalRate * 100) / 100
 
     // Night Shift calculation
@@ -309,7 +309,7 @@ export default function EmployeeHistoryPage() {
     const normalRate = dailyRate > 0 ? dailyRate : 840;
     
     const totalAttendanceDays = filteredAttendanceList.reduce((acc, curr) => acc + (curr.halfDay === 1 || curr.halfDay === 0.5 ? 0.5 : 1), 0);
-    const normalDays = filteredAttendanceList.length > 0 ? totalAttendanceDays : 26;
+    const normalDays = totalAttendanceDays;
     const normalAmount = Math.round(normalDays * normalRate * 100) / 100;
 
     const nightDays = filteredAttendanceList.filter(a => a.nightShift === 'Y' || a.fullNight === 'Y').length;

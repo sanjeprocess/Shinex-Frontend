@@ -66,7 +66,7 @@ export default function MonthlyBreakdown() {
       return
     }
 
-    const normalDays = summary.normalDays !== undefined ? summary.normalDays : (summary.attendance?.workingDays !== undefined ? summary.attendance.workingDays : 26);
+    const normalDays = summary.normalDays !== undefined ? summary.normalDays : (summary.attendance?.workingDays !== undefined ? summary.attendance.workingDays : 0);
     const normalRate = summary.normalRate !== undefined ? summary.normalRate : (summary.basicSalary ? Number(summary.basicSalary) : 840);
     const normalAmount = summary.normalAmount !== undefined ? summary.normalAmount : Math.round(normalDays * normalRate * 100) / 100;
 

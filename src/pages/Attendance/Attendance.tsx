@@ -130,7 +130,7 @@ export default function AttendancePage() {
     attMonth: String(new Date().getMonth() + 1).padStart(2, '0'),
     epfNo: '',
     plantCode: '',
-    workingDays: 26,
+    workingDays: 1,
     otCalAuto: 'Y',
     noOfStaff: 5,
     attAllowance: 'Y',
