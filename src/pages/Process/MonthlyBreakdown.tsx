@@ -247,9 +247,16 @@ export default function MonthlyBreakdown() {
           {/* Top KPI Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="rounded-2xl bg-white p-5 shadow-flat border border-slate-200">
-              <div className="text-xs uppercase font-semibold text-slate-500">Basic Salary</div>
+              <div className="text-xs uppercase font-semibold text-slate-500">Daily Rate</div>
               <div className="mt-1 text-2xl font-bold text-slate-800">{money(summary.basicSalary)}</div>
-              <span className="text-[11px] text-slate-400">Normal contracted rate</span>
+              <span className="text-[11px] text-slate-400">
+                Basic rate per day
+                {(summary.attendance?.workingDays !== undefined || summary.normalDays !== undefined) && (
+                  <span className="ml-1 font-semibold text-emerald-700">
+                    × {summary.attendance?.workingDays ?? summary.normalDays ?? 0} days
+                  </span>
+                )}
+              </span>
             </div>
 
             <div className="rounded-2xl bg-white p-5 shadow-flat border border-slate-200">
@@ -282,48 +289,85 @@ export default function MonthlyBreakdown() {
                 <span className="font-bold text-emerald-700 text-xs">{money(summary.grossSalary)}</span>
               </div>
               <table className="w-full text-left text-xs divide-y divide-slate-100">
+                <thead className="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider">
+                  <tr>
+                    <th className="px-5 py-2">Description</th>
+                    <th className="px-3 py-2 text-center">Day</th>
+                    <th className="px-3 py-2 text-center">Hour</th>
+                    <th className="px-3 py-2 text-right">Rate (LKR)</th>
+                    <th className="px-3 py-2 text-right">Amount (LKR)</th>
+                  </tr>
+                </thead>
                 <tbody className="divide-y divide-slate-100">
                   <tr>
                     <td className="px-5 py-2.5 font-medium text-slate-700">
-                      Normal / Basic Salary
-                      {summary.attendance?.workingDays !== undefined && (
-                        <span className="ml-2 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                          {summary.attendance.workingDays} {summary.attendance.workingDays === 1 ? 'day' : 'days'} attended
-                        </span>
+                      NORMAL / Basic Salary
+                    </td>
+                    <td className="px-3 py-2.5 text-center font-mono font-semibold text-emerald-700">
+                      {summary.attendance?.workingDays ?? summary.normalDays ?? '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-center text-slate-400">—</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-slate-600">
+                      {Number(summary.basicSalary || 0).toFixed(2)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-slate-800">
+                      {money(
+                        summary.normalAmount ??
+                        ((summary.attendance?.workingDays ?? summary.normalDays ?? 0) * Number(summary.basicSalary || 0))
                       )}
                     </td>
-                    <td className="px-5 py-2.5 text-right font-semibold text-slate-800">{money(summary.basicSalary)}</td>
                   </tr>
                   <tr>
-                    <td className="px-5 py-2.5 font-medium text-slate-700">Night Allowance</td>
-                    <td className="px-5 py-2.5 text-right font-semibold text-slate-800">{money(summary.nightAllowance || summary.attendance?.nightAllowance)}</td>
+                    <td className="px-5 py-2.5 font-medium text-slate-700">NIGHT Allowance</td>
+                    <td className="px-3 py-2.5 text-center font-mono text-slate-600">{summary.nightDays || summary.attendance?.nightDays || '—'}</td>
+                    <td className="px-3 py-2.5 text-center text-slate-400">—</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-slate-600">
+                      {summary.nightRate ? Number(summary.nightRate).toFixed(2) : '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-slate-800">{money(summary.nightAllowance || summary.attendance?.nightAllowance)}</td>
                   </tr>
                   <tr>
-                    <td className="px-5 py-2.5 font-medium text-slate-700">Sunday / Poya Extra</td>
-                    <td className="px-5 py-2.5 text-right font-semibold text-slate-800">{money(summary.poyaDayExtra || summary.attendance?.poyaDayExtra)}</td>
+                    <td className="px-5 py-2.5 font-medium text-slate-700">POYA / Sunday Extra</td>
+                    <td className="px-3 py-2.5 text-center font-mono text-slate-600">{summary.poyaDays || '—'}</td>
+                    <td className="px-3 py-2.5 text-center text-slate-400">—</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-slate-600">
+                      {summary.poyaRate ? Number(summary.poyaRate).toFixed(2) : '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-slate-800">{money(summary.poyaDayExtra || summary.attendance?.poyaDayExtra)}</td>
                   </tr>
                   <tr>
                     <td className="px-5 py-2.5 font-medium text-slate-700">
-                      Overtime Amount
+                      OVERTIME (1.5× rate)
                       <span className="ml-2 text-[11px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                        {summary.attendance?.otHours || 0} hrs @ 1.5× basic rate
+                        {summary.attendance?.otHours || 0} hrs
                       </span>
                     </td>
-                    <td className="px-5 py-2.5 text-right font-semibold text-slate-800">{money(summary.overtimeAmount || summary.attendance?.otAmount)}</td>
+                    <td className="px-3 py-2.5 text-center text-slate-400">—</td>
+                    <td className="px-3 py-2.5 text-center font-mono text-amber-700 font-bold">{summary.attendance?.otHours || '—'}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-slate-600">
+                      {summary.overtimeRate ? Number(summary.overtimeRate).toFixed(2) : '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-slate-800">{money(summary.overtimeAmount || summary.attendance?.otAmount)}</td>
                   </tr>
                   <tr>
                     <td className="px-5 py-2.5 font-medium text-slate-700">Day Allowance / Incentive</td>
-                    <td className="px-5 py-2.5 text-right font-semibold text-slate-800">{money(summary.dayAllowance || summary.attendance?.dayAllowance)}</td>
+                    <td className="px-3 py-2.5 text-center text-slate-400">—</td>
+                    <td className="px-3 py-2.5 text-center text-slate-400">—</td>
+                    <td className="px-3 py-2.5 text-right text-slate-400">—</td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-slate-800">{money(summary.dayAllowance || summary.attendance?.dayAllowance)}</td>
                   </tr>
                   {summary.additions.map((a, i) => (
                     <tr key={i} className="bg-slate-50/50">
                       <td className="px-5 py-2 text-slate-600 pl-8">{a.code} - {a.name}</td>
-                      <td className="px-5 py-2 text-right font-medium text-slate-700">{money(a.amount)}</td>
+                      <td className="px-3 py-2 text-center text-slate-400">—</td>
+                      <td className="px-3 py-2 text-center text-slate-400">—</td>
+                      <td className="px-3 py-2 text-right text-slate-400">—</td>
+                      <td className="px-3 py-2 text-right font-medium text-slate-700">{money(a.amount)}</td>
                     </tr>
                   ))}
                   <tr className="bg-emerald-50/60 font-bold border-t-2 border-emerald-200">
-                    <td className="px-5 py-3 text-emerald-900">Gross Salary</td>
-                    <td className="px-5 py-3 text-right text-emerald-900 text-sm">{money(summary.grossSalary)}</td>
+                    <td className="px-5 py-3 text-emerald-900" colSpan={4}>GROSS SALARY / දළ වැටුප</td>
+                    <td className="px-3 py-3 text-right text-emerald-900 text-sm">{money(summary.grossSalary)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -340,8 +384,21 @@ export default function MonthlyBreakdown() {
               <table className="w-full text-left text-xs divide-y divide-slate-100">
                 <tbody className="divide-y divide-slate-100">
                   <tr>
-                    <td className="px-5 py-2.5 font-medium text-slate-700">EPF 8% (Employee Contribution)</td>
-                    <td className="px-5 py-2.5 text-right font-semibold text-rose-600">{money(summary.epf8 || ((summary.basicSalary || 0) * 0.08))}</td>
+                    <td className="px-5 py-2.5 font-medium text-slate-700">
+                      EPF 8% (Employee Contribution)
+                      <span className="ml-2 text-[11px] text-slate-400">on earned normal wages</span>
+                    </td>
+                    <td className="px-5 py-2.5 text-right font-semibold text-rose-600">
+                      {money(
+                        summary.epf8 ??
+                        (
+                          (
+                            summary.normalAmount ??
+                            ((summary.attendance?.workingDays ?? summary.normalDays ?? 0) * Number(summary.basicSalary || 0))
+                          ) * 0.08
+                        )
+                      )}
+                    </td>
                   </tr>
                   <tr>
                     <td className="px-5 py-2.5 font-medium text-slate-700">Salary Advance</td>
@@ -387,20 +444,31 @@ export default function MonthlyBreakdown() {
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-3">
               Company Statutory Contributions
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <span className="text-slate-500 block">EPF 12% (Company Contribution)</span>
-                <strong className="text-slate-800 text-sm block mt-0.5">{money(summary.epf12 || ((summary.basicSalary || 0) * 0.12))}</strong>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <span className="text-slate-500 block">ETF 3% (Company Contribution)</span>
-                <strong className="text-slate-800 text-sm block mt-0.5">{money(summary.etf3 || ((summary.basicSalary || 0) * 0.03))}</strong>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <span className="text-slate-500 block">Total Statutory Fund Contribution (15%)</span>
-                <strong className="text-[#2F6F5E] text-sm block mt-0.5">{money((summary.epf12 || 0) + (summary.etf3 || 0) || ((summary.basicSalary || 0) * 0.15))}</strong>
-              </div>
-            </div>
+            {(() => {
+              const earnedNormal =
+                summary.normalAmount ??
+                ((summary.attendance?.workingDays ?? summary.normalDays ?? 0) * Number(summary.basicSalary || 0))
+              const epf12 = summary.epf12 ?? (earnedNormal * 0.12)
+              const etf3 = summary.etf3 ?? (earnedNormal * 0.03)
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 block">EPF 12% (Company Contribution)</span>
+                    <strong className="text-slate-800 text-sm block mt-0.5">{money(epf12)}</strong>
+                    <span className="text-[11px] text-slate-400">on earned normal wages</span>
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 block">ETF 3% (Company Contribution)</span>
+                    <strong className="text-slate-800 text-sm block mt-0.5">{money(etf3)}</strong>
+                    <span className="text-[11px] text-slate-400">on earned normal wages</span>
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 block">Total Statutory Fund Contribution (15%)</span>
+                    <strong className="text-[#2F6F5E] text-sm block mt-0.5">{money(epf12 + etf3)}</strong>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}

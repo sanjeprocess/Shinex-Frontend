@@ -578,7 +578,7 @@ export default function EmployeeHistoryPage() {
               <div><span className="text-slate-500 block">Full Name</span><strong className="text-slate-800 text-sm">{employee.firstName} {employee.lastName || ''}</strong></div>
               <div><span className="text-slate-500 block">NIC No</span><strong className="text-slate-800 text-sm">{employee.nicNo || '—'}</strong></div>
               <div><span className="text-slate-500 block">Business Center</span><strong className="text-slate-800 text-sm">{employee.businessCenter || activeBc}</strong></div>
-              <div><span className="text-slate-500 block">Basic Salary Rate</span><strong className="text-[#2F6F5E] text-sm">LKR {Number(employee.basicSalary || 0).toLocaleString()} / day</strong></div>
+              <div><span className="text-slate-500 block">Daily Rate (per day)</span><strong className="text-[#2F6F5E] text-sm">LKR {Number(employee.basicSalary || 0).toLocaleString()}</strong></div>
 
               <div><span className="text-slate-500 block">Current Plant / Customer</span><strong className="text-slate-800">{employee.plantCode || '—'}</strong></div>
               <div><span className="text-slate-500 block">Section Code</span><strong className="text-slate-800">{employee.sectionCode || '—'}</strong></div>

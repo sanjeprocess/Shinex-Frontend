@@ -113,7 +113,6 @@ export const create = async (rec: Attendance): Promise<Attendance> => {
   const payload = {
     ...rec,
     businessCenter: rec.businessCenter || cleanBc,
-    ...rec,
     attYear: rec.atttYear || '2026',
     dayOut: normalizeLocalDateTime(rec.dayOut, rec.timeOut),
     daysForAttAllowance: rec.dasForAttAllowance

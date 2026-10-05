@@ -9,6 +9,10 @@ export default function AuditLogPage() {
   const [selectedModule, setSelectedModule] = useState<string>('ALL')
   const [selectedAction, setSelectedAction] = useState<string>('ALL')
   const [search, setSearch] = useState<string>('')
+  const [fromDate, setFromDate] = useState<string>('')
+  const [toDate, setToDate] = useState<string>('')
+  const [appliedFromDate, setAppliedFromDate] = useState<string>('')
+  const [appliedToDate, setAppliedToDate] = useState<string>('')
 
   useEffect(() => {
     loadLogs()
@@ -26,6 +30,20 @@ export default function AuditLogPage() {
     }
   }
 
+  function handleApplyDateFilter() {
+    setAppliedFromDate(fromDate)
+    setAppliedToDate(toDate)
+    toast.success('Date range filter applied')
+  }
+
+  function handleClearDateFilter() {
+    setFromDate('')
+    setToDate('')
+    setAppliedFromDate('')
+    setAppliedToDate('')
+    toast.success('Date range filter cleared')
+  }
+
   const filteredLogs = useMemo(() => {
     return logs.filter(log => {
       if (selectedModule !== 'ALL' && log.module !== selectedModule) return false
@@ -35,9 +53,21 @@ export default function AuditLogPage() {
         const str = `${log.performedBy || ''} ${log.module || ''} ${log.action || ''} ${log.entityId || ''} ${log.details || ''}`.toLowerCase()
         if (!str.includes(q)) return false
       }
+
+      const activeFrom = appliedFromDate || fromDate
+      const activeTo = appliedToDate || toDate
+
+      if (activeFrom && log.timestamp) {
+        const logDate = log.timestamp.slice(0, 10)
+        if (logDate < activeFrom) return false
+      }
+      if (activeTo && log.timestamp) {
+        const logDate = log.timestamp.slice(0, 10)
+        if (logDate > activeTo) return false
+      }
       return true
     })
-  }, [logs, selectedModule, selectedAction, search])
+  }, [logs, selectedModule, selectedAction, search, fromDate, toDate, appliedFromDate, appliedToDate])
 
   function exportToExcel() {
     if (filteredLogs.length === 0) {
@@ -96,7 +126,27 @@ export default function AuditLogPage() {
 
       {/* Filter Controls Card */}
       <div className="bg-white p-5 rounded-2xl shadow-flat border border-slate-200 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">From Date</label>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={e => setFromDate(e.target.value)}
+              className="w-full form-input bg-slate-50 border-slate-300 font-medium text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">To Date</label>
+            <input
+              type="date"
+              value={toDate}
+              onChange={e => setToDate(e.target.value)}
+              className="w-full form-input bg-slate-50 border-slate-300 font-medium text-xs"
+            />
+          </div>
+
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">Filter by Module</label>
             <select
@@ -142,6 +192,23 @@ export default function AuditLogPage() {
               className="w-full form-input bg-slate-50 border-slate-300 text-xs"
             />
           </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+          {(fromDate || toDate || appliedFromDate || appliedToDate) && (
+            <button
+              onClick={handleClearDateFilter}
+              className="text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 font-medium"
+            >
+              Clear Date Filter
+            </button>
+          )}
+          <button
+            onClick={handleApplyDateFilter}
+            className="bg-[#2F6F5E] hover:bg-[#26594b] text-white text-xs font-semibold px-4 py-1.5 rounded-lg shadow-sm transition-colors"
+          >
+            Apply Filter
+          </button>
         </div>
       </div>
 

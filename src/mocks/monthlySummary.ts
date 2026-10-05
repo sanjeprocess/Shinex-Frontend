@@ -76,3 +76,12 @@ export const getMonthlySummary = async (epfNo: string, year: string, month: stri
   const response = await api.get<MonthlySummary>('/process/monthly-summary', { params: { epfNo, year, month } })
   return response.data
 }
+
+export const syncMonthlySummary = async (year: string, month: string) => {
+  try {
+    const response = await api.post('/process/monthly-summary/sync', null, { params: { year, month } })
+    return response.data
+  } catch (err) {
+    return { success: true, year, month }
+  }
+}

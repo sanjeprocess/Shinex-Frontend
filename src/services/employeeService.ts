@@ -7,6 +7,13 @@ export const list = async (businessCenter?: string): Promise<Employee[]> => {
   const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
   const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
   const response = await api.get<Employee[]>('/employees', { params });
+  if (Array.isArray(response.data)) {
+    return response.data.map((e: any) => ({
+      ...e,
+      branchName: e.branchName || e.bankBranchName || '',
+      bankBranchName: e.bankBranchName || e.branchName || ''
+    }));
+  }
   return response.data;
 };
 
@@ -75,7 +82,8 @@ export const create = async (e: Employee): Promise<Employee> => {
 };
 
 export const update = async (epf: string, e: Partial<Employee>): Promise<Employee> => {
-  const response = await api.put<Employee>(`/employees/${encodeURIComponent(epf)}`, normalizeEmployee({ ...e, epfNo: epf }));
+  const fullEmployee = { ...e, epfNo: epf, firstName: e.firstName || '' } as Employee;
+  const response = await api.put<Employee>(`/employees/${encodeURIComponent(epf)}`, normalizeEmployee(fullEmployee));
   const result = response.data;
   logAuditAction({
     action: 'UPDATE',
@@ -99,8 +107,12 @@ function normalizeEmployee(e: Employee): Employee {
     dateOfBirth: e.dateOfBirth?.trim(),
     hiredDate,
     hiredMonth,
-    bankName: e.bankName?.trim()
-  };
+    bankName: e.bankName?.trim(),
+    branchName: e.branchName?.trim(),
+    bankBranchName: e.branchName?.trim(),
+    bankAccountNumber: e.bankAccountNumber?.trim(),
+    swift: e.swift?.trim()
+  } as any;
 }
 
 export const remove = async (epf: string): Promise<void> => {

@@ -12,6 +12,7 @@ import { list as listSections, Section } from '../../mocks/sections'
 import { list as listCustomers } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
 import SearchableSectionSelect from '../../components/shared/SearchableSectionSelect'
+import SearchableBankSelect from '../../components/shared/SearchableBankSelect'
 import { Employee } from '../../types/employee'
 import { validateNameField } from '../../utils/validators'
 import { processImageFile } from '../../utils/imageUtils'
@@ -550,9 +551,19 @@ export default function EmployeesList() {
                 <input value={form.bankAccountNumber || ''} onChange={e => setForm({ ...form, bankAccountNumber: e.target.value })} className="mt-1 w-full form-input mono-numeric" />
               </div>
               <div>
-                <label className="block text-xs text-slate-600">Bank Name</label>
-                <input value={form.bankName || ''} onChange={e => { if (/\d/.test(e.target.value)) { toast.error('Bank name cannot contain numbers.'); return } setForm({ ...form, bankName: e.target.value }); if (errors.bankName) setErrors(prev => ({ ...prev, bankName: undefined })) }} className={`mt-1 w-full form-input ${errors.bankName ? 'border-red-300 ring-2 ring-red-100' : ''}`} />
-                {errors.bankName && <p className="mt-1 text-xs text-red-500">{errors.bankName}</p>}
+                <label className="block text-xs text-slate-600 mb-1">Bank Name</label>
+                <SearchableBankSelect
+                  value={form.bankName || ''}
+                  onChange={(bankName) => {
+                    if (/\d/.test(bankName)) {
+                      toast.error('Bank name cannot contain numbers.')
+                      return
+                    }
+                    setForm(prev => ({ ...prev, bankName }))
+                    if (errors.bankName) setErrors(prev => ({ ...prev, bankName: undefined }))
+                  }}
+                  error={errors.bankName}
+                />
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Branch Name</label>

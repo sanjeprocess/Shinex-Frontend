@@ -12,6 +12,8 @@ import { list as listEmployees } from '../../services/employeeService'
 import { list as listCustomers } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
 import { list as listTransfers, PlantTransfer } from '../../mocks/plantTransfers'
+import { list as listLeaves } from '../../mocks/leaves'
+import { syncMonthlySummary } from '../../mocks/monthlySummary'
 import {
   list as listAttendance,
   create as createAttendance,
@@ -99,14 +101,14 @@ function parseAttendanceRows(data: unknown[][], businessCenter: string): Attenda
       const field = excelFieldMap[header]
       if (!field) return
       const value = row[column]
-      if (field === 'dayIn') record[field] = excelDate(value)
-      else if (field === 'dayOut') record[field] = excelDate(value)
-      else if (field === 'timeIn' || field === 'timeOut') record[field] = excelTime(value)
+      if (field === 'dayIn') (record as any)[field] = excelDate(value)
+      else if (field === 'dayOut') (record as any)[field] = excelDate(value)
+      else if (field === 'timeIn' || field === 'timeOut') (record as any)[field] = excelTime(value)
       else if (['workingDays', 'basicSalary', 'dayAllowance', 'nightAllowance', 'halfDay', 'totalWorkingHours', 'totalOt', 'noOfMeal', 'totalMealValue', 'statutoryHolidays', 'sundayPoyaExtra'].includes(field)) {
         const number = Number(String(value ?? '').replace(/^0+(?=\d)/, ''))
-        record[field] = Number.isFinite(number) ? number : 0
-      } else if (field === 'businessCenter') record[field] = String(value ?? '').trim() || businessCenter
-      else record[field] = String(value ?? '').trim()
+        ;(record as any)[field] = Number.isFinite(number) ? number : 0
+      } else if (field === 'businessCenter') (record as any)[field] = String(value ?? '').trim() || businessCenter
+      else (record as any)[field] = String(value ?? '').trim()
     })
     return {
       ...defaultAttendanceRecord,
@@ -177,6 +179,58 @@ export default function AttendancePage() {
   const [transfers, setTransfers] = useState<PlantTransfer[]>([])
   const [uploadRows, setUploadRows] = useState<Attendance[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const [syncModalOpen, setSyncModalOpen] = useState(false)
+  const [syncYear, setSyncYear] = useState('2026')
+  const [syncMonth, setSyncMonth] = useState('09')
+  const [syncing, setSyncing] = useState(false)
+  const [syncResults, setSyncResults] = useState<any[]>([])
+
+  async function handleRunMonthlySync() {
+    setSyncing(true)
+    try {
+      await syncMonthlySummary(syncYear, syncMonth)
+      const leaveList = await listLeaves()
+
+      const calculated = employeeList.map(emp => {
+        const epf = emp.epfNo
+        const empAttList = rows.filter(r => r.epfNo === epf && (r.atttYear === syncYear || !r.atttYear) && (r.attMonth === syncMonth || !r.attMonth))
+        let presentDays = 0
+        let otHours = 0
+
+        empAttList.forEach(a => {
+          const weight = a.halfDay === 1 ? 0.5 : 1.0
+          presentDays += weight
+          if (a.totalOt && a.totalOt > 0) otHours += a.totalOt
+        })
+
+        const empLeaves = leaveList.filter(l => (l.epfNo === epf || l.empNo === epf) && (l.leaveYear === syncYear || !l.leaveYear) && (l.leaveMonth === syncMonth || !l.leaveMonth))
+        const totalLeaves = empLeaves.reduce((acc, l) => acc + (l.leaveDays || l.days || 0), 0)
+
+        return {
+          epfNo: epf,
+          empName: `${emp.firstName} ${emp.lastName || ''}`.trim(),
+          presentDays,
+          leaves: totalLeaves,
+          otHours
+        }
+      })
+
+      setSyncResults(calculated)
+      const monthNames: Record<string, string> = {
+        '01': 'January', '02': 'February', '03': 'March', '04': 'April',
+        '05': 'May', '06': 'June', '07': 'July', '08': 'August',
+        '09': 'September', '10': 'October', '11': 'November', '12': 'December'
+      }
+      const monthLabel = monthNames[syncMonth] || syncMonth
+      toast.success(`Calculated total present days, leaves, and OT hours for all employees (${monthLabel} ${syncYear}).`)
+    } catch (err) {
+      console.error('Monthly summary sync failed', err)
+      toast.error('Monthly summary sync failed')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   function refresh() {
     const activeBc = localStorage.getItem('hsb_active_bc') || '';
@@ -425,34 +479,48 @@ export default function AttendancePage() {
     setForm(prev => ({ ...prev, [field]: Number(value) }))
   }
 
+  const empTransfers = useMemo(() => {
+    if (!form.epfNo) return []
+    return transfers.filter(t => t.epfNo === form.epfNo)
+  }, [form.epfNo, transfers])
+
+  const hasPlantTransfer = empTransfers.length > 0
+
   const relevantPlants = useMemo(() => {
-    if (!form.epfNo) return customerList;
-    const emp = employeeList.find(e => e.epfNo === form.epfNo);
-    const empTransfers = transfers.filter(t => t.epfNo === form.epfNo);
+    if (!form.epfNo) return customerList
+    const emp = employeeList.find(e => e.epfNo === form.epfNo)
+    const codes = new Set<string>()
 
-    const codes = new Set<string>();
-    if (emp?.plantCode) codes.add(emp.plantCode.split(' ')[0].trim());
-    if (form.plantCode) codes.add(form.plantCode.split(' ')[0].trim());
+    if (emp?.plantCode) {
+      const cleanHome = emp.plantCode.split(' ')[0].trim()
+      codes.add(cleanHome)
+    }
+
     empTransfers.forEach(t => {
-      if (t.fromPlant) codes.add(t.fromPlant.split(' ')[0].trim());
-      if (t.toPlant) codes.add(t.toPlant.split(' ')[0].trim());
-    });
+      if (t.fromPlant) codes.add(t.fromPlant.split(' ')[0].trim())
+      if (t.toPlant) codes.add(t.toPlant.split(' ')[0].trim())
+    })
 
-    const relevant = customerList.filter(c => codes.has(c.code));
-    return relevant.length > 0 ? relevant : customerList;
-  }, [form.epfNo, form.plantCode, employeeList, transfers, customerList]);
+    const filtered = customerList.filter(c => codes.has(c.code))
+    if (filtered.length === 0 && emp?.plantCode) {
+      const cleanHome = emp.plantCode.split(' ')[0].trim()
+      return [{ code: cleanHome, name: emp.plantCode }]
+    }
+    return filtered
+  }, [form.epfNo, employeeList, empTransfers, customerList])
 
   function handleEmployeeChange(epf: string | null) {
     if (!epf) return
     const emp = employeeList.find(e => e.epfNo === epf)
-    const activeTransfer = transfers.find(t => t.epfNo === epf && t.status === 'Active')
+    const empTrans = transfers.filter(t => t.epfNo === epf)
+    const activeTransfer = empTrans.find(t => t.status === 'Active') || empTrans[0]
 
-    let effectivePlant = emp?.plantCode || form.plantCode || ''
+    let effectivePlant = emp?.plantCode ? emp.plantCode.split(' ')[0].trim() : ''
     if (activeTransfer?.toPlant) {
       const targetCode = activeTransfer.toPlant.split(' ')[0].trim()
       if (customerList.some(c => c.code === targetCode)) {
         effectivePlant = targetCode
-      } else if (customerList.length > 0) {
+      } else {
         effectivePlant = activeTransfer.toPlant
       }
     }
@@ -578,6 +646,7 @@ export default function AttendancePage() {
           <SearchInput value={q} onChange={setQ} placeholder="Search by name, EPF..." />
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleExcelUpload} className="hidden" />
           <button type="button" className="bg-slate-700 text-white px-3 py-1 rounded-md btn-press" onClick={() => fileInputRef.current?.click()}>Excel File Upload</button>
+          <button type="button" className="bg-indigo-700 hover:bg-indigo-800 text-white px-3 py-1 rounded-md btn-press" onClick={() => setSyncModalOpen(true)}>Sync Monthly Summary</button>
           {uploadRows.length > 0 && <button type="button" className="bg-[#2F6F5E] text-white px-3 py-1 rounded-md btn-press" onClick={handleBulkSave}>Emp Attendance Update</button>}
           {uploadRows.length > 0 && <button type="button" className="bg-[#C08A2E] text-white px-3 py-1 rounded-md btn-press" onClick={exportUploadRows}>Export Updated Excel</button>}
           <button type="button" className="bg-[#2F6F5E] text-white px-3 py-1 rounded-md btn-press" onClick={handleAdd}>Add Entry</button>
@@ -634,25 +703,26 @@ export default function AttendancePage() {
                 </div>
                 <select 
                   value={form.plantCode} 
+                  disabled={!!form.epfNo && !hasPlantTransfer}
                   onChange={e => { 
                     setForm({ ...form, plantCode: e.target.value }); 
                     if (errors.plantCode) setErrors(prev => ({ ...prev, plantCode: undefined })) 
                   }} 
-                  className={`w-full form-input ${errors.plantCode ? 'border-red-300 ring-2 ring-red-100' : ''}`}
+                  className={`w-full form-input ${!!form.epfNo && !hasPlantTransfer ? 'bg-slate-100 cursor-not-allowed text-slate-600' : ''} ${errors.plantCode ? 'border-red-300 ring-2 ring-red-100' : ''}`}
                 >
                   <option value="">Select plant</option>
                   {relevantPlants.map(c => {
                     const emp = employeeList.find(e => e.epfNo === form.epfNo);
-                    const isHome = emp?.plantCode === c.code;
-                    const isTransfer = transfers.some(t => t.epfNo === form.epfNo && t.toPlant?.includes(c.code));
-                    const tag = isHome ? ' (Home Plant)' : (isTransfer ? ' (Transferred Plant)' : '');
+                    const isHome = emp?.plantCode?.startsWith(c.code);
+                    const isTransfer = empTransfers.some(t => t.toPlant?.includes(c.code));
+                    const tag = isHome ? ' (Onboard Plant)' : (isTransfer ? ' (Transferred Plant)' : '');
                     return (
                       <option key={c.code} value={c.code}>
                         {c.code} - {c.name}{tag}
                       </option>
                     );
                   })}
-                  {relevantPlants.length < customerList.length && (
+                  {!form.epfNo && (
                     <optgroup label="── All Other Plants ──">
                       {customerList.filter(c => !relevantPlants.some(r => r.code === c.code)).map(c => (
                         <option key={c.code} value={c.code}>{c.code} - {c.name}</option>
@@ -661,6 +731,11 @@ export default function AttendancePage() {
                   )}
                 </select>
                 {errors.plantCode && <p className="mt-1 text-xs text-red-500">{errors.plantCode}</p>}
+                {!!form.epfNo && !hasPlantTransfer && (
+                  <p className="mt-1 text-[11px] text-slate-500 italic">
+                    Employee has not transferred plants. Assigned to onboard plant only.
+                  </p>
+                )}
               </div>
 
               {/* Active Plant Transfer Banner */}
@@ -902,6 +977,104 @@ export default function AttendancePage() {
       )}
 
       <ConfirmDialog open={!!confirm} title="Delete Entry" message="Are you sure you want to delete this attendance log?" onConfirm={handleDeleteConfirm} onCancel={() => setConfirm(null)} />
+
+      {/* Sync Monthly Summary Modal */}
+      <SlideOver open={syncModalOpen} onClose={() => setSyncModalOpen(false)} title="Sync Monthly Summary">
+        <div className="space-y-4">
+          <div className="bg-slate-50 p-4 rounded-xl border space-y-3">
+            <h4 className="font-semibold text-xs text-slate-700 uppercase tracking-wider">Select Month & Year for Bulk Attendance Sync</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Payroll Month *</label>
+                <select
+                  value={syncMonth}
+                  onChange={e => setSyncMonth(e.target.value)}
+                  className="w-full form-input text-xs"
+                >
+                  <option value="01">01 - January</option>
+                  <option value="02">02 - February</option>
+                  <option value="03">03 - March</option>
+                  <option value="04">04 - April</option>
+                  <option value="05">05 - May</option>
+                  <option value="06">06 - June</option>
+                  <option value="07">07 - July</option>
+                  <option value="08">08 - August</option>
+                  <option value="09">09 - September</option>
+                  <option value="10">10 - October</option>
+                  <option value="11">11 - November</option>
+                  <option value="12">12 - December</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Payroll Year *</label>
+                <select
+                  value={syncYear}
+                  onChange={e => setSyncYear(e.target.value)}
+                  className="w-full form-input text-xs"
+                >
+                  <option value="2025">2025</option>
+                  <option value="2026">2026</option>
+                  <option value="2027">2027</option>
+                  <option value="2028">2028</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setSyncModalOpen(false)}
+              className="px-3 py-1.5 rounded-md border text-xs text-slate-600 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={syncing}
+              onClick={handleRunMonthlySync}
+              className="px-4 py-1.5 rounded-md bg-[#2F6F5E] hover:bg-[#26594b] text-white text-xs font-semibold shadow-sm transition-colors"
+            >
+              {syncing ? 'Syncing...' : 'Sync Monthly Summary'}
+            </button>
+          </div>
+
+          {syncResults.length > 0 && (
+            <div className="space-y-2 pt-3 border-t">
+              <div className="flex items-center justify-between">
+                <h4 className="font-semibold text-xs text-slate-800">Synced Summary Results ({syncResults.length} Employees)</h4>
+                <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-medium border border-emerald-200">
+                  Calculated for {syncMonth}/{syncYear}
+                </span>
+              </div>
+              <div className="overflow-x-auto max-h-64 border rounded-lg">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 text-slate-600 border-b">
+                    <tr>
+                      <th className="p-2">EPF No</th>
+                      <th className="p-2">Employee Name</th>
+                      <th className="p-2 text-right">Present Days</th>
+                      <th className="p-2 text-right">Leaves</th>
+                      <th className="p-2 text-right">OT Hours</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {syncResults.map(r => (
+                      <tr key={r.epfNo} className="hover:bg-slate-50">
+                        <td className="p-2 font-mono">{r.epfNo}</td>
+                        <td className="p-2 font-medium text-slate-800">{r.empName}</td>
+                        <td className="p-2 text-right font-mono text-emerald-700 font-semibold">{r.presentDays}</td>
+                        <td className="p-2 text-right font-mono text-amber-700 font-semibold">{r.leaves}</td>
+                        <td className="p-2 text-right font-mono text-indigo-700 font-semibold">{r.otHours}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </SlideOver>
     </div>
   )
 }

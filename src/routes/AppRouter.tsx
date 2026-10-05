@@ -23,23 +23,44 @@ import AuditLogPage from '../pages/Audit/AuditLogPage'
 import AdminControlPage from '../pages/Admin/AdminControlPage'
 import MonthlyBreakdown from '../pages/Process/MonthlyBreakdown'
 import PlantTransfersPage from '../pages/Process/PlantTransfers'
-import { getCurrentUser } from '../utils/permissions'
+import { getCurrentUser, canViewModule, AdminPermissions } from '../utils/permissions'
 
+type ModKey = keyof AdminPermissions['modules']
+
+// ─── Route Guards ─────────────────────────────────────────────────────────────
+
+/** Must be logged in and not blocked */
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const isAuthenticated = typeof window !== 'undefined' && !!localStorage.getItem('hsb_auth_token')
   const user = typeof window !== 'undefined' ? getCurrentUser() : null
   return isAuthenticated && user && !user.isBlocked ? <>{children}</> : <Navigate to="/login" replace />
 }
 
-const SiteAccessRoute = ({ children }: { children: React.ReactNode }) => {
-  return getCurrentUser().canViewSite ? <>{children}</> : <Navigate to="/" replace />
+/** Module-level access guard — redirects to dashboard if the module is hidden for this user */
+const ModuleRoute = ({
+  children,
+  mod,
+}: {
+  children: React.ReactNode
+  mod: ModKey
+}) => {
+  const user = getCurrentUser()
+  // SUPERADMIN always has access
+  if (['SUPERADMIN', 'SUPER_ADMIN'].includes(user.role)) return <>{children}</>
+  // Must be able to view the site AND the specific module
+  if (!user.canViewSite || !canViewModule(mod)) {
+    return <Navigate to="/" replace />
+  }
+  return <>{children}</>
 }
 
+/** SUPERADMIN-only route */
 const SuperAdminRoute = ({ children }: { children: React.ReactNode }) => {
   const role = typeof window !== 'undefined' ? localStorage.getItem('hsb_user_role') : null
-  const isSuperAdmin = role?.toUpperCase() === 'SUPERADMIN'
-  return isSuperAdmin ? <>{children}</> : <Navigate to="/" replace />
+  return role?.toUpperCase() === 'SUPERADMIN' ? <>{children}</> : <Navigate to="/" replace />
 }
+
+// ─── Router ───────────────────────────────────────────────────────────────────
 
 export default function AppRouter() {
   return (
@@ -53,24 +74,35 @@ export default function AppRouter() {
           </ProtectedRoute>
         }
       >
+        {/* Dashboard — always accessible */}
         <Route index element={<Dashboard />} />
-        <Route path="employees" element={<SiteAccessRoute><EmployeesList /></SiteAccessRoute>} />
-        <Route path="attendance" element={<SiteAccessRoute><AttendancePage /></SiteAccessRoute>} />
 
-        {/* Transactions */}
-        <Route path="employee-additions" element={<SiteAccessRoute><EmployeeAdditions /></SiteAccessRoute>} />
-        <Route path="employee-deductions" element={<SiteAccessRoute><EmployeeDeductions /></SiteAccessRoute>} />
-        <Route path="leaves" element={<SiteAccessRoute><LeavesPage /></SiteAccessRoute>} />
-        <Route path="loans" element={<SiteAccessRoute><LoansPage /></SiteAccessRoute>} />
-        <Route path="plant-transfers" element={<SiteAccessRoute><PlantTransfersPage /></SiteAccessRoute>} />
-        <Route path="monthly-breakdown" element={<SiteAccessRoute><MonthlyBreakdown /></SiteAccessRoute>} />
+        {/* ── Transaction Data ── */}
+        <Route path="employees"          element={<ModuleRoute mod="employees">    <EmployeesList />       </ModuleRoute>} />
+        <Route path="attendance"         element={<ModuleRoute mod="attendance">   <AttendancePage />      </ModuleRoute>} />
+        <Route path="employee-additions" element={<ModuleRoute mod="additions">    <EmployeeAdditions />   </ModuleRoute>} />
+        <Route path="employee-deductions"element={<ModuleRoute mod="deductions">   <EmployeeDeductions />  </ModuleRoute>} />
+        <Route path="leaves"             element={<ModuleRoute mod="leaves">       <LeavesPage />          </ModuleRoute>} />
+        <Route path="loans"              element={<ModuleRoute mod="loans">        <LoansPage />           </ModuleRoute>} />
+        <Route path="plant-transfers"    element={<ModuleRoute mod="plantTransfers"><PlantTransfersPage /> </ModuleRoute>} />
 
-        {/* Reports & Audit */}
-        <Route path="reports" element={<ReportsPage />} />
-        <Route path="employee-history" element={<EmployeeHistoryPage />} />
-        <Route path="audit-logs" element={<AuditLogPage />} />
+        {/* ── Process ── */}
+        <Route path="monthly-breakdown"  element={<ModuleRoute mod="process">      <MonthlyBreakdown />    </ModuleRoute>} />
 
-        {/* Superadmin Exclusive Route */}
+        {/* ── Reports ── */}
+        <Route path="reports"            element={<ModuleRoute mod="reports">      <ReportsPage />         </ModuleRoute>} />
+        <Route path="employee-history"   element={<ModuleRoute mod="payAdvice">    <EmployeeHistoryPage /> </ModuleRoute>} />
+        <Route path="audit-logs"         element={<ModuleRoute mod="audit">        <AuditLogPage />        </ModuleRoute>} />
+
+        {/* ── Master Data ── */}
+        <Route path="business-centers"   element={<ModuleRoute mod="masterBCenters">  <BusinessCentersPage /> </ModuleRoute>} />
+        <Route path="sections"           element={<ModuleRoute mod="masterSections">  <SectionsPage />        </ModuleRoute>} />
+        <Route path="bcards"             element={<ModuleRoute mod="masterSections">  <BCardsPage />          </ModuleRoute>} />
+        <Route path="additions"          element={<ModuleRoute mod="masterAdditions"> <AdditionsPage />       </ModuleRoute>} />
+        <Route path="deductions"         element={<ModuleRoute mod="masterDeductions"><DeductionsPage />      </ModuleRoute>} />
+        <Route path="customers"          element={<ModuleRoute mod="masterCustomers"> <CustomersPage />       </ModuleRoute>} />
+
+        {/* ── Superadmin Only ── */}
         <Route
           path="admin-control"
           element={
@@ -79,14 +111,6 @@ export default function AppRouter() {
             </SuperAdminRoute>
           }
         />
-
-        {/* Masters */}
-        <Route path="business-centers" element={<SiteAccessRoute><BusinessCentersPage /></SiteAccessRoute>} />
-        <Route path="sections" element={<SiteAccessRoute><SectionsPage /></SiteAccessRoute>} />
-        <Route path="bcards" element={<SiteAccessRoute><BCardsPage /></SiteAccessRoute>} />
-        <Route path="additions" element={<SiteAccessRoute><AdditionsPage /></SiteAccessRoute>} />
-        <Route path="deductions" element={<SiteAccessRoute><DeductionsPage /></SiteAccessRoute>} />
-        <Route path="customers" element={<SiteAccessRoute><CustomersPage /></SiteAccessRoute>} />
       </Route>
     </Routes>
   )

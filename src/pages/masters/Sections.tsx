@@ -146,15 +146,34 @@ export default function SectionsPage() {
       })
   }
 
+  function handleDeleteRequest(code: string) {
+    const linkedEmployees = employees.filter(e => (e.sectionCode || '').trim() === code.trim() || (e.section || '').trim() === code.trim())
+    if (linkedEmployees.length > 0) {
+      toast.error(`Cannot delete section '${code}': ${linkedEmployees.length} active employee(s) are linked to this section.`)
+      return
+    }
+    setConfirm(code)
+  }
+
   function onDeleteConfirm() {
-    if (confirm)
-      remove(confirm)
-        .then(() => {
-          setConfirm(null)
-          refresh()
-          toast.success('Section deleted')
-        })
-        .catch(() => toast.error('Failed to delete section — please try again'))
+    if (!confirm) return
+    const linkedEmployees = employees.filter(e => (e.sectionCode || '').trim() === confirm.trim() || (e.section || '').trim() === confirm.trim())
+    if (linkedEmployees.length > 0) {
+      toast.error(`Cannot delete section '${confirm}': ${linkedEmployees.length} active employee(s) are linked to this section.`)
+      setConfirm(null)
+      return
+    }
+    remove(confirm)
+      .then(() => {
+        setConfirm(null)
+        refresh()
+        toast.success('Section deleted')
+      })
+      .catch((err: any) => {
+        const msg = err?.response?.data?.message || (typeof err?.response?.data === 'string' ? err.response.data : null) || 'Cannot delete section linked to employees'
+        toast.error(String(msg))
+        setConfirm(null)
+      })
   }
 
   const [q, setQ] = useState('')
@@ -363,7 +382,7 @@ export default function SectionsPage() {
           const row = rows.find(r => r.code === id)
           if (row) onEdit(row)
         }}
-        onDelete={(id) => setConfirm(id)}
+        onDelete={handleDeleteRequest}
       />
 
       <ConfirmDialog
