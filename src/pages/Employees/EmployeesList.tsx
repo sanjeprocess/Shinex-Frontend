@@ -153,7 +153,15 @@ export default function EmployeesList() {
   function handleEdit(epf: string) {
     const row = rows.find(r => r.epfNo === epf)
     if (!row) return
-    setForm({ ...row })
+    const secCode = (row.sectionCode || '').trim();
+    const sectionObj = secCode ? sections.find(s => (s.code || '').trim() === secCode || (s.name || '').trim() === secCode) : null;
+    const secSalary = sectionObj && sectionObj.basicSalary != null && Number(sectionObj.basicSalary) > 0 ? Number(sectionObj.basicSalary) : 0;
+    const effectiveSalary = secSalary > 0 ? secSalary : (row.basicSalary || 0);
+
+    setForm({
+      ...row,
+      basicSalary: effectiveSalary
+    })
     setIsEditing(true)
     setEditingEpf(epf)
     setOpen(true)
@@ -257,6 +265,7 @@ export default function EmployeesList() {
           { key: 'plantName', label: 'Plant Name' },
           { key: 'sectionName', label: 'Section Name' },
           { key: 'basicSalary', label: 'Basic Salary', className: 'mono-numeric font-semibold text-slate-800' },
+          { key: 'age', label: 'Age', className: 'text-slate-600' },
           { key: 'id', label: 'Actions' }
         ]}
         data={(filtered || []).map(r => {
@@ -266,11 +275,14 @@ export default function EmployeesList() {
           const sectionObj = sections.find(s => (s.code || '').trim() === (r?.sectionCode || '').trim() || (s.name || '').trim() === (r?.sectionCode || '').trim());
           const sectionDisplayName = sectionObj ? (sectionObj.name ? `${sectionObj.name}` : sectionObj.code) : (r?.sectionCode || '—');
 
-          const effectiveSalary = r?.basicSalary != null && Number(r.basicSalary) > 0
-            ? Number(r.basicSalary)
-            : (sectionObj && sectionObj.basicSalary != null && Number(sectionObj.basicSalary) > 0 ? Number(sectionObj.basicSalary) : 0);
+          const secSalary = sectionObj && sectionObj.basicSalary != null && Number(sectionObj.basicSalary) > 0 ? Number(sectionObj.basicSalary) : 0;
+          const empSalary = r?.basicSalary != null && Number(r.basicSalary) > 0 ? Number(r.basicSalary) : 0;
+          const effectiveSalary = secSalary > 0 ? secSalary : empSalary;
 
           const formattedSalary = `Rs. ${effectiveSalary.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+          const ageNum = calculateAge(r?.dateOfBirth || '');
+          const ageDisplay = ageNum !== null ? `${ageNum} yrs` : '—';
 
           return {
             epfNo: r?.epfNo || '',
@@ -302,6 +314,11 @@ export default function EmployeesList() {
             basicSalary: (
               <span className="font-semibold text-slate-900 font-mono">
                 {formattedSalary}
+              </span>
+            ),
+            age: (
+              <span className="text-slate-700 font-medium">
+                {ageDisplay}
               </span>
             ),
             id: r?.epfNo || ''
@@ -550,10 +567,29 @@ export default function EmployeesList() {
           </section>
 
           <section>
-            <h4 className="font-semibold mb-2">Compensation</h4>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-semibold text-xs text-slate-700">Compensation</h4>
+              {(() => {
+                const secCode = (form.sectionCode || '').trim();
+                const sectionObj = secCode ? sections.find(s => (s.code || '').trim() === secCode || (s.name || '').trim().toLowerCase() === secCode.toLowerCase()) : null;
+                const secSalary = sectionObj && sectionObj.basicSalary != null && Number(sectionObj.basicSalary) > 0 ? Number(sectionObj.basicSalary) : 0;
+                if (secSalary > 0 && form.basicSalary !== secSalary) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setForm(prev => ({ ...prev, basicSalary: secSalary }))}
+                      className="text-[11px] text-[#2F6F5E] hover:underline font-medium bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200"
+                    >
+                      Sync from Section Basic Salary (Rs. {secSalary.toLocaleString()})
+                    </button>
+                  );
+                }
+                return null;
+              })()}
+            </div>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <label className="block text-xs text-slate-600">Basic Salary</label>
+                <label className="block text-xs text-slate-600">Basic Salary (Rs.)</label>
                 <NumericInput value={form.basicSalary || 0} onChange={e => { setForm({ ...form, basicSalary: Number(e.target.value) }) }} className="mt-1 w-full form-input mono-numeric" />
               </div>
               <div>
