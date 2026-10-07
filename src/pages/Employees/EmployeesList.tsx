@@ -254,31 +254,59 @@ export default function EmployeesList() {
         columns={[
           { key: 'epfNo', label: 'Emp No', className: 'mono-numeric' },
           { key: 'name', label: 'Employee Name & Photo' },
-          { key: 'section', label: 'Section' },
-          { key: 'plant', label: 'Plant' },
+          { key: 'plantName', label: 'Plant Name' },
+          { key: 'sectionName', label: 'Section Name' },
+          { key: 'basicSalary', label: 'Basic Salary', className: 'mono-numeric font-semibold text-slate-800' },
           { key: 'id', label: 'Actions' }
         ]}
-        data={(filtered || []).map(r => ({
-          epfNo: r?.epfNo || '',
-          name: (
-            <div className="flex items-center gap-3">
-              {r?.photoUrl ? (
-                <img src={r.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-slate-200 shadow-2xs flex-shrink-0" />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#2F6F5E] to-[#3F9884] text-white flex items-center justify-center font-bold text-xs uppercase shadow-2xs flex-shrink-0">
-                  {(r?.firstName?.[0] || 'E') + (r?.lastName?.[0] || '')}
+        data={(filtered || []).map(r => {
+          const plantObj = customers.find(c => (c.code || '').trim() === (r?.plantCode || '').trim() || (c.name || '').trim() === (r?.plantCode || '').trim());
+          const plantDisplayName = plantObj ? (plantObj.name ? `${plantObj.name} (${plantObj.code})` : plantObj.code) : (r?.plantCode || '—');
+
+          const sectionObj = sections.find(s => (s.code || '').trim() === (r?.sectionCode || '').trim() || (s.name || '').trim() === (r?.sectionCode || '').trim());
+          const sectionDisplayName = sectionObj ? (sectionObj.name ? `${sectionObj.name}` : sectionObj.code) : (r?.sectionCode || '—');
+
+          const effectiveSalary = r?.basicSalary != null && Number(r.basicSalary) > 0
+            ? Number(r.basicSalary)
+            : (sectionObj && sectionObj.basicSalary != null && Number(sectionObj.basicSalary) > 0 ? Number(sectionObj.basicSalary) : 0);
+
+          const formattedSalary = `Rs. ${effectiveSalary.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+          return {
+            epfNo: r?.epfNo || '',
+            name: (
+              <div className="flex items-center gap-3">
+                {r?.photoUrl ? (
+                  <img src={r.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-slate-200 shadow-2xs flex-shrink-0" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#2F6F5E] to-[#3F9884] text-white flex items-center justify-center font-bold text-xs uppercase shadow-2xs flex-shrink-0">
+                    {(r?.firstName?.[0] || 'E') + (r?.lastName?.[0] || '')}
+                  </div>
+                )}
+                <div>
+                  <div className="font-semibold text-slate-800 leading-snug">{r?.firstName || ''} {r?.lastName || ''}</div>
+                  <div className="text-[11px] text-slate-400 font-mono">{r?.nicNo || 'No NIC'}</div>
                 </div>
-              )}
-              <div>
-                <div className="font-semibold text-slate-800 leading-snug">{r?.firstName || ''} {r?.lastName || ''}</div>
-                <div className="text-[11px] text-slate-400 font-mono">{r?.nicNo || 'No NIC'}</div>
               </div>
-            </div>
-          ),
-          section: r?.sectionCode || '—',
-          plant: r?.plantCode || '—',
-          id: r?.epfNo || ''
-        }))}
+            ),
+            plantName: (
+              <span className="text-slate-700 font-medium">
+                {plantDisplayName}
+              </span>
+            ),
+            sectionName: (
+              <span className="text-slate-700">
+                {sectionDisplayName}
+              </span>
+            ),
+            basicSalary: (
+              <span className="font-semibold text-slate-900 font-mono">
+                {formattedSalary}
+              </span>
+            ),
+            id: r?.epfNo || ''
+          };
+        })}
         onEdit={(id) => handleEdit(id)}
         onDelete={(id) => setConfirm(id)}
       />

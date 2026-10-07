@@ -21,7 +21,7 @@ const getBaseUrl = () => {
   // handle forwarding to the backend. This avoids Mixed Content (HTTPS→HTTP) errors.
   // In local dev: VITE_API_URL is set via .env, or falls back to localhost proxy.
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
-  if (import.meta.env.DEV) return 'http://localhost:8080/api'
+  if (import.meta.env.DEV) return 'http://localhost:5000/api'
   return '/api'  // Production: relative path → Amplify proxy forwards to backend
 }
 

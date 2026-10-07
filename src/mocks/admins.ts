@@ -76,7 +76,7 @@ export const create = async (admin: AdminUser): Promise<AdminUser> => {
     canViewSite:        admin.canViewSite,
     accessLevel:        admin.accessLevel,
     canManageUsers:     admin.canManageUsers,
-    modulePermissions:  admin.modulePermissions ?? DEFAULT_MODULE_PERMISSIONS,
+    modulePermissions:  typeof admin.modulePermissions === 'string' ? admin.modulePermissions : JSON.stringify(admin.modulePermissions ?? DEFAULT_MODULE_PERMISSIONS),
   };
   const res = await api.post('/admins', payload);
   return res.data || admin;
@@ -92,7 +92,9 @@ export const update = async (loginName: string, patch: Partial<AdminUser>): Prom
     canViewSite:        patch.canViewSite,
     accessLevel:        patch.accessLevel,
     canManageUsers:     patch.canManageUsers,
-    modulePermissions:  patch.modulePermissions ?? DEFAULT_MODULE_PERMISSIONS,
+    modulePermissions:  patch.modulePermissions !== undefined
+      ? (typeof patch.modulePermissions === 'string' ? patch.modulePermissions : JSON.stringify(patch.modulePermissions))
+      : undefined,
   };
   if (patch.password && patch.password.trim().length > 0) {
     payload.password = patch.password.trim();

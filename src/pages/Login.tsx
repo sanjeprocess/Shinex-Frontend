@@ -57,33 +57,38 @@ export default function Login() {
       localStorage.setItem('hsb_user_role', response.data.role || 'ADMIN')
 
       // Save base permissions immediately so app can load
+      let rawModules = response.data.modulePermissions ?? response.data.modules ?? null
+      if (typeof rawModules === 'string') {
+        try { rawModules = JSON.parse(rawModules) } catch { /* keep */ }
+      }
       const basePerms = {
         isBlocked: response.data.blocked === true,
         canViewSite: response.data.canViewSite !== false,
         accessLevel: response.data.accessLevel || 'READ_WRITE',
         canManageUsers: response.data.canManageUsers === true,
-        modules: response.data.modulePermissions ?? response.data.modules ?? null
+        modules: rawModules
       }
       localStorage.setItem('hsb_user_permissions', JSON.stringify(basePerms))
 
-      // Also fetch the full admin record to get granular modulePermissions
-      // (in case the login endpoint doesn't return them)
+      // Also fetch the full admin record to get granular modulePermissions if superadmin
       try {
-        const adminRes = await api.get('/admins')
-        const matched = Array.isArray(adminRes.data)
-          ? adminRes.data.find((a: any) =>
-              (a.loginName || '').toLowerCase() === (response.data.loginName || loginName).toLowerCase()
-            )
-          : null
-        if (matched) {
-          const fullPerms = {
-            ...basePerms,
-            modules: matched.modulePermissions ?? matched.modules ?? basePerms.modules ?? null
+        if (response.data.role === 'SUPERADMIN') {
+          const adminRes = await api.get('/admins')
+          const matched = Array.isArray(adminRes.data)
+            ? adminRes.data.find((a: any) =>
+                (a.loginName || '').toLowerCase() === (response.data.loginName || loginName).toLowerCase()
+              )
+            : null
+          if (matched && matched.modulePermissions) {
+            const fullPerms = {
+              ...basePerms,
+              modules: matched.modulePermissions
+            }
+            localStorage.setItem('hsb_user_permissions', JSON.stringify(fullPerms))
           }
-          localStorage.setItem('hsb_user_permissions', JSON.stringify(fullPerms))
         }
       } catch {
-        // Non-fatal: base permissions already saved above
+        // Non-fatal
       }
 
       localStorage.setItem('hsb_active_bc', businessCode)

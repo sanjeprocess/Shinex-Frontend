@@ -89,6 +89,13 @@ export const SUPERADMIN_MODULE_PERMISSIONS: AdminPermissions['modules'] = {
 }
 
 function parseModulePermissions(raw: any): AdminPermissions['modules'] {
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw)
+    } catch {
+      raw = null
+    }
+  }
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_MODULE_PERMISSIONS }
   const keys = Object.keys(DEFAULT_MODULE_PERMISSIONS) as (keyof AdminPermissions['modules'])[]
   const result: any = {}
@@ -138,12 +145,20 @@ export const isSuperAdmin    = () => ['SUPERADMIN', 'SUPER_ADMIN'].includes(getC
 export const canEdit         = () => isSuperAdmin() || canWrite()
 
 /** Can the current user view a specific module? */
-export const canViewModule   = (mod: keyof AdminPermissions['modules']) =>
-  getCurrentUser().permissions.modules[mod]?.view ?? true
+export const canViewModule   = (mod: keyof AdminPermissions['modules']) => {
+  if (isSuperAdmin()) return true
+  const user = getCurrentUser()
+  if (!user.canViewSite || user.isBlocked) return false
+  return user.permissions.modules[mod]?.view ?? true
+}
 
 /** Can the current user edit/write in a specific module? */
-export const canEditModule   = (mod: keyof AdminPermissions['modules']) =>
-  getCurrentUser().permissions.modules[mod]?.edit ?? false
+export const canEditModule   = (mod: keyof AdminPermissions['modules']) => {
+  if (isSuperAdmin()) return true
+  const user = getCurrentUser()
+  if (!user.canViewSite || user.isBlocked || user.accessLevel === 'READ_ONLY') return false
+  return user.permissions.modules[mod]?.edit ?? false
+}
 
 /** Persist permissions to localStorage (called after login) */
 export function setCurrentUserPermissions(role: string, permissions: Partial<AdminPermissions>) {

@@ -94,3 +94,35 @@ body {
 .smooth-scroll::-webkit-scrollbar-track { background: transparent; }
 .smooth-scroll::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.3); border-radius: 9999px; }
 .smooth-scroll::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.5); }
+
+/* ─── A5 Sheet Print Layout Support ────────────────────────────────────────── */
+@media print {
+  @page {
+    size: A5 portrait;
+    margin: 6mm 6mm;
+  }
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 9.5px !important;
+  }
+  .print-hidden, header, nav, aside, button, .no-print {
+    display: none !important;
+  }
+  .print-container {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .print-page-break-avoid {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .print-page-break-before {
+    break-before: page !important;
+    page-break-before: always !important;
+  }
+}

@@ -46,8 +46,16 @@ export async function logAuditAction(params: {
 export async function fetchAuditLogs(): Promise<AuditLogEntry[]> {
   try {
     const res = await api.get('/audit-logs')
-    if (res.data && Array.isArray(res.data) && res.data.length > 0) {
-      return res.data
+    if (res.data && Array.isArray(res.data)) {
+      if (res.data.length > 0) {
+        // Sync latest DB data to localStorage
+        localStorage.setItem('hsb_audit_logs', JSON.stringify(res.data))
+        return res.data
+      } else {
+        // DB is empty — clear localStorage cache too
+        localStorage.removeItem('hsb_audit_logs')
+        return []
+      }
     }
   } catch {}
 

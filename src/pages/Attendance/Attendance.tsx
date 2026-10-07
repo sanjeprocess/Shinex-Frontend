@@ -10,6 +10,7 @@ import Toggle from '../../components/Toggle'
 import SearchableEmployeeSelect from '../../components/shared/SearchableEmployeeSelect'
 import { list as listEmployees } from '../../services/employeeService'
 import { list as listCustomers } from '../../mocks/customers'
+import { list as listSections, Section } from '../../mocks/sections'
 import { list as listBC } from '../../mocks/businessCenters'
 import { list as listTransfers, PlantTransfer } from '../../mocks/plantTransfers'
 import { list as listLeaves } from '../../mocks/leaves'
@@ -143,7 +144,7 @@ export default function AttendancePage() {
     nightAllowance: 0,
     dayIn: new Date().toISOString().split('T')[0],
     timeIn: '08:00',
-    dayOut: `${new Date().toISOString().split('T')[0]}T17:00:00`,
+    dayOut: new Date().toISOString().split('T')[0],
     timeOut: '17:00',
     halfDay: 0,
     totalWorkingHours: 9.0,
@@ -174,6 +175,7 @@ export default function AttendancePage() {
 
   // Sourced lists
   const [employeeList, setEmployeeList] = useState<any[]>([])
+  const [sectionList, setSectionList] = useState<Section[]>([])
   const [customerList, setCustomerList] = useState<any[]>([])
   const [bcList, setBcList] = useState<any[]>([])
   const [transfers, setTransfers] = useState<PlantTransfer[]>([])
@@ -238,23 +240,36 @@ export default function AttendancePage() {
 
     listAttendance().then(setRows).catch(console.error);
     listTransfers(cleanBc).then(setTransfers).catch(console.error);
-    listEmployees(cleanBc).then((employees) => {
-      setEmployeeList(employees);
-      const firstEmployee = employees.find((employee) => employee?.epfNo);
-      if (firstEmployee) {
-        setForm((prev) => ({
-          ...prev,
-          epfNo: prev.epfNo && employees.some(e => e.epfNo === prev.epfNo) ? prev.epfNo : firstEmployee.epfNo,
-          plantCode: prev.plantCode || firstEmployee.plantCode || '',
-          businessCenter: cleanBc || firstEmployee.businessCenter || '001',
-          basicSalary: prev.basicSalary && prev.basicSalary !== 0 ? prev.basicSalary : (firstEmployee.basicSalary || 0),
-          dayAllowance: prev.dayAllowance && prev.dayAllowance !== 0 ? prev.dayAllowance : (firstEmployee.dayAllowance || 0),
-          nightAllowance: prev.nightAllowance && prev.nightAllowance !== 0 ? prev.nightAllowance : (firstEmployee.nightAllowance || 0)
-        }));
-      }
+    listSections(cleanBc).then((sections) => {
+      setSectionList(sections);
+      listEmployees(cleanBc).then((employees) => {
+        setEmployeeList(employees);
+        const firstEmployee = employees.find((employee) => employee?.epfNo);
+        if (firstEmployee) {
+          const autoSalary = resolveEmployeeBasicSalary(firstEmployee, sections);
+          setForm((prev) => ({
+            ...prev,
+            epfNo: prev.epfNo && employees.some(e => e.epfNo === prev.epfNo) ? prev.epfNo : firstEmployee.epfNo,
+            plantCode: prev.plantCode || firstEmployee.plantCode || '',
+            businessCenter: cleanBc || firstEmployee.businessCenter || '001',
+            basicSalary: prev.basicSalary && prev.basicSalary !== 0 ? prev.basicSalary : autoSalary,
+            dayAllowance: prev.dayAllowance && prev.dayAllowance !== 0 ? prev.dayAllowance : (firstEmployee.dayAllowance || 0),
+            nightAllowance: prev.nightAllowance && prev.nightAllowance !== 0 ? prev.nightAllowance : (firstEmployee.nightAllowance || 0)
+          }));
+        }
+      }).catch(console.error);
     }).catch(console.error);
     listCustomers(cleanBc).then(setCustomerList).catch(console.error);
     listBC().then(setBcList).catch(console.error);
+  }
+
+  function resolveEmployeeBasicSalary(emp?: any, listSec: Section[] = sectionList): number {
+    if (!emp) return 0;
+    const secCode = (emp.sectionCode || emp.section || '').trim();
+    const sec = secCode ? listSec.find(s => (s.code || '').trim() === secCode || (s.name || '').trim().toLowerCase() === secCode.toLowerCase()) : null;
+    const secSalary = sec?.basicSalary != null && Number(sec.basicSalary) > 0 ? Number(sec.basicSalary) : 0;
+    const empSalary = emp?.basicSalary != null && Number(emp.basicSalary) > 0 ? Number(emp.basicSalary) : 0;
+    return empSalary > 0 ? empSalary : secSalary;
   }
 
   useEffect(() => {
@@ -340,11 +355,12 @@ export default function AttendancePage() {
 
   function getDefaultEmployeeValues(employee?: any) {
     if (!employee) return {}
+    const autoSalary = resolveEmployeeBasicSalary(employee)
     return {
       epfNo: employee.epfNo || '',
       plantCode: employee.plantCode || '',
       businessCenter: employee.businessCenter || localStorage.getItem('hsb_active_bc') || '001',
-      basicSalary: employee.basicSalary || 0,
+      basicSalary: autoSalary,
       dayAllowance: employee.dayAllowance || 0,
       nightAllowance: employee.nightAllowance || 0
     }
@@ -353,9 +369,12 @@ export default function AttendancePage() {
   // Add flow
   function handleAdd() {
     const firstEmployee = employeeList.find((employee) => employee?.epfNo)
+    const todayStr = new Date().toISOString().split('T')[0]
     const empty = {
       ...defaultForm,
       ...getDefaultEmployeeValues(firstEmployee),
+      dayIn: todayStr,
+      dayOut: todayStr,
       businessCenter: localStorage.getItem('hsb_active_bc') || defaultForm.businessCenter
     }
     setForm(empty)
@@ -368,7 +387,21 @@ export default function AttendancePage() {
   function handleEdit(id: string) {
     const row = rows.find(r => r.id === id)
     if (!row) return
-    setForm({ ...row })
+
+    const emp = employeeList.find(e => (e.epfNo || '').trim() === (row.epfNo || '').trim())
+    const autoSalary = resolveEmployeeBasicSalary(emp)
+    // If row basicSalary is 0 or if section/employee has a defined basic salary, ensure it's up to date
+    const resolvedSalary = (row.basicSalary != null && Number(row.basicSalary) > 0) ? Number(row.basicSalary) : autoSalary
+
+    const rawDayIn = row.dayIn ? String(row.dayIn).split('T')[0] : ''
+    const rawDayOut = row.dayOut ? String(row.dayOut).split('T')[0] : (rawDayIn || '')
+
+    setForm({
+      ...row,
+      basicSalary: resolvedSalary,
+      dayIn: rawDayIn,
+      dayOut: rawDayOut || rawDayIn
+    })
     setIsEditing(true)
     setEditingId(id)
     setOpen(true)
@@ -526,12 +559,13 @@ export default function AttendancePage() {
     }
 
     if (emp) {
+      const autoSalary = resolveEmployeeBasicSalary(emp);
       setForm(prev => ({
         ...prev,
         epfNo: epf,
         plantCode: effectivePlant,
         businessCenter: emp.businessCenter || prev.businessCenter || localStorage.getItem('hsb_active_bc') || '001',
-        basicSalary: emp.basicSalary || 0,
+        basicSalary: autoSalary,
         dayAllowance: emp.dayAllowance || 0,
         nightAllowance: emp.nightAllowance || 0
       }))
@@ -782,10 +816,28 @@ export default function AttendancePage() {
 
           {/* Section 3: Compensation Snapshot */}
           <section>
-            <h4 className="font-semibold mb-2">Compensation Snapshot (Editable)</h4>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-semibold text-xs text-slate-700">Compensation Snapshot (Editable)</h4>
+              {(() => {
+                const emp = employeeList.find(e => (e.epfNo || '').trim() === (form.epfNo || '').trim());
+                const autoSal = resolveEmployeeBasicSalary(emp);
+                if (autoSal > 0 && form.basicSalary !== autoSal) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setForm(prev => ({ ...prev, basicSalary: autoSal }))}
+                      className="text-[11px] text-[#2F6F5E] hover:underline font-medium bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200"
+                    >
+                      Sync from Section Basic Salary (Rs. {autoSal.toLocaleString()})
+                    </button>
+                  );
+                }
+                return null;
+              })()}
+            </div>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <label className="block text-xs text-slate-600">Basic Salary</label>
+                <label className="block text-xs text-slate-600">Basic Salary (Rs.)</label>
                 <NumericInput value={form.basicSalary || 0} onChange={e => handleNumericInput('basicSalary', 'Basic salary', e.target.value)} className="mt-1 w-full form-input text-right font-mono mono-numeric" />
               </div>
               <div>
@@ -804,10 +856,10 @@ export default function AttendancePage() {
             <h4 className="font-semibold mb-1 text-slate-800">Day Entry</h4>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs text-slate-600">Day In (Date)</label>
+                <label className="block text-xs text-slate-600">Day In (Date) *</label>
                 <input
                   type="date"
-                  value={form.dayIn}
+                  value={form.dayIn ? form.dayIn.split('T')[0] : ''}
                   onChange={e => {
                     const newDate = e.target.value;
                     let yr = form.atttYear;
@@ -820,9 +872,9 @@ export default function AttendancePage() {
                     setForm(prev => ({
                       ...prev,
                       dayIn: newDate,
+                      dayOut: newDate, // automatically assign Day Out (Date) to match Day In (Date)
                       atttYear: yr,
-                      attMonth: mo,
-                      dayOut: !prev.dayOut || prev.dayOut === prev.dayIn ? newDate : prev.dayOut
+                      attMonth: mo
                     }));
                     if (errors.dayIn) setErrors(prev => ({ ...prev, dayIn: undefined }));
                   }}
@@ -835,8 +887,13 @@ export default function AttendancePage() {
                 <input type="time" value={form.timeIn} onChange={e => setForm({ ...form, timeIn: e.target.value })} className="mt-1 w-full form-input" />
               </div>
               <div>
-                <label className="block text-xs text-slate-600">Day Out (Date)</label>
-                <input type="date" value={form.dayOut} onChange={e => setForm({ ...form, dayOut: e.target.value })} className="mt-1 w-full form-input" />
+                <label className="block text-xs text-slate-600">Day Out (Date) (Editable)</label>
+                <input
+                  type="date"
+                  value={form.dayOut ? form.dayOut.split('T')[0] : (form.dayIn ? form.dayIn.split('T')[0] : '')}
+                  onChange={e => setForm(prev => ({ ...prev, dayOut: e.target.value }))}
+                  className="mt-1 w-full form-input"
+                />
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Time Out</label>
