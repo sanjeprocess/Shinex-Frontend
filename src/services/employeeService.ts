@@ -82,8 +82,12 @@ export const create = async (e: Employee): Promise<Employee> => {
 };
 
 export const update = async (epf: string, e: Partial<Employee>): Promise<Employee> => {
-  const fullEmployee = { ...e, epfNo: epf, firstName: e.firstName || '' } as Employee;
-  const response = await api.put<Employee>(`/employees/${encodeURIComponent(epf)}`, normalizeEmployee(fullEmployee));
+  const payload: any = { ...e, epfNo: epf.trim() };
+  if (payload.firstName != null) payload.firstName = payload.firstName.trim();
+  if (payload.lastName != null) payload.lastName = payload.lastName.trim();
+  if (payload.plantCode != null) payload.plantCode = payload.plantCode.split(' / ')[0].trim();
+  if (payload.businessCenter != null) payload.businessCenter = payload.businessCenter.split(' / ')[0].trim();
+  const response = await api.put<Employee>(`/employees/${encodeURIComponent(epf)}`, payload);
   const result = response.data;
   logAuditAction({
     action: 'UPDATE',

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { toast } from 'sonner'
 import { list as listEmployees } from '../../mocks/employees'
+import { list as listSections } from '../../mocks/sections'
 import { list as listAttendance } from '../../mocks/attendance'
 import { list as listBC } from '../../mocks/businessCenters'
 import { list as listAdditions } from '../../mocks/transactionAdditions'
@@ -84,20 +85,31 @@ export default function ReportsPage() {
       }
 
       if (reportType === 'employee') {
-        const list = await listEmployees(cleanBc)
+        const [list, sectionList] = await Promise.all([
+          listEmployees(cleanBc),
+          listSections(cleanBc).catch(() => [])
+        ])
         setData(
-          list.map((e: any) => ({
-            epfNo: e.epfNo || '',
-            employeeName: `${e.firstName || ''} ${e.lastName || ''}`.trim() || e.name || e.epfNo || '',
-            nicNo: e.nicNo || '—',
-            designation: e.designation || 'Staff',
-            sectionCode: e.sectionCode || '—',
-            plantCode: e.plantCode || '—',
-            businessCenter: e.businessCenter || '—',
-            basicSalary: Number(e.basicSalary || 0),
-            hiredDate: e.hiredDate || '—',
-            status: e.statusActive !== false ? 'Active' : 'Inactive'
-          }))
+          list.map((e: any) => {
+            const secCode = (e.sectionCode || '').trim();
+            const secObj = secCode ? sectionList.find((s: any) => (s.code || '').trim() === secCode || (s.name || '').trim().toLowerCase() === secCode.toLowerCase()) : null;
+            const secSal = secObj?.basicSalary != null && Number(secObj.basicSalary) > 0 ? Number(secObj.basicSalary) : 0;
+            const empSal = e.basicSalary != null && Number(e.basicSalary) > 0 ? Number(e.basicSalary) : 0;
+            const effectiveSalary = secSal > 0 ? secSal : empSal;
+
+            return {
+              epfNo: e.epfNo || '',
+              employeeName: `${e.firstName || ''} ${e.lastName || ''}`.trim() || e.name || e.epfNo || '',
+              nicNo: e.nicNo || '—',
+              designation: e.designation || 'Staff',
+              sectionCode: e.sectionCode || '—',
+              plantCode: e.plantCode || '—',
+              businessCenter: e.businessCenter || '—',
+              basicSalary: effectiveSalary,
+              hiredDate: e.hiredDate || '—',
+              status: e.statusActive !== false ? 'Active' : 'Inactive'
+            };
+          })
         )
       } else if (reportType === 'attendance') {
         const list = await listAttendance()

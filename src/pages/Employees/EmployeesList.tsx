@@ -22,6 +22,8 @@ function calculateAge(dobString: string): number | null {
   const birthDate = new Date(dobString)
   if (isNaN(birthDate.getTime())) return null
   const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  if (birthDate > today) return null
   let age = today.getFullYear() - birthDate.getFullYear()
   const m = today.getMonth() - birthDate.getMonth()
   if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
@@ -179,7 +181,21 @@ export default function EmployeesList() {
       const nameError = validateNameField(form.firstName || '', 'First name')
       if (nameError) next.firstName = nameError
     }
-    if (!String(form.dateOfBirth || '').trim()) next.dateOfBirth = 'Date of Birth is required'
+    if (!String(form.dateOfBirth || '').trim()) {
+      next.dateOfBirth = 'Date of Birth is required'
+    } else {
+      const dob = new Date(form.dateOfBirth)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      if (dob > today) {
+        next.dateOfBirth = 'Date of birth cannot be in the future. Please select a past date.'
+      } else {
+        const age = calculateAge(form.dateOfBirth)
+        if (age === null || age < 16) {
+          next.dateOfBirth = 'Employee must be at least 16 years of age.'
+        }
+      }
+    }
     if (!String(form.gender || '').trim()) next.gender = 'Gender is required'
     if (!String(form.plantCode || '').trim()) next.plantCode = 'Please select an Employee Plant'
     if (!String(form.businessCenter || '').trim()) next.businessCenter = 'Please select a Business Center'
@@ -410,7 +426,7 @@ export default function EmployeesList() {
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Date of Birth <span className="text-red-500">*</span></label>
-                <input type="date" value={form.dateOfBirth || ''} onChange={e => { setForm({ ...form, dateOfBirth: e.target.value }); setErrors(prev => ({ ...prev, dateOfBirth: undefined })) }} className={`mt-1 w-full form-input ${errors.dateOfBirth ? 'border-red-500 bg-red-50' : ''}`} />
+                <input type="date" max={new Date().toISOString().split('T')[0]} value={form.dateOfBirth || ''} onChange={e => { setForm({ ...form, dateOfBirth: e.target.value }); setErrors(prev => ({ ...prev, dateOfBirth: undefined })) }} className={`mt-1 w-full form-input ${errors.dateOfBirth ? 'border-red-500 bg-red-50' : ''}`} />
                 {errors.dateOfBirth && <p className="mt-1 text-xs text-red-500">{errors.dateOfBirth}</p>}
               </div>
               <div>

@@ -70,9 +70,19 @@ api.interceptors.response.use(
         return Promise.reject(error)
       }
       if (status === 409) {
-        toast.error('Cannot delete this item as it is linked to other records in the system.', {
-          id: 'conflict-error'
-        })
+        const isDelete = (error.config?.method || '').toLowerCase() === 'delete';
+        const data = error.response.data;
+        const backendMessage =
+          (typeof data === 'string' && data.trim()) ||
+          data?.message ||
+          data?.error ||
+          null;
+        toast.error(
+          backendMessage
+            ? String(backendMessage)
+            : (isDelete ? 'Cannot delete this item as it is linked to other records in the system.' : 'Record conflict occurred — please check your data.'),
+          { id: 'conflict-error' }
+        )
       } else if (status >= 500) {
         toast.error('Something went wrong on the server. Please try again.', {
           id: 'server-error'

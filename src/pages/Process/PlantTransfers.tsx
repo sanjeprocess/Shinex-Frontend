@@ -145,7 +145,12 @@ export default function PlantTransfersPage() {
       const targetPlantCode = form.toPlant ? form.toPlant.split(' ')[0].trim() : '';
       if (form.epfNo && targetPlantCode) {
         try {
-          await updateEmployee(form.epfNo, { plantCode: targetPlantCode });
+          const emp = employees.find(e => e.epfNo === form.epfNo);
+          const cleanBc = (emp?.businessCenter || form.businessCenter || localStorage.getItem('hsb_active_bc') || '001').split(' / ')[0].trim();
+          await updateEmployee(form.epfNo, { 
+            plantCode: targetPlantCode,
+            businessCenter: cleanBc
+          });
         } catch (e) {
           console.warn('Could not update employee master plant', e);
         }
@@ -181,8 +186,12 @@ export default function PlantTransfersPage() {
     setAssigning(true);
     try {
       const targetPlantCode = assignPlant.split(' ')[0].trim();
+      const cleanBc = (emp.businessCenter || localStorage.getItem('hsb_active_bc') || '001').split(' / ')[0].trim();
       // 1. Update employee's current plant in master
-      await updateEmployee(assignEpf, { plantCode: targetPlantCode });
+      await updateEmployee(assignEpf, { 
+        plantCode: targetPlantCode,
+        businessCenter: cleanBc
+      });
 
       // 2. Log transfer record
       const selectedPlantObj = plants.find(p => p.code === targetPlantCode);
@@ -200,7 +209,7 @@ export default function PlantTransfersPage() {
         profitCenter: selectedPlantObj?.profitCenter || '',
         workDetails: assignRemarks || 'Manual Plant Assignment',
         status: 'Active',
-        businessCenter: emp.businessCenter || localStorage.getItem('hsb_active_bc') || '001',
+        businessCenter: cleanBc,
         daysWorked: 1
       });
 

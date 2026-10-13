@@ -71,16 +71,16 @@ export default function MonthlyBreakdown() {
     const normalAmount = summary.normalAmount !== undefined ? summary.normalAmount : Math.round(normalDays * normalRate * 100) / 100;
 
     const nightDays = summary.nightDays !== undefined && summary.nightDays > 0 ? summary.nightDays : '';
-    const nightRate = summary.nightRate !== undefined ? summary.nightRate : (summary.nightAllowance || 540);
-    const nightAmount = summary.nightAmount !== undefined && summary.nightAmount > 0 ? summary.nightAmount : (summary.nightAllowance ? summary.nightAllowance : '-');
+    const nightRate = summary.nightRate !== undefined ? summary.nightRate : (summary.nightAllowance || 0);
+    const nightAmount = (summary.nightAmount !== undefined && summary.nightAmount > 0) ? summary.nightAmount : (nightDays ? Math.round(Number(nightDays) * Number(nightRate) * 100) / 100 : '-');
 
-    const poyaDays = summary.poyaDays !== undefined ? summary.poyaDays : 0;
+    const poyaDays = summary.poyaDays !== undefined && summary.poyaDays > 0 ? summary.poyaDays : '';
     const poyaRate = summary.poyaRate !== undefined ? summary.poyaRate : Math.round(normalRate * 1.5 * 100) / 100;
-    const poyaAmount = summary.poyaAmount !== undefined && summary.poyaAmount > 0 ? summary.poyaAmount : (summary.poyaDayExtra ? summary.poyaDayExtra : '-');
+    const poyaAmount = (summary.poyaAmount !== undefined && summary.poyaAmount > 0) ? summary.poyaAmount : (poyaDays ? (summary.poyaDayExtra ? summary.poyaDayExtra : Math.round(Number(poyaDays) * Number(poyaRate) * 100) / 100) : '-');
 
     const otHours = summary.overtimeHours !== undefined ? summary.overtimeHours : (summary.attendance?.otHours || 0);
     const otRate = summary.overtimeRate !== undefined ? summary.overtimeRate : (summary.attendance?.otRate || Math.round((normalRate / 8 * 1.5) * 100) / 100);
-    const otAmount = summary.overtimeAmount !== undefined && summary.overtimeAmount > 0 ? summary.overtimeAmount : (otHours > 0 ? Math.round(otHours * otRate * 100) / 100 : '-');
+    const otAmount = otHours > 0 ? (summary.overtimeAmount !== undefined && summary.overtimeAmount > 0 ? summary.overtimeAmount : Math.round(otHours * otRate * 100) / 100) : '-';
 
     const incentive = summary.dayAllowance ? summary.dayAllowance : '-';
     const attAllowance = summary.attendance?.dayAllowance ? summary.attendance.dayAllowance : '';
@@ -319,35 +319,41 @@ export default function MonthlyBreakdown() {
                   </tr>
                   <tr>
                     <td className="px-5 py-2.5 font-medium text-slate-700">NIGHT Allowance</td>
-                    <td className="px-3 py-2.5 text-center font-mono text-slate-600">{summary.nightDays || summary.attendance?.nightDays || '—'}</td>
+                    <td className="px-3 py-2.5 text-center font-mono text-slate-600">{(summary.nightDays || summary.attendance?.nightDays) ? (summary.nightDays || summary.attendance?.nightDays) : '—'}</td>
                     <td className="px-3 py-2.5 text-center text-slate-400">—</td>
                     <td className="px-3 py-2.5 text-right font-mono text-slate-600">
-                      {summary.nightRate ? Number(summary.nightRate).toFixed(2) : '—'}
+                      {(summary.nightDays || summary.attendance?.nightDays) ? Number(summary.nightRate || 0).toFixed(2) : (summary.nightRate ? Number(summary.nightRate).toFixed(2) : '—')}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-semibold text-slate-800">{money(summary.nightAllowance || summary.attendance?.nightAllowance)}</td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-slate-800">{money(summary.nightAmount ?? summary.attendance?.nightAmount ?? 0)}</td>
                   </tr>
                   <tr>
                     <td className="px-5 py-2.5 font-medium text-slate-700">POYA / Sunday Extra</td>
-                    <td className="px-3 py-2.5 text-center font-mono text-slate-600">{summary.poyaDays || '—'}</td>
+                    <td className="px-3 py-2.5 text-center font-mono text-slate-600">{(summary.poyaDays || summary.attendance?.poyaDays) ? (summary.poyaDays || summary.attendance?.poyaDays) : '—'}</td>
                     <td className="px-3 py-2.5 text-center text-slate-400">—</td>
                     <td className="px-3 py-2.5 text-right font-mono text-slate-600">
-                      {summary.poyaRate ? Number(summary.poyaRate).toFixed(2) : '—'}
+                      {(summary.poyaDays || summary.attendance?.poyaDays) ? Number(summary.poyaRate || 0).toFixed(2) : '—'}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-semibold text-slate-800">{money(summary.poyaDayExtra || summary.attendance?.poyaDayExtra)}</td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-slate-800">{money(summary.poyaAmount ?? summary.attendance?.poyaAmount ?? 0)}</td>
                   </tr>
                   <tr>
                     <td className="px-5 py-2.5 font-medium text-slate-700">
                       OVERTIME (1.5× rate)
-                      <span className="ml-2 text-[11px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                        {summary.attendance?.otHours || 0} hrs
-                      </span>
+                      {((summary.overtimeHours ?? summary.attendance?.otHours ?? 0) > 0) ? (
+                        <span className="ml-2 text-[11px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                          {summary.overtimeHours ?? summary.attendance?.otHours} hrs
+                        </span>
+                      ) : null}
                     </td>
                     <td className="px-3 py-2.5 text-center text-slate-400">—</td>
-                    <td className="px-3 py-2.5 text-center font-mono text-amber-700 font-bold">{summary.attendance?.otHours || '—'}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-slate-600">
-                      {summary.overtimeRate ? Number(summary.overtimeRate).toFixed(2) : '—'}
+                    <td className="px-3 py-2.5 text-center font-mono text-amber-700 font-bold">
+                      {((summary.overtimeHours ?? summary.attendance?.otHours ?? 0) > 0) ? (summary.overtimeHours ?? summary.attendance?.otHours) : '—'}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-semibold text-slate-800">{money(summary.overtimeAmount || summary.attendance?.otAmount)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-slate-600">
+                      {summary.overtimeRate ? Number(summary.overtimeRate).toFixed(2) : (summary.basicSalary ? Number(Number(summary.basicSalary) / 8 * 1.5).toFixed(2) : '—')}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-slate-800">
+                      {money(((summary.overtimeHours ?? summary.attendance?.otHours ?? 0) > 0) ? (summary.overtimeAmount ?? summary.attendance?.otAmount ?? 0) : 0)}
+                    </td>
                   </tr>
                   <tr>
                     <td className="px-5 py-2.5 font-medium text-slate-700">Day Allowance / Incentive</td>

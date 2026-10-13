@@ -16,10 +16,24 @@ export async function logAuditAction(params: {
   entityId?: string
   details: string
 }) {
-  const userName =
-    localStorage.getItem('hsb_test_user') ||
-    localStorage.getItem('user_name') ||
-    'System Admin'
+  let userName = 'System Admin';
+  try {
+    const profileRaw = localStorage.getItem('hsb_user_profile');
+    if (profileRaw) {
+      const p = JSON.parse(profileRaw);
+      if (p.fullName && p.fullName.trim()) {
+        userName = p.fullName.trim();
+      }
+    }
+  } catch {}
+
+  if (userName === 'System Admin') {
+    userName =
+      localStorage.getItem('user_full_name') ||
+      localStorage.getItem('user_name') ||
+      localStorage.getItem('hsb_test_user') ||
+      'System Admin';
+  }
 
   const logPayload = {
     performedBy: userName,

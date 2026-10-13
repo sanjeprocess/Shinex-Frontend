@@ -12,6 +12,7 @@ import { list as listAdditions } from '../../mocks/transactionAdditions'
 import { list as listDeductions } from '../../mocks/transactionDeductions'
 import { list as listLeaves } from '../../mocks/leaves'
 import { list as listLoans } from '../../mocks/loans'
+import { list as listSections } from '../../mocks/sections'
 import { list as listTransfers, PlantTransfer } from '../../mocks/plantTransfers'
 import { list as listPlants, Customer } from '../../mocks/customers'
 import { getMonthlySummary, type MonthlySummary } from '../../mocks/monthlySummary'
@@ -94,11 +95,9 @@ export default function EmployeeHistoryPage() {
   async function loadEmployeeHistory(epf: string) {
     setLoading(true)
     try {
-      const allEmps = await listEmployees(cleanBc)
-      const emp = allEmps.find(e => e.epfNo === epf)
-      setEmployee(emp || null)
-
-      const [att, add, ded, lve, lon, allTr] = await Promise.all([
+      const [allEmps, sectionList, att, add, ded, lve, lon, allTr] = await Promise.all([
+        listEmployees(cleanBc),
+        listSections(cleanBc).catch(() => []),
         listAttendance(),
         listAdditions(),
         listDeductions(),
@@ -106,6 +105,18 @@ export default function EmployeeHistoryPage() {
         listLoans(),
         listTransfers(cleanBc)
       ])
+
+      const rawEmp = allEmps.find(e => e.epfNo === epf)
+      if (rawEmp) {
+        const secCode = (rawEmp.sectionCode || '').trim()
+        const secObj = secCode ? sectionList.find((s: any) => (s.code || '').trim() === secCode || (s.name || '').trim().toLowerCase() === secCode.toLowerCase()) : null
+        const secSal = secObj?.basicSalary != null && Number(secObj.basicSalary) > 0 ? Number(secObj.basicSalary) : 0
+        const empSal = rawEmp.basicSalary != null && Number(rawEmp.basicSalary) > 0 ? Number(rawEmp.basicSalary) : 0
+        const effectiveSalary = secSal > 0 ? secSal : empSal
+        setEmployee({ ...rawEmp, basicSalary: effectiveSalary })
+      } else {
+        setEmployee(null)
+      }
 
       setAttendanceList(att.filter(a => a.epfNo === epf))
       setAdditionsList(add.filter(a => a.epfNo === epf))
@@ -240,16 +251,16 @@ export default function EmployeeHistoryPage() {
       const normalAmount = monthlyData.normalAmount !== undefined ? monthlyData.normalAmount : Math.round(normalDays * normalRate * 100) / 100
 
       const nightDays = monthlyData.nightDays !== undefined ? monthlyData.nightDays : 0
-      const nightRate = monthlyData.nightRate !== undefined ? monthlyData.nightRate : (monthlyData.nightAllowance || Number(employee.nightAllowance || 540))
-      const nightAmount = monthlyData.nightAmount !== undefined ? monthlyData.nightAmount : 0
+      const nightRate = monthlyData.nightRate !== undefined ? monthlyData.nightRate : (monthlyData.nightAllowance || Number(employee.nightAllowance || 0))
+      const nightAmount = monthlyData.nightAmount !== undefined ? monthlyData.nightAmount : (nightDays > 0 ? Math.round(nightDays * nightRate * 100) / 100 : 0)
 
       const poyaDays = monthlyData.poyaDays !== undefined ? monthlyData.poyaDays : 0
       const poyaRate = monthlyData.poyaRate !== undefined ? monthlyData.poyaRate : Math.round(normalRate * 1.5 * 100) / 100
-      const poyaAmount = monthlyData.poyaAmount !== undefined ? monthlyData.poyaAmount : (monthlyData.poyaDayExtra || 0)
+      const poyaAmount = monthlyData.poyaAmount !== undefined ? monthlyData.poyaAmount : (poyaDays > 0 ? (monthlyData.poyaDayExtra || 0) : 0)
 
       const otHours = monthlyData.overtimeHours !== undefined ? monthlyData.overtimeHours : (monthlyData.attendance?.otHours || 0)
       const otRate = monthlyData.overtimeRate !== undefined ? monthlyData.overtimeRate : (monthlyData.attendance?.otRate || Math.round((normalRate / 8 * 1.5) * 100) / 100)
-      const otAmount = monthlyData.overtimeAmount !== undefined ? monthlyData.overtimeAmount : 0
+      const otAmount = otHours > 0 ? (monthlyData.overtimeAmount !== undefined ? monthlyData.overtimeAmount : Math.round(otHours * otRate * 100) / 100) : 0
 
       const incentive = monthlyData.dayAllowance !== undefined ? monthlyData.dayAllowance : Number(employee.dayAllowance || 0)
       const statutoryHolidayAmount = monthlyData.statutoryHolidayAmount !== undefined ? monthlyData.statutoryHolidayAmount : 0
@@ -346,11 +357,11 @@ export default function EmployeeHistoryPage() {
 
     const normalAmount = Math.round(normalDays * normalRate * 100) / 100
 
-    const nightRate = Number(employee.nightAllowance || 540)
-    const nightAmount = nightExtraSum > 0 ? nightExtraSum : (nightDays * nightRate)
+    const nightRate = Number(employee.nightAllowance || 0)
+    const nightAmount = nightDays > 0 ? (nightExtraSum > 0 ? nightExtraSum : Math.round(nightDays * nightRate * 100) / 100) : 0
 
     const poyaRate = Math.round(normalRate * 1.5 * 100) / 100
-    const poyaAmount = poyaExtraSum > 0 ? poyaExtraSum : Math.round(poyaDays * poyaRate * 100) / 100
+    const poyaAmount = poyaDays > 0 ? (poyaExtraSum > 0 ? poyaExtraSum : Math.round(poyaDays * poyaRate * 100) / 100) : 0
 
     const otRate = Math.round((normalRate / 8 * 1.5) * 100) / 100
     const otAmount = otHours > 0 ? Math.round(otHours * otRate * 100) / 100 : 0
@@ -753,22 +764,22 @@ export default function EmployeeHistoryPage() {
                       </tr>
                       <tr>
                         <td className="px-2.5 py-1 font-sans font-medium text-slate-800">NIGHT / இரவு / රාත්‍රී</td>
+                        <td className="px-2 py-1 text-center text-slate-700">{payrollCalculation.nightDays > 0 ? payrollCalculation.nightDays : '—'}</td>
                         <td className="px-2 py-1 text-center text-slate-400">—</td>
-                        <td className="px-2 py-1 text-center text-slate-700">{payrollCalculation.nightDays || '—'}</td>
-                        <td className="px-2.5 py-1 text-right text-slate-700">{payrollCalculation.nightRate.toFixed(2)}</td>
+                        <td className="px-2.5 py-1 text-right text-slate-700">{payrollCalculation.nightDays > 0 ? payrollCalculation.nightRate.toFixed(2) : (payrollCalculation.nightRate > 0 ? payrollCalculation.nightRate.toFixed(2) : '—')}</td>
                         <td className="px-2.5 py-1 text-right font-semibold text-slate-900">{payrollCalculation.nightAmount > 0 ? payrollCalculation.nightAmount.toFixed(2) : '—'}</td>
                       </tr>
                       <tr>
                         <td className="px-2.5 py-1 font-sans font-medium text-slate-800">POYA / SUNDAY / ஞாயிறு / போயா / ඉරිදා / පෝය</td>
-                        <td className="px-2 py-1 text-center text-slate-700">{payrollCalculation.poyaDays || '—'}</td>
+                        <td className="px-2 py-1 text-center text-slate-700">{payrollCalculation.poyaDays > 0 ? payrollCalculation.poyaDays : '—'}</td>
                         <td className="px-2 py-1 text-center text-slate-400">—</td>
-                        <td className="px-2.5 py-1 text-right text-slate-700">{payrollCalculation.poyaRate.toFixed(2)}</td>
+                        <td className="px-2.5 py-1 text-right text-slate-700">{payrollCalculation.poyaDays > 0 ? payrollCalculation.poyaRate.toFixed(2) : '—'}</td>
                         <td className="px-2.5 py-1 text-right font-semibold text-slate-900">{payrollCalculation.poyaAmount > 0 ? payrollCalculation.poyaAmount.toFixed(2) : '—'}</td>
                       </tr>
                       <tr>
                         <td className="px-2.5 py-1 font-sans font-medium text-slate-800">OVERTIME / மேலதிக நேரம் / අතිකාල (1.5× rate)</td>
                         <td className="px-2 py-1 text-center text-slate-400">—</td>
-                        <td className="px-2 py-1 text-center text-amber-700 font-bold">{payrollCalculation.otHours || '—'}</td>
+                        <td className="px-2 py-1 text-center text-amber-700 font-bold">{payrollCalculation.otHours > 0 ? payrollCalculation.otHours : '—'}</td>
                         <td className="px-2.5 py-1 text-right text-slate-700">{payrollCalculation.otRate.toFixed(2)}</td>
                         <td className="px-2.5 py-1 text-right font-semibold text-amber-900">{payrollCalculation.otAmount > 0 ? payrollCalculation.otAmount.toFixed(2) : '—'}</td>
                       </tr>
@@ -941,6 +952,7 @@ export default function EmployeeHistoryPage() {
                   <thead className="bg-slate-50 text-slate-600 border-b font-semibold sticky top-0">
                     <tr>
                       <th className="px-3 py-1.5">Date</th>
+                      <th className="px-3 py-1.5">Shift</th>
                       <th className="px-3 py-1.5">Time In</th>
                       <th className="px-3 py-1.5">Time Out</th>
                       <th className="px-3 py-1.5">Plant</th>
@@ -953,6 +965,15 @@ export default function EmployeeHistoryPage() {
                     {filteredAttendanceList.slice(0, 30).map((a, i) => (
                       <tr key={i} className="hover:bg-slate-50">
                         <td className="px-3 py-1 mono-numeric font-medium">{a.dayIn}</td>
+                        <td className="px-3 py-1">
+                          {(a.nightShift === 'Y' || a.fullNight === 'Y') ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">Night</span>
+                          ) : a.secondShift === 'Y' ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">2nd</span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">Day</span>
+                          )}
+                        </td>
                         <td className="px-3 py-1 mono-numeric">{a.timeIn}</td>
                         <td className="px-3 py-1 mono-numeric">{a.timeOut || '—'}</td>
                         <td className="px-3 py-1 font-medium text-teal-800">{a.plantCode || employee.plantCode || '—'}</td>

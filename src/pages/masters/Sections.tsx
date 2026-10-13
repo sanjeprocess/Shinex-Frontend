@@ -7,6 +7,7 @@ import NumericInput from '../../components/NumericInput'
 import { list, create, update, remove, getNextSectionCode, Section } from '../../mocks/sections'
 import { list as listEmployees } from '../../mocks/employees'
 import { list as listBusinessCenters, BusinessCenter } from '../../mocks/businessCenters'
+import { logAuditAction } from '../../utils/auditLogger'
 
 export default function SectionsPage() {
   const [rows, setRows] = useState<Section[]>([])
@@ -106,6 +107,12 @@ export default function SectionsPage() {
     const salaryVal = basicSalary === '' ? 0 : Number(basicSalary)
     create({ code: code.trim(), name: name.trim(), businessCenter: targetBc, basicSalary: salaryVal })
       .then(() => {
+        logAuditAction({
+          action: 'CREATE',
+          module: 'SECTION',
+          entityId: code.trim(),
+          details: `Created Section ${code.trim()} (${name.trim()}) with Basic Salary LKR ${salaryVal}`
+        })
         resetForm()
         refresh()
         toast.success('Section added successfully')
@@ -134,8 +141,15 @@ export default function SectionsPage() {
     }
     const targetBc = businessCenter || getActiveBc()
     const salaryVal = basicSalary === '' ? 0 : Number(basicSalary)
-    update(editing, { code: code.trim(), name: name.trim(), businessCenter: targetBc, basicSalary: salaryVal })
+    const editCode = editing;
+    update(editCode, { code: code.trim(), name: name.trim(), businessCenter: targetBc, basicSalary: salaryVal })
       .then(() => {
+        logAuditAction({
+          action: 'UPDATE',
+          module: 'SECTION',
+          entityId: editCode,
+          details: `Updated Section ${editCode} (${name.trim()}) — Basic Salary set to LKR ${salaryVal}`
+        })
         resetForm()
         refresh()
         toast.success('Section updated successfully')
@@ -157,14 +171,21 @@ export default function SectionsPage() {
 
   function onDeleteConfirm() {
     if (!confirm) return
-    const linkedEmployees = employees.filter(e => (e.sectionCode || '').trim() === confirm.trim() || (e.section || '').trim() === confirm.trim())
+    const targetCode = confirm;
+    const linkedEmployees = employees.filter(e => (e.sectionCode || '').trim() === targetCode.trim() || (e.section || '').trim() === targetCode.trim())
     if (linkedEmployees.length > 0) {
-      toast.error(`Cannot delete section '${confirm}': ${linkedEmployees.length} active employee(s) are linked to this section.`)
+      toast.error(`Cannot delete section '${targetCode}': ${linkedEmployees.length} active employee(s) are linked to this section.`)
       setConfirm(null)
       return
     }
-    remove(confirm)
+    remove(targetCode)
       .then(() => {
+        logAuditAction({
+          action: 'DELETE',
+          module: 'SECTION',
+          entityId: targetCode,
+          details: `Deleted Section ${targetCode}`
+        })
         setConfirm(null)
         refresh()
         toast.success('Section deleted')
