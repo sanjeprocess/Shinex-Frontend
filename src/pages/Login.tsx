@@ -111,7 +111,10 @@ export default function Login() {
       toast.success(`Welcome back, ${response.data.loginName || loginName}!`)
       navigate('/')
     } catch (error: any) {
-      const message = 'Invalid username or password. Please try again.'
+      const message =
+        error.response?.data?.message ||
+        (typeof error.response?.data === 'string' ? error.response.data : '') ||
+        'Invalid username or password. Please try again.'
       setErrorMessage(message)
       setPassword('')
       toast.error(message)

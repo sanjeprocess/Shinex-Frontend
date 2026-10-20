@@ -45,6 +45,21 @@ export default function AppShell() {
     })
   }, [isSuperAdmin])
 
+  // Strictly enforce assigned business center on every route change for non-superadmins
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      const assignedBc = localStorage.getItem('hsb_assigned_bc')
+      if (assignedBc && assignedBc !== 'ALL') {
+        const currentActive = localStorage.getItem('hsb_active_bc')
+        if (currentActive !== assignedBc) {
+          localStorage.setItem('hsb_active_bc', assignedBc)
+          setBc(assignedBc)
+          window.dispatchEvent(new CustomEvent('hsb_bc_change', { detail: assignedBc }))
+        }
+      }
+    }
+  }, [location.pathname, isSuperAdmin])
+
   function switchBc(newBc: string) {
     if (!isSuperAdmin) return
     setBc(newBc)
@@ -86,52 +101,54 @@ export default function AppShell() {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="relative">
-              <button
-                type="button"
-                disabled={!isSuperAdmin}
-                onClick={()=> isSuperAdmin && setBcOpen(!bcOpen)}
-                className={`inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border transition-colors ${
-                  isSuperAdmin ? 'hover:border-slate-400 cursor-pointer' : 'cursor-default border-slate-200'
-                }`}
-              >
-                <span className="w-2 h-2 rounded-full bg-[#3F9884]" />
-                <strong className="text-sm">{bc === 'ALL' ? 'All Business Centers' : (centers.find(c => c.code === bc)?.name ? `${bc} - ${centers.find(c => c.code === bc)?.name}` : bc)}</strong>
-                {isSuperAdmin && (
+            {isSuperAdmin ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={()=> setBcOpen(!bcOpen)}
+                  className="inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border hover:border-slate-400 transition-colors cursor-pointer"
+                >
+                  <span className="w-2 h-2 rounded-full bg-[#3F9884]" />
+                  <strong className="text-sm">{bc === 'ALL' ? 'All Business Centers' : (centers.find(c => c.code === bc)?.name ? `${bc} - ${centers.find(c => c.code === bc)?.name}` : bc)}</strong>
                   <svg className="w-3.5 h-3.5 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
                   </svg>
+                </button>
+                {bcOpen && (
+                  <div className="absolute top-full right-0 mt-2 z-50 w-72 bg-white border rounded shadow-float max-h-80 overflow-y-auto">
+                    <ul className="divide-y divide-slate-100">
+                      <li>
+                        <button
+                          type="button"
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-50 font-medium ${bc === 'ALL' ? 'text-[#2F6F5E] bg-emerald-50' : ''}`}
+                          onClick={() => switchBc('ALL')}
+                        >
+                          All Business Centers
+                        </button>
+                      </li>
+                      {centers.map(c=> (
+                        <li key={c.code}>
+                          <button
+                            type="button"
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-50 ${bc === c.code ? 'text-[#2F6F5E] bg-emerald-50 font-medium' : ''}`}
+                            onClick={() => switchBc(c.code)}
+                          >
+                            {c.code} / {c.name}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
-              </button>
-              {bcOpen && isSuperAdmin && (
-               <div className="absolute top-full right-0 mt-2 z-50 w-72 bg-white border rounded shadow-float max-h-80 overflow-y-auto">
-                  <ul className="divide-y divide-slate-100">
-                   {isSuperAdmin && (
-                     <li>
-                       <button
-                         type="button"
-                         className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-50 font-medium ${bc === 'ALL' ? 'text-[#2F6F5E] bg-emerald-50' : ''}`}
-                         onClick={() => switchBc('ALL')}
-                       >
-                         All Business Centers
-                       </button>
-                     </li>
-                   )}
-                   {centers.map(c=> (
-                     <li key={c.code}>
-                       <button
-                         type="button"
-                         className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-50 ${bc === c.code ? 'text-[#2F6F5E] bg-emerald-50 font-medium' : ''}`}
-                         onClick={() => switchBc(c.code)}
-                       >
-                         {c.code} / {c.name}
-                       </button>
-                     </li>
-                   ))}
-                  </ul>
-                </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2 bg-slate-100 px-3 py-1 rounded-full border border-slate-200 select-none">
+                <span className="w-2 h-2 rounded-full bg-[#3F9884]" />
+                <span className="text-xs font-semibold text-slate-700">
+                  {centers.find(c => c.code === bc)?.name ? `${bc} - ${centers.find(c => c.code === bc)?.name}` : (bc || 'Assigned Business Center')}
+                </span>
+              </div>
+            )}
 
             <div className="relative">
               <button onClick={()=>setProfileOpen(!profileOpen)} className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-sm font-semibold">{initials()}</button>
