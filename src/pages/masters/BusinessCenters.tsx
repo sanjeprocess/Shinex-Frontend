@@ -15,13 +15,6 @@ export default function BusinessCentersPage() {
   const [q, setQ] = useState('')
   const [errors, setErrors] = useState<{ code?: string; name?: string }>({})
 
-  const userRole = (localStorage.getItem('hsb_user_role') || '').toUpperCase()
-  const isSuperAdmin = ['SUPERADMIN', 'SUPER_ADMIN'].includes(userRole)
-  const assignedBc = localStorage.getItem('hsb_assigned_bc')
-  const visibleRows = (!isSuperAdmin && assignedBc && assignedBc !== 'ALL')
-    ? rows.filter(r => r.code === assignedBc || (assignedBc.includes(r.code || '')) || (r.name && assignedBc.includes(r.name)))
-    : rows
-
   useEffect(() => { list().then(setRows) }, [])
 
   function refresh() { list().then(setRows) }
@@ -71,13 +64,11 @@ export default function BusinessCentersPage() {
         <h2 className="text-xl font-semibold">Business Centers</h2>
         <div className="flex items-center gap-2">
           <SearchInput value={q} onChange={setQ} placeholder="Search business centers by code or name..." />
-          {isSuperAdmin && (
-            <button className="bg-[#2F6F5E] text-white px-3 py-1 rounded-md btn-press" onClick={onOpenCreate}>Add Business Center</button>
-          )}
+          <button className="bg-[#2F6F5E] text-white px-3 py-1 rounded-md btn-press" onClick={onOpenCreate}>Add Business Center</button>
         </div>
       </div>
 
-      <DataTable columns={[{key:'code',label:'Code',className:'mono-numeric'},{key:'name',label:'Name'},{key:'tel',label:'Tel'},{key:'email',label:'Email'},{key:'id',label:'Actions'}]} data={visibleRows.filter(r=> ((r.code || '') + ' ' + (r.name || '')).toLowerCase().includes(q.toLowerCase())).map(r=>({code:r.code || '',name:r.name || '',tel:r.tel || '',email:r.email || '',id:r.code || '' }))} onEdit={(id)=>{ const row = visibleRows.find(r=>r.code===id); if(row) onEdit(row) }} onDelete={isSuperAdmin ? ((id)=>setDeleting({code:id})) : undefined} />
+      <DataTable columns={[{key:'code',label:'Code',className:'mono-numeric'},{key:'name',label:'Name'},{key:'tel',label:'Tel'},{key:'email',label:'Email'},{key:'id',label:'Actions'}]} data={rows.filter(r=> ((r.code || '') + ' ' + (r.name || '')).toLowerCase().includes(q.toLowerCase())).map(r=>({code:r.code || '',name:r.name || '',tel:r.tel || '',email:r.email || '',id:r.code || '' }))} onEdit={(id)=>{ const row = rows.find(r=>r.code===id); if(row) onEdit(row) }} onDelete={(id)=>setDeleting({code:id})} />
 
       <Modal title="Add / Edit Business Center" open={open} onClose={() => setOpen(false)}>
         <div className="min-h-0 flex flex-col">

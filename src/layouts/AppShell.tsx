@@ -15,8 +15,8 @@ export default function AppShell() {
 
   const rootRef = React.useRef<HTMLDivElement | null>(null)
 
-  const userRole = localStorage.getItem('hsb_user_role') || ''
-  const isSuperAdmin = userRole === 'SUPERADMIN'
+  const userRole = (localStorage.getItem('hsb_user_role') || '').toUpperCase()
+  const isSuperAdmin = ['SUPERADMIN', 'SUPER_ADMIN'].includes(userRole)
 
   useEffect(() => {
     listBC().then(list => {
@@ -101,7 +101,7 @@ export default function AppShell() {
           </div>
 
           <div className="flex items-center gap-4">
-            {isSuperAdmin ? (
+            {isSuperAdmin && bc === 'ALL' ? (
               <div className="relative">
                 <button
                   type="button"
@@ -109,7 +109,7 @@ export default function AppShell() {
                   className="inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border hover:border-slate-400 transition-colors cursor-pointer"
                 >
                   <span className="w-2 h-2 rounded-full bg-[#3F9884]" />
-                  <strong className="text-sm">{bc === 'ALL' ? 'All Business Centers' : (centers.find(c => c.code === bc)?.name ? `${bc} - ${centers.find(c => c.code === bc)?.name}` : bc)}</strong>
+                  <strong className="text-sm">All Business Centers</strong>
                   <svg className="w-3.5 h-3.5 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
                   </svg>
@@ -117,15 +117,6 @@ export default function AppShell() {
                 {bcOpen && (
                   <div className="absolute top-full right-0 mt-2 z-50 w-72 bg-white border rounded shadow-float max-h-80 overflow-y-auto">
                     <ul className="divide-y divide-slate-100">
-                      <li>
-                        <button
-                          type="button"
-                          className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-50 font-medium ${bc === 'ALL' ? 'text-[#2F6F5E] bg-emerald-50' : ''}`}
-                          onClick={() => switchBc('ALL')}
-                        >
-                          All Business Centers
-                        </button>
-                      </li>
                       {centers.map(c=> (
                         <li key={c.code}>
                           <button
@@ -142,11 +133,11 @@ export default function AppShell() {
                 )}
               </div>
             ) : (
-              <div className="inline-flex items-center gap-2 bg-slate-100 px-3 py-1 rounded-full border border-slate-200 select-none">
+              <div className="inline-flex items-center gap-2 bg-white px-3.5 py-1.5 rounded-full border border-slate-200 shadow-xs select-none">
                 <span className="w-2 h-2 rounded-full bg-[#3F9884]" />
-                <span className="text-xs font-semibold text-slate-700">
-                  {centers.find(c => c.code === bc)?.name ? `${bc} - ${centers.find(c => c.code === bc)?.name}` : (bc || 'Assigned Business Center')}
-                </span>
+                <strong className="text-sm text-slate-800">
+                  {centers.find(c => c.code === bc)?.name || (bc === 'ALL' ? 'All Business Centers' : bc)}
+                </strong>
               </div>
             )}
 
