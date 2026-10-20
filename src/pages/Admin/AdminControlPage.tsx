@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import { AdminUser, list, create, update, remove } from '../../mocks/admins';
 import { list as listBC, BusinessCenter } from '../../mocks/businessCenters';
 import { toast } from 'sonner';
@@ -225,6 +226,10 @@ export default function AdminControlPage() {
 
   const canManageUsers = getCurrentUser().canManageUsers;
   const currentIsSuperAdmin = isSuperAdmin();
+
+  if (!currentIsSuperAdmin) {
+    return <Navigate to="/" replace />;
+  }
 
   const loadData = async () => {
     setLoading(true);

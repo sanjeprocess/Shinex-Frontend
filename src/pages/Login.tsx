@@ -46,15 +46,30 @@ export default function Login() {
         clientBusinessCode: businessCode || undefined
       })
 
+      const userRole = (response.data.role || 'ADMIN').toUpperCase()
+      const isSuperAdminUser = ['SUPERADMIN', 'SUPER_ADMIN'].includes(userRole)
+      const rawAssignedBc = response.data.clientBusinessCode || ''
+      const assignedBc = rawAssignedBc.split(' - ')[0].split(' / ')[0].trim()
+
+      // If user has a specific assigned business center (not ALL and not superadmin), strictly lock to it
+      const effectiveBc = (!isSuperAdminUser && assignedBc && assignedBc !== 'ALL')
+        ? assignedBc
+        : businessCode
+
+      const matchedBc = bcList.find(b => b.code === effectiveBc)
+      const bcDisplayName = matchedBc ? `${matchedBc.code} / ${matchedBc.name}` : effectiveBc
+
       localStorage.setItem('hsb_auth_token', response.data.token)
       localStorage.setItem('hsb_test_user', response.data.loginName || loginName)
       localStorage.setItem('hsb_user_profile', JSON.stringify({
         fullName: response.data.fullName || response.data.loginName || loginName,
         nicNumber: response.data.nicNumber || '',
-        role: response.data.role || 'ADMIN',
-        businessCenterName: selectedBc
+        role: userRole,
+        businessCenterName: bcDisplayName
       }))
-      localStorage.setItem('hsb_user_role', response.data.role || 'ADMIN')
+      localStorage.setItem('hsb_user_role', userRole)
+      localStorage.setItem('hsb_assigned_bc', (!isSuperAdminUser && assignedBc && assignedBc !== 'ALL') ? assignedBc : 'ALL')
+      localStorage.setItem('hsb_active_bc', effectiveBc)
 
       // Save base permissions immediately so app can load
       let rawModules = response.data.modulePermissions ?? response.data.modules ?? null
@@ -72,7 +87,7 @@ export default function Login() {
 
       // Also fetch the full admin record to get granular modulePermissions if superadmin
       try {
-        if (response.data.role === 'SUPERADMIN') {
+        if (userRole === 'SUPERADMIN') {
           const adminRes = await api.get('/admins')
           const matched = Array.isArray(adminRes.data)
             ? adminRes.data.find((a: any) =>
@@ -91,8 +106,7 @@ export default function Login() {
         // Non-fatal
       }
 
-      localStorage.setItem('hsb_active_bc', businessCode)
-      window.dispatchEvent(new CustomEvent('hsb_bc_change', { detail: businessCode }))
+      window.dispatchEvent(new CustomEvent('hsb_bc_change', { detail: effectiveBc }))
 
       toast.success(`Welcome back, ${response.data.loginName || loginName}!`)
       navigate('/')

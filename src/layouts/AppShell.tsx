@@ -20,18 +20,33 @@ export default function AppShell() {
 
   useEffect(() => {
     listBC().then(list => {
-      setCenters(list)
+      const assignedBc = localStorage.getItem('hsb_assigned_bc')
+      let filteredList = list
+      if (!isSuperAdmin && assignedBc && assignedBc !== 'ALL') {
+        filteredList = list.filter(x => x.code === assignedBc || x.name === assignedBc || assignedBc.includes(x.code))
+        if (filteredList.length === 0 && list.length > 0) {
+          const match = list.find(x => assignedBc.toLowerCase().includes(x.code.toLowerCase()) || assignedBc.toLowerCase().includes((x.name || '').toLowerCase()))
+          if (match) filteredList = [match]
+        }
+      }
+      setCenters(filteredList.length > 0 ? filteredList : list)
+
       const saved = localStorage.getItem('hsb_active_bc')
-      if (saved && (saved === 'ALL' || list.some(x => x.code === saved || x.name === saved))) {
+      if (!isSuperAdmin && assignedBc && assignedBc !== 'ALL') {
+        const targetBc = filteredList[0]?.code || assignedBc
+        setBc(targetBc)
+        localStorage.setItem('hsb_active_bc', targetBc)
+      } else if (saved && (saved === 'ALL' || list.some(x => x.code === saved || x.name === saved))) {
         setBc(saved)
       } else if (list.length > 0) {
         setBc(list[0]?.code || null)
         if (list[0]) localStorage.setItem('hsb_active_bc', list[0].code)
       }
     })
-  }, [])
+  }, [isSuperAdmin])
 
   function switchBc(newBc: string) {
+    if (!isSuperAdmin) return
     setBc(newBc)
     localStorage.setItem('hsb_active_bc', newBc)
     setBcOpen(false)
@@ -46,7 +61,17 @@ export default function AppShell() {
     return ()=>{ document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
   }, [])
 
-  function signOut(){ localStorage.removeItem('hsb_test_auth'); navigate('/login') }
+  function signOut(){
+    localStorage.removeItem('hsb_auth_token')
+    localStorage.removeItem('hsb_test_auth')
+    localStorage.removeItem('hsb_test_user')
+    localStorage.removeItem('hsb_user_role')
+    localStorage.removeItem('hsb_user_profile')
+    localStorage.removeItem('hsb_user_permissions')
+    localStorage.removeItem('hsb_assigned_bc')
+    localStorage.removeItem('hsb_active_bc')
+    navigate('/login')
+  }
   function initials(){ const name = localStorage.getItem('hsb_test_user') || 'Test User'; return name.split(' ').map(s=>s[0]).slice(0,2).join('') }
 
   return (
@@ -62,11 +87,23 @@ export default function AppShell() {
 
           <div className="flex items-center gap-4">
             <div className="relative">
-              <button onClick={()=>setBcOpen(!bcOpen)} className="inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border hover:border-slate-400 transition-colors">
+              <button
+                type="button"
+                disabled={!isSuperAdmin}
+                onClick={()=> isSuperAdmin && setBcOpen(!bcOpen)}
+                className={`inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border transition-colors ${
+                  isSuperAdmin ? 'hover:border-slate-400 cursor-pointer' : 'cursor-default border-slate-200'
+                }`}
+              >
                 <span className="w-2 h-2 rounded-full bg-[#3F9884]" />
                 <strong className="text-sm">{bc === 'ALL' ? 'All Business Centers' : (centers.find(c => c.code === bc)?.name ? `${bc} - ${centers.find(c => c.code === bc)?.name}` : bc)}</strong>
+                {isSuperAdmin && (
+                  <svg className="w-3.5 h-3.5 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                )}
               </button>
-              {bcOpen && (
+              {bcOpen && isSuperAdmin && (
                <div className="absolute top-full right-0 mt-2 z-50 w-72 bg-white border rounded shadow-float max-h-80 overflow-y-auto">
                   <ul className="divide-y divide-slate-100">
                    {isSuperAdmin && (
