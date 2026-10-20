@@ -89,7 +89,11 @@ export default function BusinessCentersPage() {
           </div>
           <div>
             <label className="block text-xs text-slate-600">Tel No</label>
-                      <input className="mt-1 w-full form-input" value={form.tel || ''} onChange={e=>setForm({...form,tel:e.target.value.replace(/[^0-9+]/g, '')})} />
+            <input className="mt-1 w-full form-input" value={form.tel || ''} onChange={e=>setForm({...form,tel:e.target.value.replace(/[^0-9+]/g, '')})} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-600">Email Address</label>
+            <input type="email" maxLength={50} className="mt-1 w-full form-input" value={form.email || ''} onChange={e=>setForm({...form,email:e.target.value})} />
           </div>
           <div className="grid grid-cols-2 gap-2">
                       <div>
