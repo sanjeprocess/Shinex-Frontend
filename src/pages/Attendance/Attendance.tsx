@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
-import { Sun, Sunset, Moon, Star, ArrowRightLeft, Trash2 } from 'lucide-react'
+import { Sun, Sunset, Moon, Star, ArrowRightLeft, Trash2, Filter, Layers, FileSpreadsheet } from 'lucide-react'
 import SearchInput from '../../components/SearchInput'
 import NumericInput from '../../components/NumericInput'
 import DataTable from '../../components/DataTable'
@@ -61,7 +61,8 @@ function normalizeLocalDateTime(dateValue?: string, fallbackTime?: string): stri
 }
 
 const excelFieldMap: Record<string, keyof Attendance> = {
-  attyear: 'atttYear', attmonth: 'attMonth', epfno: 'epfNo', plantcode: 'plantCode',
+  attyear: 'atttYear', atttyear: 'atttYear', attmonth: 'attMonth', epfno: 'epfNo',
+  plantcode: 'plantCode', customercode: 'customerCode', sectioncode: 'sectionCode',
   workingdays: 'workingDays', basicsalary: 'basicSalary', dayallowance: 'dayAllowance',
   nightallowance: 'nightAllowance', dayin: 'dayIn', timein: 'timeIn', dayout: 'dayOut',
   timeout: 'timeOut', halfday: 'halfDay', totalworkinghours: 'totalWorkingHours', totalot: 'totalOt',
@@ -91,13 +92,19 @@ function excelTime(value: unknown): string {
   return /^\d{1,2}:\d{2}(:\d{2})?$/.test(text) ? (text.length === 5 ? `${text}:00` : text) : text
 }
 
-function parseAttendanceRows(data: unknown[][], businessCenter: string): Attendance[] {
+function parseAttendanceRows(
+  data: unknown[][],
+  businessCenter: string,
+  defaultPlant?: string,
+  defaultSection?: string
+): Attendance[] {
   if (!data.length) return []
   const headers = data[0].map(value => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, ''))
   return data.slice(1).filter(row => row.some(Boolean)).map((row, index) => {
     const record: Partial<Attendance> = {
-      id: uuid(), atttYear: '', attMonth: '', epfNo: '', plantCode: '', dayIn: '',
-      timeIn: '', businessCenter
+      id: uuid(), atttYear: '', attMonth: '', epfNo: '',
+      plantCode: defaultPlant || '', customerCode: defaultPlant || '', sectionCode: defaultSection || '',
+      dayIn: '', timeIn: '', businessCenter
     }
     headers.forEach((header, column) => {
       const field = excelFieldMap[header]
@@ -112,14 +119,64 @@ function parseAttendanceRows(data: unknown[][], businessCenter: string): Attenda
       } else if (field === 'businessCenter') (record as any)[field] = String(value ?? '').trim() || businessCenter
       else (record as any)[field] = String(value ?? '').trim()
     })
+
+    const dayInVal = record.dayIn || ''
+    const yearFromDate = dayInVal.includes('-') ? dayInVal.split('-')[0] : '2026'
+    const monthFromDate = dayInVal.includes('-') ? dayInVal.split('-')[1] : '01'
+
     return {
       ...defaultAttendanceRecord,
       ...record,
       id: record.id || `${record.epfNo || 'row'}-${index}`,
-      attMonth: record.attMonth || '01',
+      atttYear: record.atttYear || yearFromDate,
+      attMonth: record.attMonth || monthFromDate,
+      plantCode: record.plantCode || defaultPlant || '',
+      customerCode: record.customerCode || record.plantCode || defaultPlant || '',
+      sectionCode: record.sectionCode || defaultSection || '',
       businessCenter: record.businessCenter || businessCenter
     } as Attendance
   })
+}
+
+function validateUploadRow(
+  row: Attendance,
+  allUploadRows: Attendance[],
+  savedRows: Attendance[],
+  empList: any[]
+): {
+  isValid: boolean;
+  errors: string[];
+} {
+  const errs: string[] = []
+  const cleanEpf = (row.epfNo || '').trim().toLowerCase()
+
+  // 1. Unknown EPF check
+  if (!cleanEpf) {
+    errs.push('Missing EPF No')
+  } else if (empList.length > 0 && !empList.some(e => (e.epfNo || '').trim().toLowerCase() === cleanEpf)) {
+    errs.push('Unknown EPF No')
+  }
+
+  // 2. Bad date check
+  if (!row.dayIn || !/^\d{4}-\d{2}-\d{2}$/.test(String(row.dayIn).trim())) {
+    errs.push('Invalid Date')
+  }
+
+  // 3. Duplicate check for same employee and date
+  if (cleanEpf && row.dayIn) {
+    const dupCount = allUploadRows.filter(r => (r.epfNo || '').trim().toLowerCase() === cleanEpf && r.dayIn === row.dayIn).length
+    const dupSaved = savedRows.some(r => (r.epfNo || '').trim().toLowerCase() === cleanEpf && r.dayIn === row.dayIn)
+    if (dupCount > 1) {
+      errs.push('Duplicate row in Excel')
+    } else if (dupSaved) {
+      errs.push('Duplicate in saved logs')
+    }
+  }
+
+  return {
+    isValid: errs.length === 0,
+    errors: errs
+  }
 }
 
 const defaultAttendanceRecord: Attendance = {
@@ -182,6 +239,31 @@ export default function AttendancePage() {
   const [transfers, setTransfers] = useState<PlantTransfer[]>([])
   const [uploadRows, setUploadRows] = useState<Attendance[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Filters for Year, Month, Employee, Plant
+  const [filterYear, setFilterYear] = useState<string>('ALL')
+  const [filterMonth, setFilterMonth] = useState<string>('ALL')
+  const [filterEmployee, setFilterEmployee] = useState<string>('ALL')
+  const [filterPlant, setFilterPlant] = useState<string>('ALL')
+
+  // Upload default selectors
+  const [uploadDefaultPlant, setUploadDefaultPlant] = useState<string>('')
+  const [uploadDefaultSection, setUploadDefaultSection] = useState<string>('')
+
+  // Multi-Plant Date Range Batch Editor
+  const [rangeEmployee, setRangeEmployee] = useState<string>('')
+  const [rangeFrom, setRangeFrom] = useState<string>('')
+  const [rangeTo, setRangeTo] = useState<string>('')
+  const [rangePlant, setRangePlant] = useState<string>('')
+  const [rangeSection, setRangeSection] = useState<string>('')
+  const [appliedRanges, setAppliedRanges] = useState<Array<{
+    id: string;
+    epfNo: string;
+    fromDate: string;
+    toDate: string;
+    plantCode: string;
+    sectionCode?: string;
+  }>>([])
 
   const [syncModalOpen, setSyncModalOpen] = useState(false)
   const [syncYear, setSyncYear] = useState('2026')
@@ -291,7 +373,14 @@ export default function AttendancePage() {
     try {
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true })
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
-      const parsed = parseAttendanceRows(XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true }), localStorage.getItem('hsb_active_bc') || defaultForm.businessCenter)
+      const defaultPlant = uploadDefaultPlant || (customerList[0]?.code || '')
+      const defaultSection = uploadDefaultSection || (sectionList[0]?.code || '')
+      const parsed = parseAttendanceRows(
+        XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true }),
+        localStorage.getItem('hsb_active_bc') || defaultForm.businessCenter,
+        defaultPlant,
+        defaultSection
+      )
       if (!parsed.length) {
         toast.error('The selected file contains no attendance rows.')
         return
@@ -308,24 +397,137 @@ export default function AttendancePage() {
     setUploadRows(previous => previous.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
   }
 
-  async function handleBulkSave() {
+  async function handleBulkSaveValidated() {
     if (!uploadRows.length) {
       toast.error('Upload an attendance file first.')
       return
     }
-    const invalid = uploadRows.findIndex(row => !row.epfNo.trim() || !row.plantCode.trim() || !row.dayIn || !row.timeIn)
-    if (invalid >= 0) {
-      toast.error(`Please complete required fields in row ${invalid + 1}.`)
+    const validated = uploadRows.map(r => ({
+      row: r,
+      val: validateUploadRow(r, uploadRows, rows, employeeList)
+    }))
+    const validRows = validated.filter(v => v.val.isValid).map(v => v.row)
+    const invalidCount = validated.length - validRows.length
+
+    if (validRows.length === 0) {
+      toast.error(`All ${uploadRows.length} rows have validation issues. Please correct them before saving.`)
       return
     }
+
     try {
-      await bulkSaveAttendance(uploadRows)
-      toast.success(`${uploadRows.length} attendance rows saved`)
-      setUploadRows([])
+      await bulkSaveAttendance(validRows)
+      toast.success(`Successfully saved ${validRows.length} valid attendance rows.${invalidCount > 0 ? ` ${invalidCount} invalid rows retained for review.` : ''}`)
+      if (invalidCount > 0) {
+        setUploadRows(validated.filter(v => !v.val.isValid).map(v => v.row))
+      } else {
+        setUploadRows([])
+      }
       refresh()
     } catch (error: any) {
       console.error('Bulk attendance save failed', error)
       toast.error(String(error?.response?.data?.message || 'Bulk attendance save failed'))
+    }
+  }
+
+  async function handleBulkSave() {
+    await handleBulkSaveValidated()
+  }
+
+  async function handleApplyPlantRange() {
+    if (!rangeEmployee) {
+      toast.error('Please select an employee.')
+      return
+    }
+    if (!rangeFrom || !rangeTo) {
+      toast.error('Please select both From Date and To Date.')
+      return
+    }
+    if (rangeFrom > rangeTo) {
+      toast.error('From Date cannot be later than To Date.')
+      return
+    }
+    if (!rangePlant) {
+      toast.error('Please select a Plant (Customer).')
+      return
+    }
+
+    // Overlap validation: Overlapping ranges for the same employee and date are not allowed.
+    const overlapping = appliedRanges.find(r =>
+      r.epfNo === rangeEmployee &&
+      r.plantCode !== rangePlant &&
+      rangeFrom <= r.toDate &&
+      rangeTo >= r.fromDate
+    )
+
+    if (overlapping) {
+      toast.error(`Overlapping ranges for the same employee are not allowed! Overlaps with ${overlapping.fromDate} to ${overlapping.toDate} (${overlapping.plantCode}).`)
+      return
+    }
+
+    const newRangeEntry = {
+      id: uuid(),
+      epfNo: rangeEmployee,
+      fromDate: rangeFrom,
+      toDate: rangeTo,
+      plantCode: rangePlant,
+      sectionCode: rangeSection
+    }
+    setAppliedRanges(prev => [...prev, newRangeEntry])
+
+    // 1. Update matching rows in uploadRows if present
+    let uploadMatchCount = 0
+    if (uploadRows.length > 0) {
+      setUploadRows(prev => prev.map(row => {
+        if (row.epfNo === rangeEmployee && row.dayIn >= rangeFrom && row.dayIn <= rangeTo) {
+          uploadMatchCount++
+          return {
+            ...row,
+            plantCode: rangePlant,
+            customerCode: rangePlant,
+            sectionCode: rangeSection || row.sectionCode
+          }
+        }
+        return row
+      }))
+    }
+
+    // 2. Update matching existing saved rows in stages
+    const matchingSaved = rows.filter(r =>
+      r.epfNo === rangeEmployee &&
+      r.dayIn >= rangeFrom &&
+      r.dayIn <= rangeTo
+    )
+
+    if (matchingSaved.length > 0) {
+      const updatedSaved = matchingSaved.map(r => ({
+        ...r,
+        plantCode: rangePlant,
+        customerCode: rangePlant,
+        sectionCode: rangeSection || r.sectionCode
+      }))
+
+      try {
+        await bulkSaveAttendance(updatedSaved)
+        setRows(prev => prev.map(r => {
+          if (r.epfNo === rangeEmployee && r.dayIn >= rangeFrom && r.dayIn <= rangeTo) {
+            return {
+              ...r,
+              plantCode: rangePlant,
+              customerCode: rangePlant,
+              sectionCode: rangeSection || r.sectionCode
+            }
+          }
+          return r
+        }))
+        toast.success(`Applied plant ${rangePlant} to ${updatedSaved.length} saved attendance logs (${rangeFrom} to ${rangeTo}).`)
+      } catch (err) {
+        console.error('Failed to update saved plant rows', err)
+        toast.error('Failed to update plant range in system.')
+      }
+    } else if (uploadMatchCount > 0) {
+      toast.success(`Applied plant ${rangePlant} to ${uploadMatchCount} uploaded rows (${rangeFrom} to ${rangeTo}).`)
+    } else {
+      toast.info(`Plant range registered for ${rangeEmployee} (${rangeFrom} to ${rangeTo}). No day logs loaded in range.`)
     }
   }
 
@@ -514,15 +716,51 @@ export default function AttendancePage() {
     }
   }
 
-  // Search & Filter
+  // Search & Filter (Year, Month, Employee, Plant, Query)
   const filtered = useMemo(() => {
     return rows.filter(r => {
+      // Year filter
+      if (filterYear !== 'ALL' && r.atttYear !== filterYear) {
+        if (!r.dayIn || !r.dayIn.startsWith(filterYear)) return false
+      }
+      // Month filter
+      if (filterMonth !== 'ALL' && r.attMonth !== filterMonth) {
+        if (!r.dayIn || r.dayIn.slice(5, 7) !== filterMonth) return false
+      }
+      // Employee filter
+      if (filterEmployee !== 'ALL' && (r.epfNo || '').trim() !== filterEmployee.trim()) {
+        return false
+      }
+      // Plant filter
+      if (filterPlant !== 'ALL' && (r.plantCode || '').trim() !== filterPlant.trim()) {
+        return false
+      }
+      // Query search
       const emp = employeeList.find(e => e.epfNo === r.epfNo)
       const empName = emp ? `${emp.firstName} ${emp.lastName || ''}`.toLowerCase() : ''
       const searchStr = `${r.epfNo} ${empName} ${r.plantCode} ${r.dayIn}`.toLowerCase()
       return searchStr.includes(q.toLowerCase())
     })
-  }, [rows, employeeList, q])
+  }, [rows, employeeList, q, filterYear, filterMonth, filterEmployee, filterPlant])
+
+  // Plants worked summary map per employee across attendance rows: e.g. "PL001 (10 days), PL002 (8 days)"
+  const employeePlantsWorkedMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    const empGroup: Record<string, Record<string, number>> = {}
+    rows.forEach(r => {
+      const epf = (r.epfNo || '').trim()
+      if (!epf) return
+      if (!empGroup[epf]) empGroup[epf] = {}
+      const plant = (r.plantCode || 'Unknown').trim()
+      empGroup[epf][plant] = (empGroup[epf][plant] || 0) + 1
+    })
+
+    Object.entries(empGroup).forEach(([epf, plantMap]) => {
+      const parts = Object.entries(plantMap).map(([p, count]) => `${p} (${count} ${count === 1 ? 'day' : 'days'})`)
+      map[epf] = parts.join(', ')
+    })
+    return map
+  }, [rows])
 
   // Custom Form Select Handlers
   function handleNumericInput(field: 'workingDays' | 'noOfStaff' | 'dasForAttAllowance' | 'basicSalary' | 'dayAllowance' | 'nightAllowance' | 'sundayPoyaExtra' | 'noOfMeal' | 'totalMealValue', label: string, value: string) {
@@ -662,7 +900,8 @@ export default function AttendancePage() {
     { key: 'date', label: 'Date', className: 'mono-numeric' },
     { key: 'epfNo', label: 'EPF No', className: 'mono-numeric' },
     { key: 'empName', label: 'Employee Name' },
-    { key: 'plant', label: 'Plant' },
+    { key: 'plant', label: 'Plant (Code & Name)' },
+    { key: 'plantsWorked', label: 'Plants Worked' },
     { key: 'shiftNode', label: 'Shift' },
     { key: 'dayType', label: 'Day Type' },
     { key: 'timeRange', label: 'Time In/Out', className: 'mono-numeric' },
@@ -676,7 +915,42 @@ export default function AttendancePage() {
   const tableData = filtered.map(r => {
     const emp = employeeList.find(e => e.epfNo === r.epfNo)
     const empName = emp ? `${emp.firstName} ${emp.lastName || ''}` : 'Unknown'
-    
+
+    // Plant Code & Name + transferred plant if any
+    const cust = customerList.find(c => c.code === r.plantCode)
+    const plantName = cust?.name || r.plantCode || 'Unknown Plant'
+    const transfer = transfers.find(t =>
+      t.epfNo === r.epfNo &&
+      t.transferDate &&
+      r.dayIn >= t.transferDate &&
+      (!t.endDate || r.dayIn <= t.endDate)
+    )
+
+    const plantNode = (
+      <div>
+        <div className="font-semibold text-slate-800 flex items-center gap-1">
+          <span className="font-mono text-xs text-[#2F6F5E]">{r.plantCode}</span>
+          <span className="text-slate-600 font-normal truncate max-w-[130px]">- {plantName}</span>
+        </div>
+        {r.sectionCode && (
+          <div className="text-[10px] text-slate-400">Section: {r.sectionCode}</div>
+        )}
+        {transfer && (
+          <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
+            <ArrowRightLeft size={10} className="text-amber-600" />
+            Transferred: {transfer.toPlant}
+          </span>
+        )}
+      </div>
+    )
+
+    const plantsWorkedSummary = employeePlantsWorkedMap[r.epfNo] || '-'
+    const plantsWorkedNode = (
+      <span className="inline-block text-[11px] font-medium text-slate-700 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded max-w-[180px] truncate" title={plantsWorkedSummary}>
+        {plantsWorkedSummary}
+      </span>
+    )
+
     // Shift node
     let shiftLabel = 'Day'
     let ShiftIcon = Sun
@@ -712,7 +986,8 @@ export default function AttendancePage() {
       date: r.dayIn,
       epfNo: r.epfNo,
       empName,
-      plant: r.plantCode,
+      plant: plantNode,
+      plantsWorked: plantsWorkedNode,
       shiftNode,
       dayType: dayTypeNode,
       timeRange: `${r.timeIn} - ${r.timeOut}`,
@@ -724,17 +999,244 @@ export default function AttendancePage() {
   })
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold">Attendance Logs</h2>
-        <div className="flex items-center gap-2">
-          <SearchInput value={q} onChange={setQ} placeholder="Search by name, EPF..." />
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800">Attendance Logs</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Daily attendance with Excel import, multi-plant staging, and automatic transfer sync.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchInput value={q} onChange={setQ} placeholder="Search by name, EPF, plant..." />
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleExcelUpload} className="hidden" />
-          <button type="button" className="bg-slate-700 text-white px-3 py-1 rounded-md btn-press" onClick={() => fileInputRef.current?.click()}>Excel File Upload</button>
-          <button type="button" className="bg-indigo-700 hover:bg-indigo-800 text-white px-3 py-1 rounded-md btn-press" onClick={() => setSyncModalOpen(true)}>Sync Monthly Summary</button>
-          {uploadRows.length > 0 && <button type="button" className="bg-[#2F6F5E] text-white px-3 py-1 rounded-md btn-press" onClick={handleBulkSave}>Emp Attendance Update</button>}
-          {uploadRows.length > 0 && <button type="button" className="bg-[#C08A2E] text-white px-3 py-1 rounded-md btn-press" onClick={exportUploadRows}>Export Updated Excel</button>}
-          <button type="button" className="bg-[#2F6F5E] text-white px-3 py-1 rounded-md btn-press" onClick={handleAdd}>Add Entry</button>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-800 text-white px-3 py-1.5 rounded-md text-xs font-medium btn-press shadow-xs"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <FileSpreadsheet size={14} />
+            <span>Import Excel</span>
+          </button>
+          <button
+            type="button"
+            className="bg-indigo-700 hover:bg-indigo-800 text-white px-3 py-1.5 rounded-md text-xs font-medium btn-press shadow-xs"
+            onClick={() => setSyncModalOpen(true)}
+          >
+            Sync Monthly Summary
+          </button>
+          <button
+            type="button"
+            className="bg-[#2F6F5E] hover:bg-[#25584a] text-white px-3.5 py-1.5 rounded-md text-xs font-medium btn-press shadow-xs"
+            onClick={handleAdd}
+          >
+            + Add Entry
+          </button>
+        </div>
+      </div>
+
+      {/* Filter Strip (Year, Month, Employee, Plant) */}
+      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-flat flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1.5 text-xs text-slate-500 font-semibold uppercase tracking-wider">
+          <Filter size={14} className="text-[#2F6F5E]" />
+          <span>Filters:</span>
+        </div>
+
+        {/* Year Filter */}
+        <div className="flex items-center gap-1">
+          <label className="text-xs text-slate-600 font-medium">Year:</label>
+          <select
+            value={filterYear}
+            onChange={e => setFilterYear(e.target.value)}
+            className="form-input text-xs py-1 px-2 h-8"
+          >
+            <option value="ALL">All Years</option>
+            {['2024', '2025', '2026', '2027', '2028'].map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Month Filter */}
+        <div className="flex items-center gap-1">
+          <label className="text-xs text-slate-600 font-medium">Month:</label>
+          <select
+            value={filterMonth}
+            onChange={e => setFilterMonth(e.target.value)}
+            className="form-input text-xs py-1 px-2 h-8"
+          >
+            <option value="ALL">All Months</option>
+            {[
+              { val: '01', name: 'Jan' }, { val: '02', name: 'Feb' }, { val: '03', name: 'Mar' },
+              { val: '04', name: 'Apr' }, { val: '05', name: 'May' }, { val: '06', name: 'Jun' },
+              { val: '07', name: 'Jul' }, { val: '08', name: 'Aug' }, { val: '09', name: 'Sep' },
+              { val: '10', name: 'Oct' }, { val: '11', name: 'Nov' }, { val: '12', name: 'Dec' },
+            ].map(m => (
+              <option key={m.val} value={m.val}>{m.val} - {m.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Employee Filter */}
+        <div className="flex items-center gap-1">
+          <label className="text-xs text-slate-600 font-medium">Employee:</label>
+          <select
+            value={filterEmployee}
+            onChange={e => setFilterEmployee(e.target.value)}
+            className="form-input text-xs py-1 px-2 h-8 max-w-[180px]"
+          >
+            <option value="ALL">All Employees ({employeeList.length})</option>
+            {employeeList.map(e => (
+              <option key={e.epfNo} value={e.epfNo}>
+                {e.epfNo} - {e.firstName} {e.lastName || ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Plant Filter */}
+        <div className="flex items-center gap-1">
+          <label className="text-xs text-slate-600 font-medium">Plant:</label>
+          <select
+            value={filterPlant}
+            onChange={e => setFilterPlant(e.target.value)}
+            className="form-input text-xs py-1 px-2 h-8 max-w-[180px]"
+          >
+            <option value="ALL">All Plants ({customerList.length})</option>
+            {customerList.map(c => (
+              <option key={c.code} value={c.code}>
+                {c.code} - {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {(filterYear !== 'ALL' || filterMonth !== 'ALL' || filterEmployee !== 'ALL' || filterPlant !== 'ALL') && (
+          <button
+            type="button"
+            onClick={() => {
+              setFilterYear('ALL')
+              setFilterMonth('ALL')
+              setFilterEmployee('ALL')
+              setFilterPlant('ALL')
+            }}
+            className="text-xs text-teal-700 hover:text-teal-900 underline font-medium ml-auto"
+          >
+            Reset Filters
+          </button>
+        )}
+      </div>
+
+      {/* Multi-Plant Date Range Editor Card */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-flat p-4 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-2 gap-2">
+          <div className="flex items-center gap-2">
+            <Layers size={16} className="text-[#2F6F5E]" />
+            <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider">
+              Multi-Plant Assignment by Date Range (Staged Multi-Plant Editing)
+            </h3>
+          </div>
+          <span className="text-[11px] text-slate-500">
+            Apply different plants for date ranges (e.g. 01–10 Plant A, 11–20 Plant B) without overwriting.
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5 items-end text-xs">
+          <div>
+            <label className="block text-slate-600 font-semibold mb-1">Employee *</label>
+            <select
+              value={rangeEmployee}
+              onChange={e => setRangeEmployee(e.target.value)}
+              className="form-input w-full text-xs"
+            >
+              <option value="">-- Select Employee --</option>
+              {employeeList.map(e => (
+                <option key={e.epfNo} value={e.epfNo}>
+                  {e.epfNo} - {e.firstName} {e.lastName || ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-slate-600 font-semibold mb-1">From Date *</label>
+            <input
+              type="date"
+              value={rangeFrom}
+              onChange={e => setRangeFrom(e.target.value)}
+              className="form-input w-full text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-600 font-semibold mb-1">To Date *</label>
+            <input
+              type="date"
+              value={rangeTo}
+              onChange={e => setRangeTo(e.target.value)}
+              className="form-input w-full text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-600 font-semibold mb-1">Plant (Customer Code) *</label>
+            <select
+              value={rangePlant}
+              onChange={e => setRangePlant(e.target.value)}
+              className="form-input w-full text-xs"
+            >
+              <option value="">-- Select Plant --</option>
+              {customerList.map(c => (
+                <option key={c.code} value={c.code}>
+                  {c.code} - {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-slate-600 font-semibold mb-1">Section Code (Optional)</label>
+            <select
+              value={rangeSection}
+              onChange={e => setRangeSection(e.target.value)}
+              className="form-input w-full text-xs"
+            >
+              <option value="">-- Select Section --</option>
+              {sectionList.map(s => (
+                <option key={s.code} value={s.code}>
+                  {s.code} - {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pt-1 gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            {appliedRanges.length > 0 && (
+              <>
+                <span className="text-slate-500 font-medium">Session Applied Ranges:</span>
+                {appliedRanges.map(ar => (
+                  <span
+                    key={ar.id}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200"
+                  >
+                    <span>{ar.epfNo}:</span>
+                    <span>{ar.fromDate} to {ar.toDate}</span>
+                    <strong className="text-emerald-950">({ar.plantCode})</strong>
+                  </span>
+                ))}
+              </>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleApplyPlantRange}
+            className="px-4 py-1.5 bg-[#2F6F5E] hover:bg-[#25584a] text-white text-xs font-semibold rounded-lg shadow-sm transition shrink-0"
+          >
+            Apply Plant to Date Range
+          </button>
         </div>
       </div>
 
@@ -1070,23 +1572,98 @@ export default function AttendancePage() {
 
       {uploadRows.length > 0 && (
         <section className="mt-5 rounded-lg border bg-white shadow-flat">
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <div className="flex items-center gap-3">
-              <h3 className="font-semibold text-sm text-slate-800">Uploaded Attendance Preview ({uploadRows.length})</h3>
-              <span className="text-xs text-slate-500">All fields are editable before saving.</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b px-4 py-3 gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet size={16} className="text-[#2F6F5E]" />
+                <h3 className="font-semibold text-sm text-slate-800">
+                  Uploaded Attendance Preview ({uploadRows.length} rows)
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  {uploadRows.filter(r => validateUploadRow(r, uploadRows, rows, employeeList).isValid).length} Valid
+                </span>
+                {uploadRows.some(r => !validateUploadRow(r, uploadRows, rows, employeeList).isValid) && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                    {uploadRows.filter(r => !validateUploadRow(r, uploadRows, rows, employeeList).isValid).length} Flagged
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Each row has its own Plant Code and Section Code dropdown. Defaults apply automatically and can be edited per row.
+              </p>
             </div>
-            <div className="flex items-center gap-2">
-              <button type="button" className="px-3 py-1 text-xs border rounded hover:bg-slate-50" onClick={exportUploadRows}>Export Draft</button>
-              <button type="button" className="px-3 py-1 text-xs text-red-600 hover:text-red-800" onClick={() => setUploadRows([])}>Clear All</button>
-              <button type="button" className="px-3 py-1 text-xs bg-[#2F6F5E] text-white rounded font-medium hover:bg-[#26594b]" onClick={handleBulkSave}>Save All ({uploadRows.length})</button>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1 text-xs">
+                <span className="text-slate-500">Default Plant:</span>
+                <select
+                  value={uploadDefaultPlant}
+                  onChange={e => setUploadDefaultPlant(e.target.value)}
+                  className="form-input text-xs py-1 h-7 max-w-[130px]"
+                >
+                  <option value="">(None)</option>
+                  {customerList.map(c => (
+                    <option key={c.code} value={c.code}>{c.code} - {c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1 text-xs">
+                <span className="text-slate-500">Default Section:</span>
+                <select
+                  value={uploadDefaultSection}
+                  onChange={e => setUploadDefaultSection(e.target.value)}
+                  className="form-input text-xs py-1 h-7 max-w-[130px]"
+                >
+                  <option value="">(None)</option>
+                  {sectionList.map(s => (
+                    <option key={s.code} value={s.code}>{s.code} - {s.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {(uploadDefaultPlant || uploadDefaultSection) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUploadRows(prev => prev.map(r => ({
+                      ...r,
+                      plantCode: (!r.plantCode || r.plantCode === '') && uploadDefaultPlant ? uploadDefaultPlant : r.plantCode,
+                      customerCode: (!r.customerCode || r.customerCode === '') && uploadDefaultPlant ? uploadDefaultPlant : r.customerCode,
+                      sectionCode: (!r.sectionCode || r.sectionCode === '') && uploadDefaultSection ? uploadDefaultSection : r.sectionCode
+                    })));
+                    toast.success('Applied defaults to unset rows.');
+                  }}
+                  className="px-2.5 py-1 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-medium"
+                >
+                  Apply Defaults
+                </button>
+              )}
+
+              <button type="button" className="px-2.5 py-1 text-xs border rounded hover:bg-slate-50" onClick={exportUploadRows}>
+                Export Draft
+              </button>
+              <button type="button" className="px-2.5 py-1 text-xs text-red-600 hover:text-red-800" onClick={() => setUploadRows([])}>
+                Clear All
+              </button>
+              <button
+                type="button"
+                className="px-3.5 py-1 text-xs bg-[#2F6F5E] text-white rounded font-semibold hover:bg-[#26594b] shadow-xs"
+                onClick={handleBulkSaveValidated}
+              >
+                Save Valid Rows ({uploadRows.filter(r => validateUploadRow(r, uploadRows, rows, employeeList).isValid).length})
+              </button>
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-[1300px] w-full text-xs">
-              <thead className="bg-slate-50 text-left text-slate-600">
+
+          <div className="overflow-x-auto max-h-96">
+            <table className="min-w-[1450px] w-full text-xs">
+              <thead className="bg-slate-50 text-left text-slate-600 sticky top-0 z-10 border-b">
                 <tr>
+                  <th className="px-2 py-2">Validation Status</th>
                   <th className="px-2 py-2">EPF No</th>
-                  <th className="px-2 py-2">Plant</th>
+                  <th className="px-2 py-2">Plant Code *</th>
+                  <th className="px-2 py-2">Section Code</th>
                   <th className="px-2 py-2">Day In</th>
                   <th className="px-2 py-2">Day Out</th>
                   <th className="px-2 py-2">Time In</th>
@@ -1094,153 +1671,167 @@ export default function AttendancePage() {
                   <th className="px-2 py-2">Work Days</th>
                   <th className="px-2 py-2">Hours</th>
                   <th className="px-2 py-2">OT</th>
-                  <th className="px-2 py-2">Basic Salary</th>
-                  <th className="px-2 py-2">Meals</th>
-                  <th className="px-2 py-2">Meal Value</th>
                   <th className="px-2 py-2">Shift</th>
+                  <th className="px-2 py-2">Meals</th>
                   <th className="px-2 py-2 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {uploadRows.map((row, index) => (
-                  <tr key={row.id || index} className="hover:bg-slate-50">
-                    <td className="px-2 py-1.5">
-                      <input 
-                        type="text" 
-                        value={row.epfNo || ''} 
-                        onChange={e => updateUploadRow(index, { epfNo: e.target.value })} 
-                        className="form-input w-24 text-xs font-mono" 
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <select 
-                        value={row.plantCode || ''} 
-                        onChange={e => updateUploadRow(index, { plantCode: e.target.value })} 
-                        className="form-input w-36 text-xs"
-                      >
-                        <option value="">Select Plant</option>
-                        {customerList.map(c => (
-                          <option key={c.code} value={c.code}>{c.code} - {c.name}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input 
-                        type="date" 
-                        value={row.dayIn || ''} 
-                        onChange={e => updateUploadRow(index, { dayIn: e.target.value, dayOut: row.dayOut || e.target.value })} 
-                        className="form-input w-32 text-xs" 
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input 
-                        type="date" 
-                        value={row.dayOut ? String(row.dayOut).split('T')[0] : (row.dayIn || '')} 
-                        onChange={e => updateUploadRow(index, { dayOut: e.target.value })} 
-                        className="form-input w-32 text-xs" 
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input 
-                        type="time" 
-                        step="1" 
-                        value={row.timeIn || ''} 
-                        onChange={e => {
-                          const newTimeIn = e.target.value;
-                          const { hours, ot } = computeHours(newTimeIn, row.timeOut || '');
-                          updateUploadRow(index, { timeIn: newTimeIn, totalWorkingHours: hours, totalOt: ot });
-                        }} 
-                        className="form-input w-24 text-xs" 
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <input 
-                        type="time" 
-                        step="1" 
-                        value={(row.timeOut || '').slice(0, 8)} 
-                        onChange={e => {
-                          const newTimeOut = e.target.value;
-                          const { hours, ot } = computeHours(row.timeIn || '', newTimeOut);
-                          updateUploadRow(index, { timeOut: newTimeOut, totalWorkingHours: hours, totalOt: ot });
-                        }} 
-                        className="form-input w-24 text-xs" 
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <NumericInput 
-                        value={row.workingDays ?? ''} 
-                        onChange={e => updateUploadRow(index, { workingDays: Number(e.target.value || 0) })} 
-                        className="form-input w-16 text-xs text-right" 
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <NumericInput 
-                        value={row.totalWorkingHours ?? ''} 
-                        onChange={e => updateUploadRow(index, { totalWorkingHours: Number(e.target.value || 0) })} 
-                        className="form-input w-16 text-xs text-right" 
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <NumericInput 
-                        value={row.totalOt ?? ''} 
-                        onChange={e => updateUploadRow(index, { totalOt: Number(e.target.value || 0) })} 
-                        className="form-input w-16 text-xs text-right" 
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <NumericInput 
-                        value={row.basicSalary ?? ''} 
-                        onChange={e => updateUploadRow(index, { basicSalary: Number(e.target.value || 0) })} 
-                        className="form-input w-24 text-xs text-right" 
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <NumericInput 
-                        integer 
-                        value={row.noOfMeal ?? ''} 
-                        onChange={e => updateUploadRow(index, { noOfMeal: Number(e.target.value || 0) })} 
-                        className="form-input w-14 text-xs text-right" 
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <NumericInput 
-                        value={row.totalMealValue ?? ''} 
-                        onChange={e => updateUploadRow(index, { totalMealValue: Number(e.target.value || 0) })} 
-                        className="form-input w-20 text-xs text-right" 
-                      />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <select 
-                        value={row.dayShift === 'Y' ? 'Day' : row.secondShift === 'Y' ? '2nd' : row.nightShift === 'Y' ? 'Night' : 'Full Night'} 
-                        onChange={e => {
-                          const shift = e.target.value
-                          updateUploadRow(index, { 
-                            dayShift: shift === 'Day' ? 'Y' : 'N', 
-                            secondShift: shift === '2nd' ? 'Y' : 'N', 
-                            nightShift: shift === 'Night' ? 'Y' : 'N', 
-                            fullNight: shift === 'Full Night' ? 'Y' : 'N' 
-                          })
-                        }} 
-                        className="form-input w-24 text-xs"
-                      >
-                        <option>Day</option>
-                        <option>2nd</option>
-                        <option>Night</option>
-                        <option>Full Night</option>
-                      </select>
-                    </td>
-                    <td className="px-2 py-1.5 text-center">
-                      <button 
-                        type="button" 
-                        title="Remove Row"
-                        onClick={() => setUploadRows(uploadRows.filter((_, rIdx) => rIdx !== index))}
-                        className="p-1 text-slate-400 hover:text-red-600 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {uploadRows.map((row, index) => {
+                  const val = validateUploadRow(row, uploadRows, rows, employeeList);
+                  return (
+                    <tr key={row.id || index} className={val.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/40 hover:bg-rose-50/60'}>
+                      <td className="px-2 py-1.5">
+                        {val.isValid ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Valid
+                          </span>
+                        ) : (
+                          <div className="flex flex-col gap-0.5">
+                            {val.errors.map((e, ei) => (
+                              <span key={ei} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-800 border border-rose-200">
+                                ⚠️ {e}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input 
+                          type="text" 
+                          value={row.epfNo || ''} 
+                          onChange={e => updateUploadRow(index, { epfNo: e.target.value })} 
+                          className={`form-input w-24 text-xs font-mono ${val.errors.some(er => er.includes('EPF')) ? 'border-red-400 bg-red-50 ring-1 ring-red-200' : ''}`}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <select 
+                          value={row.plantCode || ''} 
+                          onChange={e => updateUploadRow(index, { plantCode: e.target.value, customerCode: e.target.value })} 
+                          className="form-input w-36 text-xs"
+                        >
+                          <option value="">Select Plant</option>
+                          {customerList.map(c => (
+                            <option key={c.code} value={c.code}>{c.code} - {c.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <select 
+                          value={row.sectionCode || ''} 
+                          onChange={e => updateUploadRow(index, { sectionCode: e.target.value })} 
+                          className="form-input w-36 text-xs"
+                        >
+                          <option value="">Select Section</option>
+                          {sectionList.map(s => (
+                            <option key={s.code} value={s.code}>{s.code} - {s.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input 
+                          type="date" 
+                          value={row.dayIn || ''} 
+                          onChange={e => updateUploadRow(index, { dayIn: e.target.value, dayOut: row.dayOut || e.target.value })} 
+                          className={`form-input w-32 text-xs ${val.errors.some(er => er.includes('Date')) ? 'border-red-400 bg-red-50' : ''}`}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input 
+                          type="date" 
+                          value={row.dayOut ? String(row.dayOut).split('T')[0] : (row.dayIn || '')} 
+                          onChange={e => updateUploadRow(index, { dayOut: e.target.value })} 
+                          className="form-input w-32 text-xs" 
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input 
+                          type="time" 
+                          step="1" 
+                          value={row.timeIn || ''} 
+                          onChange={e => {
+                            const newTimeIn = e.target.value;
+                            const { hours, ot } = computeHours(newTimeIn, row.timeOut || '');
+                            updateUploadRow(index, { timeIn: newTimeIn, totalWorkingHours: hours, totalOt: ot });
+                          }} 
+                          className="form-input w-24 text-xs" 
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input 
+                          type="time" 
+                          step="1" 
+                          value={(row.timeOut || '').slice(0, 8)} 
+                          onChange={e => {
+                            const newTimeOut = e.target.value;
+                            const { hours, ot } = computeHours(row.timeIn || '', newTimeOut);
+                            updateUploadRow(index, { timeOut: newTimeOut, totalWorkingHours: hours, totalOt: ot });
+                          }} 
+                          className="form-input w-24 text-xs" 
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <NumericInput 
+                          value={row.workingDays ?? ''} 
+                          onChange={e => updateUploadRow(index, { workingDays: Number(e.target.value || 0) })} 
+                          className="form-input w-16 text-xs text-right" 
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <NumericInput 
+                          value={row.totalWorkingHours ?? ''} 
+                          onChange={e => updateUploadRow(index, { totalWorkingHours: Number(e.target.value || 0) })} 
+                          className="form-input w-16 text-xs text-right" 
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <NumericInput 
+                          value={row.totalOt ?? ''} 
+                          onChange={e => updateUploadRow(index, { totalOt: Number(e.target.value || 0) })} 
+                          className="form-input w-16 text-xs text-right" 
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <select 
+                          value={row.dayShift === 'Y' ? 'Day' : row.secondShift === 'Y' ? '2nd' : row.nightShift === 'Y' ? 'Night' : 'Full Night'} 
+                          onChange={e => {
+                            const shift = e.target.value;
+                            updateUploadRow(index, { 
+                              dayShift: shift === 'Day' ? 'Y' : 'N', 
+                              secondShift: shift === '2nd' ? 'Y' : 'N', 
+                              nightShift: shift === 'Night' ? 'Y' : 'N', 
+                              fullNight: shift === 'Full Night' ? 'Y' : 'N' 
+                            });
+                          }} 
+                          className="form-input w-24 text-xs"
+                        >
+                          <option>Day</option>
+                          <option>2nd</option>
+                          <option>Night</option>
+                          <option>Full Night</option>
+                        </select>
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <NumericInput 
+                          integer 
+                          value={row.noOfMeal ?? ''} 
+                          onChange={e => updateUploadRow(index, { noOfMeal: Number(e.target.value || 0) })} 
+                          className="form-input w-14 text-xs text-right" 
+                        />
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        <button 
+                          type="button" 
+                          title="Remove Row"
+                          onClick={() => setUploadRows(uploadRows.filter((_, rIdx) => rIdx !== index))}
+                          className="p-1 text-slate-400 hover:text-red-600 rounded"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

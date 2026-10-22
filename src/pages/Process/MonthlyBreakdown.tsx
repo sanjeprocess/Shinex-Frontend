@@ -241,6 +241,43 @@ export default function MonthlyBreakdown() {
                   </div>
                 ))}
               </div>
+
+              {/* Multi-Plant Monthly Summary View: one row per plant with only plant name differing */}
+              {summary.plantsWorked.length > 1 && (
+                <div className="mt-4 pt-3 border-t">
+                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                    Employee Monthly Summary by Plant
+                  </h4>
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-50 text-slate-600 font-semibold border-b">
+                        <tr>
+                          <th className="px-4 py-2.5">Plant Code</th>
+                          <th className="px-4 py-2.5">Plant Name</th>
+                          <th className="px-4 py-2.5 text-center">Days Worked</th>
+                          <th className="px-4 py-2.5 text-right">Daily Rate</th>
+                          <th className="px-4 py-2.5 text-right">Gross Salary</th>
+                          <th className="px-4 py-2.5 text-right">Total Deductions</th>
+                          <th className="px-4 py-2.5 text-right">Net Salary</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {summary.plantsWorked.map((p, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/70">
+                            <td className="px-4 py-2.5 font-mono font-semibold text-[#2F6F5E]">{p.plantCode}</td>
+                            <td className="px-4 py-2.5 font-medium text-slate-800">{p.plantName}</td>
+                            <td className="px-4 py-2.5 text-center font-mono font-bold text-teal-800">{p.daysWorked} days</td>
+                            <td className="px-4 py-2.5 text-right font-mono text-slate-700">{money(summary.basicSalary)}</td>
+                            <td className="px-4 py-2.5 text-right font-mono font-semibold text-emerald-800">{money(summary.grossSalary)}</td>
+                            <td className="px-4 py-2.5 text-right font-mono font-semibold text-rose-700">{money(summary.totalDeductions)}</td>
+                            <td className="px-4 py-2.5 text-right font-mono font-bold text-[#2F6F5E]">{money(summary.netSalary)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

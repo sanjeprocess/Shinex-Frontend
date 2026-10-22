@@ -1,0 +1,231 @@
+/* A4 Report Styles - HSB HRIS */
+
+.a4-screen-wrapper {
+  background: #f1f5f9;
+  min-height: calc(100vh - 120px);
+  padding: 24px 16px 48px;
+}
+
+.a4-scroll-area {
+  overflow-x: auto;
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* True A4 Page Box */
+.a4-page {
+  background: #ffffff;
+  color: #000000;
+  margin: 0 auto 24px auto;
+  padding: 12mm;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 10pt;
+  line-height: 1.3;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.1);
+  position: relative;
+  box-sizing: border-box;
+}
+
+/* Portrait: 210mm x 297mm */
+.a4-page.portrait,
+.a4-page.p {
+  width: 210mm;
+  min-height: 297mm;
+}
+
+/* Landscape: 297mm x 210mm */
+.a4-page.landscape,
+.a4-page.l {
+  width: 297mm;
+  min-height: 210mm;
+}
+
+/* Header layout */
+.a4-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 5mm;
+}
+
+.a4-header h1 {
+  font-family: "Times New Roman", Times, serif;
+  font-size: 13pt;
+  font-weight: bold;
+  margin: 0;
+  flex: 1;
+  text-align: center;
+  color: #000;
+}
+
+.a4-header .a4-meta-left {
+  width: 65mm;
+  font-size: 9pt;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.a4-header .a4-meta-right {
+  width: 65mm;
+  font-size: 9pt;
+  text-align: right;
+  line-height: 1.35;
+}
+
+.a4-subtitle {
+  font-family: "Times New Roman", Times, serif;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 3.5mm;
+  font-size: 10.5pt;
+}
+
+/* Tables */
+.a4-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 10pt;
+  color: #000000;
+}
+
+.a4-table th {
+  border: 1px solid #000000;
+  padding: 1.6mm 1.8mm;
+  text-align: left;
+  text-decoration: underline;
+  font-weight: bold;
+  background: transparent;
+  color: #000;
+}
+
+.a4-table td {
+  border: 1px solid #000000;
+  padding: 1.2mm 1.6mm;
+  color: #000;
+}
+
+.a4-table .n,
+.a4-table td.n,
+.a4-table th.n {
+  text-align: right;
+}
+
+.a4-table tr.t td,
+.a4-table .total-row td {
+  font-weight: bold;
+  border-top: 2px solid #000000;
+}
+
+.a4-table thead {
+  display: table-header-group;
+}
+
+.a4-table tr {
+  page-break-inside: avoid;
+}
+
+/* Page footer */
+.a4-footer-page {
+  position: absolute;
+  right: 12mm;
+  bottom: 6mm;
+  font-size: 8pt;
+  color: #000000;
+  font-family: "Times New Roman", Times, serif;
+}
+
+/* EPF C-Form specific */
+.epf-boxes-container {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: 4mm;
+  margin-bottom: 4mm;
+}
+
+.epf-company-box {
+  border: 1px solid #000000;
+  padding: 2.5mm;
+  font-size: 9pt;
+  line-height: 1.4;
+}
+
+.epf-kv-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.epf-kv-table td {
+  border: 1px solid #000000;
+  padding: 1mm 2mm;
+  font-size: 8.5pt;
+}
+
+.epf-kv-table .epf-kv-header td {
+  font-weight: bold;
+  text-align: center;
+  background: #f8fafc;
+}
+
+.epf-kv-table td.epf-val {
+  text-align: right;
+  width: 32mm;
+  font-weight: 500;
+}
+
+/* Print Styles */
+@page {
+  margin: 0;
+}
+
+@media print {
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: auto !important;
+    height: auto !important;
+  }
+
+  /* Hide app chrome, sidebar, navigation, action buttons */
+  header,
+  nav,
+  aside,
+  footer,
+  .top-menu-bar,
+  .app-sidebar,
+  .app-header,
+  .no-print,
+  .a4-action-bar,
+  .a4-screen-banner {
+    display: none !important;
+  }
+
+  .a4-screen-wrapper {
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .a4-scroll-area {
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  .a4-page {
+    box-shadow: none !important;
+    margin: 0 !important;
+    page-break-after: always !important;
+    page-break-inside: avoid !important;
+    border: none !important;
+  }
+
+  .a4-page:last-child {
+    page-break-after: auto !important;
+  }
+}

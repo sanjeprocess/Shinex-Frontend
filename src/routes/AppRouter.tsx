@@ -15,10 +15,17 @@ import BCardsPage from '../pages/masters/BCardsPage'
 // Transaction pages
 import EmployeeAdditions from '../pages/Additions/EmployeeAdditions'
 import EmployeeDeductions from '../pages/Deductions/EmployeeDeductions'
+import DeductionTransactionsPage from '../pages/Deductions/DeductionTransactionsPage'
 import LeavesPage from '../pages/Leave/Leaves'
 import LoansPage from '../pages/Loans/LoansPage'
 import ReportsPage from '../pages/Reports/ReportsPage'
 import EmployeeHistoryPage from '../pages/Reports/EmployeeHistoryPage'
+import AttendanceReportPage from '../pages/Reports/AttendanceReportPage'
+import SalaryAdvanceTotalPage from '../pages/Reports/SalaryAdvanceTotalPage'
+import SalaryAdvanceReportPage from '../pages/Reports/SalaryAdvanceReportPage'
+import LoanReportPage from '../pages/Reports/LoanReportPage'
+import TelephoneDeductReportPage from '../pages/Reports/TelephoneDeductReportPage'
+import EpfCFormPage from '../pages/Reports/EpfCFormPage'
 import AuditLogPage from '../pages/Audit/AuditLogPage'
 import AdminControlPage from '../pages/Admin/AdminControlPage'
 import MonthlyBreakdown from '../pages/Process/MonthlyBreakdown'
@@ -82,6 +89,7 @@ export default function AppRouter() {
         <Route path="attendance"         element={<ModuleRoute mod="attendance">   <AttendancePage />      </ModuleRoute>} />
         <Route path="employee-additions" element={<ModuleRoute mod="additions">    <EmployeeAdditions />   </ModuleRoute>} />
         <Route path="employee-deductions"element={<ModuleRoute mod="deductions">   <EmployeeDeductions />  </ModuleRoute>} />
+        <Route path="deduction-transactions" element={<ModuleRoute mod="deductions"><DeductionTransactionsPage /></ModuleRoute>} />
         <Route path="leaves"             element={<ModuleRoute mod="leaves">       <LeavesPage />          </ModuleRoute>} />
         <Route path="loans"              element={<ModuleRoute mod="loans">        <LoansPage />           </ModuleRoute>} />
         <Route path="plant-transfers"    element={<ModuleRoute mod="plantTransfers"><PlantTransfersPage /> </ModuleRoute>} />
@@ -92,6 +100,12 @@ export default function AppRouter() {
         {/* ── Reports ── */}
         <Route path="reports"            element={<ModuleRoute mod="reports">      <ReportsPage />         </ModuleRoute>} />
         <Route path="employee-history"   element={<ModuleRoute mod="payAdvice">    <EmployeeHistoryPage /> </ModuleRoute>} />
+        <Route path="reports/attendance" element={<ModuleRoute mod="reports">      <AttendanceReportPage /></ModuleRoute>} />
+        <Route path="reports/salary-advance-total" element={<ModuleRoute mod="reports"><SalaryAdvanceTotalPage /></ModuleRoute>} />
+        <Route path="reports/salary-advance"       element={<ModuleRoute mod="reports"><SalaryAdvanceReportPage /></ModuleRoute>} />
+        <Route path="reports/loan"       element={<ModuleRoute mod="reports">      <LoanReportPage />      </ModuleRoute>} />
+        <Route path="reports/telephone-deduct" element={<ModuleRoute mod="reports"><TelephoneDeductReportPage /></ModuleRoute>} />
+        <Route path="reports/epf-c-form" element={<ModuleRoute mod="reports">      <EpfCFormPage />        </ModuleRoute>} />
         <Route path="audit-logs"         element={<ModuleRoute mod="audit">        <AuditLogPage />        </ModuleRoute>} />
 
         {/* ── Master Data ── */}

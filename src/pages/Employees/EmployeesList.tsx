@@ -80,6 +80,8 @@ export default function EmployeesList() {
   const [q, setQ] = useState('')
   const [errors, setErrors] = useState<Record<string, string | undefined>>({})
   const [isProcessingPhoto, setIsProcessingPhoto] = useState(false)
+  const [onboardingModalOpen, setOnboardingModalOpen] = useState(false)
+  const [onboardingType, setOnboardingType] = useState<'NEW' | 'EXISTING'>('NEW')
   const photoInputRef = useRef<HTMLInputElement>(null)
 
   const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -131,17 +133,27 @@ export default function EmployeesList() {
       })
   }
 
-  // Add: reset form to full explicit defaults, auto-generate EPF No, and open
-  async function handleAdd() {
+  // Add: open onboarding choice dialog (New vs Existing Employee)
+  function handleAdd() {
+    setOnboardingModalOpen(true)
+  }
+
+  async function handleSelectOnboarding(type: 'NEW' | 'EXISTING') {
+    setOnboardingModalOpen(false)
+    setOnboardingType(type)
     const activeBc = localStorage.getItem('hsb_active_bc') || ''
     const empty = { ...defaultEmployee }
     empty.businessCenter = activeBc && activeBc !== 'ALL' ? activeBc : (centerList[0]?.code || '')
 
-    try {
-      const generatedEpf = await getNextEpfNo(empty.businessCenter)
-      empty.epfNo = generatedEpf
-    } catch (e) {
-      console.warn('Could not auto-generate EPF No', e)
+    if (type === 'NEW') {
+      try {
+        const generatedEpf = await getNextEpfNo(empty.businessCenter)
+        empty.epfNo = generatedEpf
+      } catch (e) {
+        console.warn('Could not auto-generate EPF No', e)
+      }
+    } else {
+      empty.epfNo = ''
     }
 
     setForm(empty)
@@ -173,7 +185,14 @@ export default function EmployeesList() {
   function validateEmployee() {
     const next: Record<string, string> = {}
 
-    if (!String(form.epfNo || '').trim()) next.epfNo = 'EPF No is required'
+    if (!String(form.epfNo || '').trim()) {
+      next.epfNo = 'EPF No is required'
+    } else if (!isEditing) {
+      const epfLower = String(form.epfNo).trim().toLowerCase()
+      if (rows.some(r => (r.epfNo || '').trim().toLowerCase() === epfLower)) {
+        next.epfNo = 'EPF No already exists. Please enter a unique EPF No.'
+      }
+    }
 
     if (!String(form.firstName || '').trim()) {
       next.firstName = 'First Name is required'
@@ -406,8 +425,26 @@ export default function EmployeesList() {
             <h4 className="font-semibold mb-2">Personal</h4>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs text-slate-600 flex items-center justify-between"><span>EPF No <span className="text-red-500">*</span></span>{!isEditing && <span className="text-[10px] text-[#2F6F5E] font-medium bg-emerald-50 px-1.5 py-0.5 rounded">Auto-generated</span>}</label>
-                <input type="text" value={form.epfNo || ''} onChange={e => { setForm({ ...form, epfNo: e.target.value }); if (errors.epfNo) setErrors(prev => ({ ...prev, epfNo: undefined })) }} className={`mt-1 w-full form-input mono-numeric ${errors.epfNo ? 'border-red-300 ring-2 ring-red-100' : ''}`} disabled={isEditing} />
+                <label className="block text-xs text-slate-600 flex items-center justify-between">
+                  <span>EPF No <span className="text-red-500">*</span></span>
+                  {!isEditing && onboardingType === 'NEW' && (
+                    <span className="text-[10px] text-[#2F6F5E] font-medium bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">Auto-generated</span>
+                  )}
+                  {!isEditing && onboardingType === 'EXISTING' && (
+                    <span className="text-[10px] text-amber-700 font-medium bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">Manual Entry</span>
+                  )}
+                </label>
+                <input
+                  type="text"
+                  value={form.epfNo || ''}
+                  onChange={e => {
+                    setForm({ ...form, epfNo: e.target.value })
+                    if (errors.epfNo) setErrors(prev => ({ ...prev, epfNo: undefined }))
+                  }}
+                  className={`mt-1 w-full form-input mono-numeric ${errors.epfNo ? 'border-red-300 ring-2 ring-red-100' : ''}`}
+                  disabled={isEditing || (!isEditing && onboardingType === 'NEW')}
+                  placeholder={!isEditing && onboardingType === 'EXISTING' ? 'e.g. 91EPF099' : ''}
+                />
                 {errors.epfNo && <p className="mt-1 text-xs text-red-500">{errors.epfNo}</p>}
               </div>
               <div>
@@ -668,6 +705,77 @@ export default function EmployeesList() {
       </SlideOver>
 
       <ConfirmDialog open={!!confirm} title="Delete Employee" message={`Delete ${confirm}?`} onConfirm={handleDeleteConfirm} onCancel={() => setConfirm(null)} />
+
+      {/* Onboarding Mode Selection Modal */}
+      {onboardingModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b pb-3 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-800">Add Employee</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Select onboarding type for the employee record</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOnboardingModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none p-1 rounded-md hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => handleSelectOnboarding('NEW')}
+                className="w-full text-left p-4 rounded-xl border-2 border-emerald-200 hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50 transition flex items-start gap-3 group"
+              >
+                <div className="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
+                  1
+                </div>
+                <div>
+                  <h4 className="font-semibold text-slate-800 text-sm group-hover:text-emerald-800 flex items-center gap-2">
+                    New Employee
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-normal">Auto EPF</span>
+                  </h4>
+                  <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                    Keep current automated behavior: EPF No is automatically generated sequentially and locked as read-only.
+                  </p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectOnboarding('EXISTING')}
+                className="w-full text-left p-4 rounded-xl border-2 border-slate-200 hover:border-[#2F6F5E] bg-slate-50/50 hover:bg-slate-50 transition flex items-start gap-3 group"
+              >
+                <div className="w-9 h-9 rounded-lg bg-slate-700 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
+                  2
+                </div>
+                <div>
+                  <h4 className="font-semibold text-slate-800 text-sm group-hover:text-[#2F6F5E] flex items-center gap-2">
+                    Existing Employee
+                    <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-normal">Editable EPF</span>
+                  </h4>
+                  <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                    EPF No field is editable and empty. Enter an existing EPF number with duplicate check validation.
+                  </p>
+                </div>
+              </button>
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setOnboardingModalOpen(false)}
+                className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

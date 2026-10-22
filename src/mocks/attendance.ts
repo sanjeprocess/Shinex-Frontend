@@ -1,11 +1,13 @@
 import api from '../api/axios';
 
 export type Attendance = {
-  id: string; // client-side identifier (UUID)
+  id: string; // client-side identifier (UUID or year_month_epfNo_dayIn)
   atttYear: string;            // Attt_Year (NCHAR(4))
   attMonth: string;            // Att_Month (NCHAR(2))
   epfNo: string;               // EPF_No (NCHAR(10))
   plantCode: string;           // Plant_Code (NCHAR(10))
+  sectionCode?: string;        // Section_Code (Optional)
+  customerCode?: string;       // Customer_Code (Optional)
   workingDays?: number;        // Working_Days (FLOAT)
   otCalAuto?: string;          // OT_Cal_Auto (NCHAR(1)) - 'Y'/'N'
   noOfStaff?: number;          // No_Of_Staff (FLOAT)
@@ -37,19 +39,145 @@ export type Attendance = {
   businessCenter: string;      // Business_Center (NCHAR(100))
 };
 
-export const list = async (businessCenter?: string): Promise<Attendance[]> => {
+const STORAGE_KEY = 'hsb_attendance_data';
+
+// Initial sample attendance illustrating multi-plant work in the same month:
+// e.g., 91EPF001 worked in PL001 from 01 to 10, and in PL002 from 11 to 20
+function generateInitialAttendance(): Attendance[] {
+  const records: Attendance[] = [];
+  const year = '2026';
+  const month = '09';
+
+  // 91EPF001 in Plant PL001 for days 01 to 10
+  for (let d = 1; d <= 10; d++) {
+    const dayStr = String(d).padStart(2, '0');
+    const dayIn = `${year}-${month}-${dayStr}`;
+    records.push({
+      id: `${year}_${month}_91EPF001_${dayIn}`,
+      atttYear: year,
+      attMonth: month,
+      epfNo: '91EPF001',
+      plantCode: 'PL001',
+      customerCode: 'PL001',
+      sectionCode: 'SEC001',
+      workingDays: 1,
+      otCalAuto: 'Y',
+      noOfStaff: 5,
+      attAllowance: 'Y',
+      dasForAttAllowance: 22,
+      basicSalary: 1200,
+      dayAllowance: 50,
+      nightAllowance: 0,
+      dayIn: dayIn,
+      timeIn: '08:00',
+      dayOut: dayIn,
+      timeOut: '16:00',
+      halfDay: 0,
+      totalWorkingHours: 8,
+      totalOt: 0,
+      normalDay: 'Y',
+      saturdayPoya: 'N',
+      specialDay: 'N',
+      dayShift: 'Y',
+      secondShift: 'N',
+      nightShift: 'N',
+      fullNight: 'N',
+      noOfMeal: 1,
+      totalMealValue: 120,
+      businessCenter: '001'
+    });
+  }
+
+  // 91EPF001 in Plant PL002 for days 11 to 18
+  for (let d = 11; d <= 18; d++) {
+    const dayStr = String(d).padStart(2, '0');
+    const dayIn = `${year}-${month}-${dayStr}`;
+    records.push({
+      id: `${year}_${month}_91EPF001_${dayIn}`,
+      atttYear: year,
+      attMonth: month,
+      epfNo: '91EPF001',
+      plantCode: 'PL002',
+      customerCode: 'PL002',
+      sectionCode: 'SEC002',
+      workingDays: 1,
+      otCalAuto: 'Y',
+      noOfStaff: 5,
+      attAllowance: 'Y',
+      dasForAttAllowance: 22,
+      basicSalary: 1200,
+      dayAllowance: 50,
+      nightAllowance: 0,
+      dayIn: dayIn,
+      timeIn: '08:00',
+      dayOut: dayIn,
+      timeOut: '17:30',
+      halfDay: 0,
+      totalWorkingHours: 9.5,
+      totalOt: 1.5,
+      normalDay: 'Y',
+      saturdayPoya: 'N',
+      specialDay: 'N',
+      dayShift: 'Y',
+      secondShift: 'N',
+      nightShift: 'N',
+      fullNight: 'N',
+      noOfMeal: 1,
+      totalMealValue: 120,
+      businessCenter: '001'
+    });
+  }
+
+  return records;
+}
+
+function getStoredAttendance(): Attendance[] {
   try {
-    const activeBc = businessCenter || localStorage.getItem('hsb_active_bc') || '';
-    const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      const initial = generateInitialAttendance();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
+      return initial;
+    }
+    return JSON.parse(raw);
+  } catch {
+    return generateInitialAttendance();
+  }
+}
+
+function saveStoredAttendance(items: Attendance[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  } catch (err) {
+    console.error('Failed to persist attendance to localStorage', err);
+  }
+}
+
+function normalizeLocalDateTime(dateValue?: string, fallbackTime?: string): string | undefined {
+  if (!dateValue) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(dateValue)) return dateValue;
+
+  const baseDate = dateValue.includes('T') ? dateValue.split('T')[0] : dateValue;
+  const time = (fallbackTime || '00:00').trim();
+  return `${baseDate}T${time}`.length === 16 ? `${baseDate}T${time}:00` : `${baseDate}T${time}`;
+}
+
+export const list = async (businessCenter?: string): Promise<Attendance[]> => {
+  const activeBc = businessCenter || localStorage.getItem('hsb_active_bc') || '';
+  const cleanBc = activeBc ? activeBc.split(' / ')[0].trim().toUpperCase() : '';
+
+  try {
     const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
     const res = await api.get('/attendance', { params });
-    if (res.data && Array.isArray(res.data)) {
-      return res.data.map((a: any) => ({
+    if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+      const mapped = res.data.map((a: any) => ({
         id: `${a.attYear || a.atttYear}_${a.attMonth}_${a.epfNo}_${a.dayIn}`,
         atttYear: (a.attYear || a.atttYear || '').trim(),
         attMonth: (a.attMonth || '').trim(),
         epfNo: (a.epfNo || '').trim(),
         plantCode: (a.plantCode || '').trim(),
+        sectionCode: (a.sectionCode || '').trim() || undefined,
+        customerCode: (a.customerCode || '').trim() || undefined,
         workingDays: a.workingDays,
         otCalAuto: (a.otCalAuto || '').trim(),
         noOfStaff: a.noOfStaff,
@@ -80,11 +208,22 @@ export const list = async (businessCenter?: string): Promise<Attendance[]> => {
         sundayPoyaExtra: a.sundayPoyaExtra,
         businessCenter: (a.businessCenter || '').trim()
       }));
+      saveStoredAttendance(mapped);
+      return mapped;
     }
   } catch (err) {
-    console.error('Failed to load attendance from API', err);
+    // API failed, fallback to local store
   }
-  return [];
+
+  const all = getStoredAttendance();
+  if (!cleanBc || cleanBc === 'ALL') {
+    return all;
+  }
+
+  return all.filter(a => {
+    const aBc = (a.businessCenter || '').trim().toUpperCase();
+    return !aBc || aBc === cleanBc || aBc.startsWith(cleanBc) || cleanBc.startsWith(aBc);
+  });
 };
 
 export const listByEmployee = async (epf: string): Promise<Attendance[]> => {
@@ -95,30 +234,43 @@ export const listByEmployee = async (epf: string): Promise<Attendance[]> => {
     }
   } catch {}
   const all = await list();
-  return all.filter(a => a.epfNo === epf);
+  return all.filter(a => (a.epfNo || '').trim() === epf.trim());
 };
-
-function normalizeLocalDateTime(dateValue?: string, fallbackTime?: string): string | undefined {
-  if (!dateValue) return undefined;
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(dateValue)) return dateValue;
-
-  const baseDate = dateValue.includes('T') ? dateValue.split('T')[0] : dateValue;
-  const time = (fallbackTime || '00:00').trim();
-  return `${baseDate}T${time}`.length === 16 ? `${baseDate}T${time}:00` : `${baseDate}T${time}`;
-}
 
 export const create = async (rec: Attendance): Promise<Attendance> => {
   const activeBc = localStorage.getItem('hsb_active_bc') || '';
   const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
-  const payload = {
+  const recordId = rec.id || `${rec.atttYear || '2026'}_${rec.attMonth || '01'}_${rec.epfNo}_${rec.dayIn}`;
+
+  const payload: Attendance = {
     ...rec,
+    id: recordId,
     businessCenter: rec.businessCenter || cleanBc,
-    attYear: rec.atttYear || '2026',
+    atttYear: rec.atttYear || '2026',
     dayOut: normalizeLocalDateTime(rec.dayOut, rec.timeOut),
-    daysForAttAllowance: rec.dasForAttAllowance
+    dasForAttAllowance: rec.dasForAttAllowance
   };
-  await api.post('/attendance', payload);
-  return rec;
+
+  try {
+    await api.post('/attendance', {
+      ...payload,
+      attYear: payload.atttYear,
+      daysForAttAllowance: payload.dasForAttAllowance
+    });
+  } catch {
+    // Fallback store
+  }
+
+  const stored = getStoredAttendance();
+  const existingIdx = stored.findIndex(item => item.id === recordId || (item.epfNo === payload.epfNo && item.dayIn === payload.dayIn));
+  if (existingIdx >= 0) {
+    stored[existingIdx] = payload;
+  } else {
+    stored.unshift(payload);
+  }
+  saveStoredAttendance(stored);
+
+  return payload;
 };
 
 export const update = async (id: string, patch: Partial<Attendance>): Promise<Attendance> => {
@@ -134,19 +286,50 @@ export const update = async (id: string, patch: Partial<Attendance>): Promise<At
       dayOut: normalizeLocalDateTime(patch.dayOut, patch.timeOut),
       daysForAttAllowance: patch.dasForAttAllowance
     };
-    await api.put(`/attendance/${year}/${month}/${epfNo}/${dayIn}`, payload);
+    try {
+      await api.put(`/attendance/${year}/${month}/${epfNo}/${dayIn}`, payload);
+    } catch {}
   }
+
+  const stored = getStoredAttendance();
+  const index = stored.findIndex(item => item.id === id);
+  if (index >= 0) {
+    stored[index] = { ...stored[index], ...patch };
+    saveStoredAttendance(stored);
+    return stored[index];
+  }
+
   return { id, ...patch } as Attendance;
 };
 
 export const bulkSave = async (records: Attendance[]): Promise<void> => {
-  await api.post('/attendance/bulk', records);
+  try {
+    await api.post('/attendance/bulk', records);
+  } catch {
+    // Fallback store
+  }
+
+  const stored = getStoredAttendance();
+  const map = new Map<string, Attendance>();
+  stored.forEach(r => map.set(r.id || `${r.atttYear}_${r.attMonth}_${r.epfNo}_${r.dayIn}`, r));
+
+  records.forEach(r => {
+    const key = r.id || `${r.atttYear}_${r.attMonth}_${r.epfNo}_${r.dayIn}`;
+    map.set(key, { ...map.get(key), ...r, id: key });
+  });
+
+  saveStoredAttendance(Array.from(map.values()));
 };
 
 export const remove = async (id: string): Promise<void> => {
   const parts = id.split('_');
   if (parts.length >= 4) {
     const [year, month, epfNo, dayIn] = parts;
-    await api.delete(`/attendance/${encodeURIComponent(year)}/${encodeURIComponent(month)}/${encodeURIComponent(epfNo)}/${encodeURIComponent(dayIn)}`);
+    try {
+      await api.delete(`/attendance/${encodeURIComponent(year)}/${encodeURIComponent(month)}/${encodeURIComponent(epfNo)}/${encodeURIComponent(dayIn)}`);
+    } catch {}
   }
+
+  const stored = getStoredAttendance().filter(item => item.id !== id);
+  saveStoredAttendance(stored);
 };
