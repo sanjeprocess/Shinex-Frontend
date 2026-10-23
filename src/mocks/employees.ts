@@ -4,13 +4,14 @@ import { Employee } from '../types/employee';
 export const employees: Employee[] = [];
 
 export const list = async (businessCenter?: string): Promise<Employee[]> => {
-  try {
-    const activeBc = businessCenter || localStorage.getItem('hsb_active_bc') || '';
-    const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
-    const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
-    const res = await api.get('/employees', { params });
-    if (res.data && Array.isArray(res.data)) {
-      return res.data.map((e: any) => ({
+  const activeBc = businessCenter || '';
+  const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
+  const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
+  const res = await api.get('/employees', { params });
+  if (!Array.isArray(res.data)) {
+    throw new Error('Employee endpoint returned an invalid response.');
+  }
+  return res.data.map((e: any) => ({
         epfNo: (e.epfNo || '').trim(),
         nicNo: (e.nicNo || '').trim(),
         firstName: (e.firstName || e.empName || '').trim(),
@@ -38,21 +39,17 @@ export const list = async (businessCenter?: string): Promise<Employee[]> => {
         swift: (e.swift || '').trim(),
         bCardYes: e.bCardYes === 'Y' || e.bCardYes === true,
         deathDonation: e.dethDenotion === 'Y' || e.deathDonation === true
-      }));
-    }
-  } catch (err) {
-    console.error('Failed to load employees from API', err);
-  }
-  return [];
+  }));
 };
 
 export const getById = async (epf: string): Promise<Employee | undefined> => {
   try {
-    const res = await api.get(`/employees/${epf}`);
-    if (res.data) return res.data;
-  } catch {}
-  const all = await list();
-  return all.find(e => e.epfNo === epf);
+    const res = await api.get(`/employees/${encodeURIComponent(epf)}`);
+    return res.data || undefined;
+  } catch (error: any) {
+    if (error?.response?.status === 404) return undefined;
+    throw error;
+  }
 };
 
 export const create = async (e: Employee): Promise<Employee> => {

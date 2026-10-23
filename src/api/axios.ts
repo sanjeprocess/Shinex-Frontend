@@ -4,13 +4,7 @@ import { canEdit, getCurrentUser } from '../utils/permissions'
 
 const getStoredToken = () => {
   try {
-    return (
-      localStorage.getItem('hsb_auth_token') ||
-      localStorage.getItem('token') ||
-      localStorage.getItem('jwt') ||
-      sessionStorage.getItem('hsb_auth_token') ||
-      ''
-    )
+    return localStorage.getItem('hsb_auth_token') || ''
   } catch {
     return ''
   }
@@ -21,13 +15,13 @@ const getBaseUrl = () => {
   // handle forwarding to the backend. This avoids Mixed Content (HTTPS→HTTP) errors.
   // In local dev: VITE_API_URL is set via .env, or falls back to localhost proxy.
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
-  if (import.meta.env.DEV) return 'http://localhost:5000/api'
+  if (import.meta.env.DEV) return '/api'
   return '/api'  // Production: relative path → Amplify proxy forwards to backend
 }
 
 const api = axios.create({
   baseURL: getBaseUrl(),
-  timeout: 10_000,
+  timeout: 120_000,
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json'
@@ -55,21 +49,29 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (!error.response) {
-      toast.error("Can't reach the server. Please check your connection and try again.", {
+      toast.error("Can't reach the server. Check your network connection and backend availability, then try again.", {
         id: 'network-error'
       })
     } else {
       const status: number = error.response.status
       const isAuthEndpoint = String(error.config?.url || '').includes('/auth/')
-      if ((status === 401 || status === 403) && !isAuthEndpoint && window.location.pathname !== '/login') {
+      if (status === 401 && !isAuthEndpoint && window.location.pathname !== '/login') {
         localStorage.removeItem('hsb_auth_token')
-        toast.error('Session expired or unauthorized. Please sign in again.', {
+        toast.error('Your session has expired. Please sign in again.', {
           id: 'auth-error'
         })
         window.location.href = '/login'
         return Promise.reject(error)
       }
-      if (status === 409) {
+      if (status === 401) {
+        toast.error(isAuthEndpoint ? 'Invalid username or password.' : 'Authentication is required.', {
+          id: 'auth-error'
+        })
+      } else if (status === 403) {
+        toast.error('Access denied. Your account does not have permission to perform this action.', {
+          id: 'forbidden-error'
+        })
+      } else if (status === 409) {
         const isDelete = (error.config?.method || '').toLowerCase() === 'delete';
         const data = error.response.data;
         const backendMessage =

@@ -1,73 +1,74 @@
 import React, { useState, useEffect } from 'react'
 import A4Report from '../../components/reports/A4Report'
-import { list as listAttendance, Attendance } from '../../mocks/attendance'
+import { Attendance } from '../../mocks/attendance'
 import { list as listEmployees } from '../../mocks/employees'
 import { list as listCustomers, Customer } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
+import api from '../../api/axios'
 import { formatDateDdMmmYyyy, formatTimeAmPm, decimalToHmm, formatCurrency } from '../../utils/reportHelpers'
 
 export default function AttendanceReportPage() {
-  const [year, setYear] = useState<string>('2024')
-  const [month, setMonth] = useState<string>('12')
-  const [businessCenter, setBusinessCenter] = useState<string>(
-    localStorage.getItem('hsb_active_bc') || 'ALL'
-  )
+  const [year, setYear] = useState<string>(String(new Date().getFullYear()))
+  const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
+  const [businessCenter, setBusinessCenter] = useState<string>('ALL')
   const [selectedPlant, setSelectedPlant] = useState<string>('')
 
   const [businessCenters, setBusinessCenters] = useState<any[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [employees, setEmployees] = useState<any[]>([])
   const [attendanceList, setAttendanceList] = useState<Attendance[]>([])
-  const [isFallback, setIsFallback] = useState<boolean>(false)
   const [loading, setLoading] = useState<boolean>(false)
-  const [hasGenerated, setHasGenerated] = useState<boolean>(false)
 
   useEffect(() => {
     Promise.all([
-      listBC().catch(() => []),
-      listCustomers().catch(() => []),
-      listEmployees().catch(() => []),
+      listBC(),
+      listCustomers(businessCenter),
+      listEmployees(businessCenter),
     ]).then(([bcs, custs, emps]) => {
       setBusinessCenters(bcs)
       setCustomers(custs)
       setEmployees(emps)
-      if (custs.length > 0 && !selectedPlant) {
-        setSelectedPlant(custs[0].code)
-      }
+      setSelectedPlant(current => custs.some(customer => customer.code === current)
+        ? current
+        : custs[0]?.code || '')
     })
-  }, [])
+  }, [businessCenter])
 
   const loadData = async () => {
     setLoading(true)
     try {
       const cleanBc = businessCenter && businessCenter !== 'ALL' ? businessCenter.split(' / ')[0].trim() : ''
-      const res = await listAttendance(cleanBc)
-      setAttendanceList(res)
-      // Check if fallback was used
-      const rawStored = localStorage.getItem('hsb_attendance_data')
-      setIsFallback(!!rawStored && res.length > 0)
-      setHasGenerated(true)
-    } catch {
-      setIsFallback(true)
-      setHasGenerated(true)
+      const response = await api.get('/reports/attendance', {
+        params: { businessCenter: cleanBc || 'ALL', year, month, plant: selectedPlant || undefined }
+      })
+      if (!Array.isArray(response.data)) {
+        throw new Error('Attendance report returned an invalid response.')
+      }
+      setAttendanceList(response.data.map((row: any) => ({
+        ...row,
+        atttYear: row.attYear || row.atttYear,
+        dasForAttAllowance: row.daysForAttAllowance ?? row.dasForAttAllowance
+      })))
+    } catch (error) {
+      setAttendanceList([])
+      console.error('Attendance report could not be loaded', error)
     } finally {
       setLoading(false)
     }
   }
 
-  // Initial load
   useEffect(() => {
     loadData()
-  }, [])
+  }, [businessCenter, year, month, selectedPlant])
 
   const selectedCustObj = customers.find(c => c.code === selectedPlant)
   const plantTitle = selectedCustObj
     ? `${selectedCustObj.name} - ${selectedCustObj.address || selectedCustObj.code}`
-    : 'BRANDIX APPAREL SOLUTIONS (PVT) LTD - RIDIGAMA'
+    : ''
 
   const metaLeft = (
     <div>
-      <div>{selectedCustObj ? selectedCustObj.name : 'Ridigama'}</div>
+      <div>{selectedCustObj?.name || ''}</div>
       <div>
         Year : {year} &nbsp; Month : {month}
       </div>
@@ -111,7 +112,6 @@ export default function AttendanceReportPage() {
   // Group by employee
   filtered.sort((a, b) => (a.epfNo || '').localeCompare(b.epfNo || ''))
 
-  // If no live records found for the filter, provide prototype seed rows when viewing default
   let displayRows: any[][] = []
 
   if (filtered.length > 0) {
@@ -137,40 +137,11 @@ export default function AttendanceReportPage() {
         (a.noOfMeal || 0).toFixed(2),
         formatCurrency(a.totalMealValue || 0),
         '0.00',
-        formatCurrency(a.basicSalary || 152.95),
-        a.dayShift || 'Y',
-        a.normalDay || 'Y',
+        formatCurrency(a.basicSalary || 0),
+        a.dayShift || '',
+        a.normalDay || '',
       ]
     })
-  } else if (!hasGenerated || (year === '2024' && month === '12')) {
-    // Seed default sample rows from the prototype
-    const sampleAtt = [
-      ['06-Dec-2024', '7:16 am', '6:30 pm', 11.23, 2.0],
-      ['07-Dec-2024', '7:15 am', '4:30 pm', 9.25, 3.25],
-      ['10-Dec-2024', '7:15 am', '6:31 pm', 11.27, 2.0],
-      ['11-Dec-2024', '7:10 am', '6:30 pm', 11.33, 2.0],
-      ['12-Dec-2024', '7:15 am', '6:30 pm', 11.25, 2.0],
-      ['28-Dec-2024', '6:20 am', '6:30 pm', 12.17, 6.25],
-    ]
-
-    displayRows = sampleAtt.map(r => [
-      'D M CHANDRALATHA-E73',
-      'E73',
-      r[0],
-      r[1],
-      r[0],
-      r[2],
-      (r[3] as number).toFixed(2),
-      decimalToHmm(r[3] as number),
-      (r[4] as number).toFixed(2),
-      decimalToHmm(r[4] as number),
-      '0.00',
-      '0.00',
-      '0.00',
-      '152.95',
-      'Y',
-      'Y',
-    ])
   }
 
   const filterControls = (
@@ -251,7 +222,6 @@ export default function AttendanceReportPage() {
       numericFromColIndex={6}
       rowsPerPage={18}
       isLoading={loading}
-      isFallback={isFallback}
       filterControls={filterControls}
       onGenerate={loadData}
     />

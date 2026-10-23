@@ -1,22 +1,43 @@
 import React from 'react'
-import { Link, Outlet, useNavigate } from 'react-router-dom'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import TopMenuBar from '../components/TopMenuBar'
 import { list as listBC } from '../mocks/businessCenters'
 import { useState, useEffect } from 'react'
 import ShinexLogo from '../components/ShinexLogo'
+import api from '../api/axios'
 
 export default function AppShell() {
   const [bc, setBc] = useState<string | null>(null)
   const [centers, setCenters] = useState<any[]>([])
   const [profileOpen, setProfileOpen] = useState(false)
   const [bcOpen, setBcOpen] = useState(false)
+  const [apiHealth, setApiHealth] = useState<'checking' | 'up' | 'down'>('checking')
   const navigate = useNavigate()
+  const location = useLocation()
 
   const rootRef = React.useRef<HTMLDivElement | null>(null)
 
   const userRole = (localStorage.getItem('hsb_user_role') || '').toUpperCase()
   const isSuperAdmin = ['SUPERADMIN', 'SUPER_ADMIN'].includes(userRole)
+
+  useEffect(() => {
+    let isMounted = true
+    const checkHealth = async () => {
+      try {
+        const response = await api.get('/health', { timeout: 10_000 })
+        if (isMounted) setApiHealth(response.data?.database === 'UP' ? 'up' : 'down')
+      } catch {
+        if (isMounted) setApiHealth('down')
+      }
+    }
+    void checkHealth()
+    const interval = window.setInterval(checkHealth, 30_000)
+    return () => {
+      isMounted = false
+      window.clearInterval(interval)
+    }
+  }, [])
 
   useEffect(() => {
     listBC().then(list => {
@@ -101,6 +122,15 @@ export default function AppShell() {
           </div>
 
           <div className="flex items-center gap-4">
+            <span
+              role="status"
+              aria-label={`Server connection ${apiHealth}`}
+              title={`Server connection: ${apiHealth}`}
+              className={`inline-flex items-center gap-1.5 text-xs ${apiHealth === 'up' ? 'text-emerald-700' : apiHealth === 'down' ? 'text-red-700' : 'text-slate-500'}`}
+            >
+              <span className={`h-2 w-2 rounded-full ${apiHealth === 'up' ? 'bg-emerald-500' : apiHealth === 'down' ? 'bg-red-500' : 'bg-slate-400'}`} />
+              {apiHealth === 'up' ? 'Connected' : apiHealth === 'down' ? 'Connection failed' : 'Checking'}
+            </span>
             {isSuperAdmin && bc === 'ALL' ? (
               <div className="relative">
                 <button

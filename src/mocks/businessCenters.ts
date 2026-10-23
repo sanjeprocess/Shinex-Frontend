@@ -17,10 +17,11 @@ export type BusinessCenter = {
 export const businessCenters: BusinessCenter[] = [];
 
 export const list = async (): Promise<BusinessCenter[]> => {
-  try {
-    const res = await api.get('/business-centers');
-    if (res.data && Array.isArray(res.data)) {
-      return res.data.map((b: any) => ({
+  const res = await api.get('/business-centers');
+  if (!Array.isArray(res.data)) {
+    throw new Error('Business center endpoint returned an invalid response.');
+  }
+  return res.data.map((b: any) => ({
         id: (b.code || b.companyId || b.id || '').trim(),
         code: (b.code || b.companyId || '').trim(),
         name: (b.name || b.companyName || '').trim(),
@@ -32,12 +33,7 @@ export const list = async (): Promise<BusinessCenter[]> => {
         vatReg: (b.vatReg || '').trim(),
         brNo: (b.brNo || '').trim(),
         fax: (b.fax || b.faxNo || '').trim()
-      }));
-    }
-  } catch (err) {
-    console.error('Failed to load business centers from API', err);
-  }
-  return [];
+  }));
 };
 
 export const getByCode = async (code: string): Promise<BusinessCenter | undefined> => {

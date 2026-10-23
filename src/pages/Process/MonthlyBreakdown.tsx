@@ -5,6 +5,7 @@ import { list as listEmployees } from '../../services/employeeService'
 import type { Employee } from '../../types/employee'
 import { getMonthlySummary, type MonthlySummary } from '../../mocks/monthlySummary'
 import { calculateSalary } from '../../services/salaryCalculationService'
+import { list as listBusinessCenters } from '../../mocks/businessCenters'
 
 const money = (value: number | undefined) => `LKR ${Number(value || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
@@ -16,9 +17,17 @@ export default function MonthlyBreakdown() {
   const [summary, setSummary] = useState<MonthlySummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [businessCenters, setBusinessCenters] = useState<any[]>([])
 
   const activeBc = localStorage.getItem('hsb_active_bc') || 'ALL'
   const cleanBc = activeBc && activeBc !== 'ALL' ? activeBc.split(' / ')[0].trim() : ''
+  const companyName = businessCenters.find(center =>
+    center.code === summary?.businessCenter || center.name === summary?.businessCenter
+  )?.name || ''
+
+  useEffect(() => {
+    listBusinessCenters().then(setBusinessCenters).catch(console.error)
+  }, [])
 
   useEffect(() => {
     listEmployees(cleanBc).then(setEmployees).catch(console.error)
@@ -104,7 +113,7 @@ export default function MonthlyBreakdown() {
     const etf3 = summary.etf3 !== undefined ? summary.etf3 : Math.round(normalAmount * 0.03 * 100) / 100;
 
     const lines: string[] = [
-      `SHINEX HOUSE KEEPING SERVICES (PVT) LTD,,,${month.padStart(2, '0')}/${year},`,
+      `${companyName},,,${month.padStart(2, '0')}/${year},`,
       `,,,,`,
       `NAME AND EPF NO / பெயர் / නම සහ අංකය,,,${summary.empName} - ${summary.epfNo},`,
       `,DAY,HOUR,RATE,AMOUNT`,

@@ -19,66 +19,6 @@ export type DeductionTransaction = {
   notes?: string;
 };
 
-const STORAGE_KEY = 'hsb_deduction_transactions';
-
-const initialMockDeductions: DeductionTransaction[] = [
-  {
-    id: 'dt-001',
-    epfNo: '91EPF001',
-    employeeName: 'Kasun Bandara',
-    didCode: 'DUD001',
-    deductionName: 'Company Uniform Kit',
-    isLoan: false,
-    isUniform: true,
-    businessCenter: '001',
-    startDate: '2026-01-01',
-    endDate: '2026-06-30',
-    totalAmount: 6000,
-    monthlyCut: 1000,
-    status: 'Active',
-    createdAt: '2026-01-01T08:00:00Z',
-    notes: 'Uniform deposit deduction (6 installments)'
-  },
-  {
-    id: 'dt-002',
-    epfNo: '91EPF002',
-    employeeName: 'Nimal Perera',
-    didCode: 'DUD002',
-    deductionName: 'Festival Welfare Loan',
-    isLoan: true,
-    isUniform: false,
-    businessCenter: '001',
-    startDate: '2026-01-01',
-    endDate: '2026-05-31',
-    totalAmount: 10000,
-    monthlyCut: 2500,
-    status: 'Active',
-    createdAt: '2026-01-01T08:00:00Z',
-    notes: 'Welfare distress loan'
-  }
-];
-
-function getStoredTransactions(): DeductionTransaction[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initialMockDeductions));
-      return initialMockDeductions;
-    }
-    return JSON.parse(raw);
-  } catch {
-    return initialMockDeductions;
-  }
-}
-
-function saveTransactions(items: DeductionTransaction[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-  } catch (err) {
-    console.error('Failed to persist deduction transactions to localStorage', err);
-  }
-}
-
 /**
  * Computes months cut so far, remaining balance, and status based on salary deduction rules:
  * - Deducts monthly cut only for months between Start Date and End Date.
@@ -146,34 +86,20 @@ export function computeDeductionMetrics(
 
 export const list = async (businessCenter?: string): Promise<DeductionTransaction[]> => {
   const activeBc = businessCenter || localStorage.getItem('hsb_active_bc') || '';
-  const cleanBc = activeBc ? activeBc.split(' / ')[0].trim().toUpperCase() : '';
-
-  try {
-    const res = await api.get('/deduction-transactions', {
-      params: cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {}
-    });
-    if (res.data && Array.isArray(res.data)) {
-      return res.data;
-    }
-  } catch {
-    // Fall back to local store
-  }
-
-  const all = getStoredTransactions();
-  if (!cleanBc || cleanBc === 'ALL') {
-    return all;
-  }
-
-  return all.filter(t => {
-    const tBc = (t.businessCenter || '').trim().toUpperCase();
-    return !tBc || tBc === cleanBc || tBc.startsWith(cleanBc) || cleanBc.startsWith(tBc);
+  const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
+  const response = await api.get('/deduction-transactions', {
+    params: cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {}
   });
+  if (!Array.isArray(response.data)) {
+    throw new Error('Deduction transaction endpoint returned an invalid response.');
+  }
+  return response.data;
 };
 
 export const create = async (
   t: Omit<DeductionTransaction, 'id' | 'status'> & { id?: string; status?: 'Active' | 'Completed' }
 ): Promise<DeductionTransaction> => {
-  const activeBc = localStorage.getItem('hsb_active_bc') || '001';
+  const activeBc = localStorage.getItem('hsb_active_bc') || '';
   const cleanBc = activeBc.split(' / ')[0].trim();
 
   const record: DeductionTransaction = {
@@ -184,40 +110,17 @@ export const create = async (
     createdAt: new Date().toISOString()
   };
 
-  try {
-    await api.post('/deduction-transactions', record);
-  } catch {
-    // Fallback store
-  }
-
-  const list = getStoredTransactions();
-  list.unshift(record);
-  saveTransactions(list);
-  return record;
+  const response = await api.post('/deduction-transactions', record);
+  return response.data;
 };
 
 export const update = async (id: string, patch: Partial<DeductionTransaction>): Promise<DeductionTransaction> => {
-  try {
-    await api.put('/deduction-transactions/' + encodeURIComponent(id), patch);
-  } catch {}
-
-  const list = getStoredTransactions();
-  const index = list.findIndex(item => item.id === id);
-  if (index >= 0) {
-    list[index] = { ...list[index], ...patch };
-    saveTransactions(list);
-    return list[index];
-  }
-  throw new Error('Deduction transaction record not found');
+  const response = await api.put(`/deduction-transactions/${encodeURIComponent(id)}`, patch);
+  return response.data;
 };
 
 export const remove = async (id: string): Promise<void> => {
-  try {
-    await api.delete('/deduction-transactions/' + encodeURIComponent(id));
-  } catch {}
-
-  const list = getStoredTransactions().filter(item => item.id !== id);
-  saveTransactions(list);
+  await api.delete(`/deduction-transactions/${encodeURIComponent(id)}`);
 };
 
 /**
@@ -240,54 +143,15 @@ export const getMonthlyDeduction = async (
   const targetMonth = Number(month);
   if (!targetYear || !targetMonth) return 0;
 
-  const targetIndex = targetYear * 12 + targetMonth;
-  const all = await list();
-
-  const empTransactions = all.filter(t => (t.epfNo || '').trim().toLowerCase() === cleanEpf);
-
-  let totalDeduction = 0;
-
-  for (const trans of empTransactions) {
-    if (trans.status === 'Completed') continue;
-    if (!trans.startDate || !trans.endDate) continue;
-
-    const [sY, sM] = trans.startDate.split('-').map(Number);
-    const [eY, eM] = trans.endDate.split('-').map(Number);
-    if (!sY || !sM || !eY || !eM) continue;
-
-    const sIndex = sY * 12 + sM;
-    const eIndex = eY * 12 + eM;
-
-    // Check if target month is within [sIndex, eIndex]
-    if (targetIndex < sIndex || targetIndex > eIndex) {
-      continue;
-    }
-
-    // Calculate prior months deducted
-    const priorMonths = targetIndex - sIndex;
-    let priorDeducted = 0;
-
-    for (let m = 0; m < priorMonths; m++) {
-      const remainingBefore = trans.totalAmount - priorDeducted;
-      const cut = (remainingBefore <= trans.monthlyCut || (sIndex + m) === eIndex)
-        ? remainingBefore
-        : trans.monthlyCut;
-      priorDeducted += cut;
-      if (priorDeducted >= trans.totalAmount) break;
-    }
-
-    if (priorDeducted >= trans.totalAmount) {
-      // Balance was already paid off
-      continue;
-    }
-
-    const remainingBeforeThisMonth = trans.totalAmount - priorDeducted;
-    const deductionThisMonth = (targetIndex === eIndex || remainingBeforeThisMonth <= trans.monthlyCut)
-      ? remainingBeforeThisMonth
-      : trans.monthlyCut;
-
-    totalDeduction += deductionThisMonth;
+  if (targetMonth < 1 || targetMonth > 12) {
+    throw new Error('Month must be between 1 and 12.');
   }
-
-  return Math.round(totalDeduction * 100) / 100;
+  const response = await api.get('/deduction-transactions/monthly-deduction', {
+    params: { year: targetYear, month: targetMonth }
+  });
+  if (!Array.isArray(response.data)) {
+    throw new Error('Monthly deduction endpoint returned an invalid response.');
+  }
+  const employee = response.data.find((row: any) => String(row.epfNo || '').trim().toLowerCase() === cleanEpf);
+  return Number(employee?.monthlyDeduction || 0);
 };

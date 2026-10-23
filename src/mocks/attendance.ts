@@ -40,120 +40,6 @@ export type Attendance = {
   businessCenter: string;      // Business_Center (NCHAR(100))
 };
 
-const STORAGE_KEY = 'hsb_attendance_data';
-
-// Initial sample attendance illustrating multi-plant work in the same month:
-// e.g., 91EPF001 worked in PL001 from 01 to 10, and in PL002 from 11 to 20
-function generateInitialAttendance(): Attendance[] {
-  const records: Attendance[] = [];
-  const year = '2026';
-  const month = '09';
-
-  // 91EPF001 in Plant PL001 for days 01 to 10
-  for (let d = 1; d <= 10; d++) {
-    const dayStr = String(d).padStart(2, '0');
-    const dayIn = `${year}-${month}-${dayStr}`;
-    records.push({
-      id: `${year}_${month}_91EPF001_${dayIn}`,
-      atttYear: year,
-      attMonth: month,
-      epfNo: '91EPF001',
-      plantCode: 'PL001',
-      customerCode: 'PL001',
-      sectionCode: 'SEC001',
-      workingDays: 1,
-      otCalAuto: 'Y',
-      noOfStaff: 5,
-      attAllowance: 'Y',
-      dasForAttAllowance: 22,
-      basicSalary: 1200,
-      dayAllowance: 50,
-      nightAllowance: 0,
-      dayIn: dayIn,
-      timeIn: '08:00',
-      dayOut: dayIn,
-      timeOut: '16:00',
-      halfDay: 0,
-      totalWorkingHours: 8,
-      totalOt: 0,
-      normalDay: 'Y',
-      saturdayPoya: 'N',
-      specialDay: 'N',
-      dayShift: 'Y',
-      secondShift: 'N',
-      nightShift: 'N',
-      fullNight: 'N',
-      noOfMeal: 1,
-      totalMealValue: 120,
-      businessCenter: '001'
-    });
-  }
-
-  // 91EPF001 in Plant PL002 for days 11 to 18
-  for (let d = 11; d <= 18; d++) {
-    const dayStr = String(d).padStart(2, '0');
-    const dayIn = `${year}-${month}-${dayStr}`;
-    records.push({
-      id: `${year}_${month}_91EPF001_${dayIn}`,
-      atttYear: year,
-      attMonth: month,
-      epfNo: '91EPF001',
-      plantCode: 'PL002',
-      customerCode: 'PL002',
-      sectionCode: 'SEC002',
-      workingDays: 1,
-      otCalAuto: 'Y',
-      noOfStaff: 5,
-      attAllowance: 'Y',
-      dasForAttAllowance: 22,
-      basicSalary: 1200,
-      dayAllowance: 50,
-      nightAllowance: 0,
-      dayIn: dayIn,
-      timeIn: '08:00',
-      dayOut: dayIn,
-      timeOut: '17:30',
-      halfDay: 0,
-      totalWorkingHours: 9.5,
-      totalOt: 1.5,
-      normalDay: 'Y',
-      saturdayPoya: 'N',
-      specialDay: 'N',
-      dayShift: 'Y',
-      secondShift: 'N',
-      nightShift: 'N',
-      fullNight: 'N',
-      noOfMeal: 1,
-      totalMealValue: 120,
-      businessCenter: '001'
-    });
-  }
-
-  return records;
-}
-
-function getStoredAttendance(): Attendance[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      const initial = generateInitialAttendance();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
-      return initial;
-    }
-    return JSON.parse(raw);
-  } catch {
-    return generateInitialAttendance();
-  }
-}
-
-function saveStoredAttendance(items: Attendance[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-  } catch (err) {
-    console.error('Failed to persist attendance to localStorage', err);
-  }
-}
-
 function normalizeLocalDateTime(dateValue?: string, fallbackTime?: string): string | undefined {
   if (!dateValue) return undefined;
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(dateValue)) return dateValue;
@@ -163,145 +49,104 @@ function normalizeLocalDateTime(dateValue?: string, fallbackTime?: string): stri
   return `${baseDate}T${time}`.length === 16 ? `${baseDate}T${time}:00` : `${baseDate}T${time}`;
 }
 
+function fromApi(a: any): Attendance {
+  return {
+    id: `${a.attYear || a.atttYear}_${a.attMonth}_${a.epfNo}_${a.dayIn}`,
+    atttYear: String(a.attYear || a.atttYear || '').trim(),
+    attMonth: String(a.attMonth || '').trim(),
+    epfNo: String(a.epfNo || '').trim(),
+    employeeName: String(a.employeeName || a.empName || '').trim() || undefined,
+    plantCode: String(a.plantCode || '').trim(),
+    sectionCode: String(a.sectionCode || '').trim() || undefined,
+    customerCode: String(a.customerCode || '').trim() || undefined,
+    workingDays: a.workingDays,
+    otCalAuto: String(a.otCalAuto || '').trim(),
+    noOfStaff: a.noOfStaff,
+    attAllowance: String(a.attAllowance || '').trim(),
+    dasForAttAllowance: a.daysForAttAllowance ?? a.dasForAttAllowance,
+    poyaSaturdayNormal: String(a.poyaSaturdayNormal || '').trim(),
+    basicSalary: a.basicSalary,
+    dayAllowance: a.dayAllowance,
+    nightAllowance: a.nightAllowance,
+    dayIn: a.dayIn || '',
+    timeIn: a.timeIn || '',
+    dayOut: a.dayOut || '',
+    timeOut: a.timeOut || '',
+    halfDay: a.halfDay,
+    totalWorkingHours: a.totalWorkingHours,
+    totalOt: a.totalOt,
+    normalDay: String(a.normalDay || '').trim(),
+    saturdayPoya: String(a.saturdayPoya || '').trim(),
+    specialDay: String(a.specialDay || '').trim(),
+    lateAllowNo: String(a.lateAllowNo || '').trim(),
+    dayShift: String(a.dayShift || '').trim(),
+    secondShift: String(a.secondShift || '').trim(),
+    nightShift: String(a.nightShift || '').trim(),
+    fullNight: String(a.fullNight || '').trim(),
+    noOfMeal: a.noOfMeal,
+    totalMealValue: a.totalMealValue,
+    statutoryHolidays: a.statutoryHolidays,
+    sundayPoyaExtra: a.sundayPoyaExtra,
+    businessCenter: String(a.businessCenter || '').trim()
+  };
+}
+
 export const list = async (businessCenter?: string): Promise<Attendance[]> => {
   const activeBc = businessCenter || localStorage.getItem('hsb_active_bc') || '';
-  const cleanBc = activeBc ? activeBc.split(' / ')[0].trim().toUpperCase() : '';
-
-  try {
-    const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
-    const res = await api.get('/attendance', { params });
-    if (res.data && Array.isArray(res.data) && res.data.length > 0) {
-      const mapped = res.data.map((a: any) => ({
-        id: `${a.attYear || a.atttYear}_${a.attMonth}_${a.epfNo}_${a.dayIn}`,
-        atttYear: (a.attYear || a.atttYear || '').trim(),
-        attMonth: (a.attMonth || '').trim(),
-        epfNo: (a.epfNo || '').trim(),
-        employeeName: (a.employeeName || a.empName || '').trim() || undefined,
-        plantCode: (a.plantCode || '').trim(),
-        sectionCode: (a.sectionCode || '').trim() || undefined,
-        customerCode: (a.customerCode || '').trim() || undefined,
-        workingDays: a.workingDays,
-        otCalAuto: (a.otCalAuto || '').trim(),
-        noOfStaff: a.noOfStaff,
-        attAllowance: (a.attAllowance || '').trim(),
-        dasForAttAllowance: a.daysForAttAllowance || a.dasForAttAllowance,
-        poyaSaturdayNormal: (a.poyaSaturdayNormal || '').trim(),
-        basicSalary: a.basicSalary,
-        dayAllowance: a.dayAllowance,
-        nightAllowance: a.nightAllowance,
-        dayIn: a.dayIn || '',
-        timeIn: a.timeIn || '',
-        dayOut: a.dayOut || '',
-        timeOut: a.timeOut || '',
-        halfDay: a.halfDay,
-        totalWorkingHours: a.totalWorkingHours,
-        totalOt: a.totalOt,
-        normalDay: (a.normalDay || '').trim(),
-        saturdayPoya: (a.saturdayPoya || '').trim(),
-        specialDay: (a.specialDay || '').trim(),
-        lateAllowNo: (a.lateAllowNo || '').trim(),
-        dayShift: (a.dayShift || '').trim(),
-        secondShift: (a.secondShift || '').trim(),
-        nightShift: (a.nightShift || '').trim(),
-        fullNight: (a.fullNight || '').trim(),
-        noOfMeal: a.noOfMeal,
-        totalMealValue: a.totalMealValue,
-        statutoryHolidays: a.statutoryHolidays,
-        sundayPoyaExtra: a.sundayPoyaExtra,
-        businessCenter: (a.businessCenter || '').trim()
-      }));
-      saveStoredAttendance(mapped);
-      return mapped;
-    }
-  } catch (err) {
-    // API failed, fallback to local store
+  const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
+  const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
+  const res = await api.get('/attendance', { params });
+  if (!Array.isArray(res.data)) {
+    throw new Error('Attendance endpoint returned an invalid response.');
   }
-
-  const all = getStoredAttendance();
-  if (!cleanBc || cleanBc === 'ALL') {
-    return all;
-  }
-
-  return all.filter(a => {
-    const aBc = (a.businessCenter || '').trim().toUpperCase();
-    return !aBc || aBc === cleanBc || aBc.startsWith(cleanBc) || cleanBc.startsWith(aBc);
-  });
+  return res.data.map(fromApi);
 };
 
 export const listByEmployee = async (epf: string): Promise<Attendance[]> => {
-  try {
-    const res = await api.get(`/attendance/by-employee/${epf}`);
-    if (res.data && Array.isArray(res.data)) {
-      return res.data;
-    }
-  } catch {}
-  const all = await list();
-  return all.filter(a => (a.epfNo || '').trim() === epf.trim());
+  const res = await api.get(`/attendance/by-employee/${encodeURIComponent(epf)}`);
+  if (!Array.isArray(res.data)) {
+    throw new Error('Attendance endpoint returned an invalid response.');
+  }
+  return res.data.map(fromApi);
 };
 
 export const create = async (rec: Attendance): Promise<Attendance> => {
   const activeBc = localStorage.getItem('hsb_active_bc') || '';
   const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
-  const recordId = rec.id || `${rec.atttYear || '2026'}_${rec.attMonth || '01'}_${rec.epfNo}_${rec.dayIn}`;
-
   const payload: Attendance = {
     ...rec,
-    id: recordId,
     businessCenter: rec.businessCenter || cleanBc,
-    atttYear: rec.atttYear || '2026',
     dayOut: normalizeLocalDateTime(rec.dayOut, rec.timeOut),
     dasForAttAllowance: rec.dasForAttAllowance
   };
-
-  try {
-    await api.post('/attendance', {
-      ...payload,
-      attYear: payload.atttYear,
-      daysForAttAllowance: payload.dasForAttAllowance
-    });
-  } catch {
-    // Fallback store
-  }
-
-  const stored = getStoredAttendance();
-  const existingIdx = stored.findIndex(item => item.id === recordId || (item.epfNo === payload.epfNo && item.dayIn === payload.dayIn));
-  if (existingIdx >= 0) {
-    stored[existingIdx] = payload;
-  } else {
-    stored.unshift(payload);
-  }
-  saveStoredAttendance(stored);
-
-  return payload;
+  const res = await api.post('/attendance', {
+    ...payload,
+    attYear: payload.atttYear,
+    daysForAttAllowance: payload.dasForAttAllowance
+  });
+  return fromApi(res.data);
 };
 
 export const update = async (id: string, patch: Partial<Attendance>): Promise<Attendance> => {
   const parts = id.split('_');
-  if (parts.length >= 4) {
-    const [year, month, epfNo, dayIn] = parts;
-    const payload = {
-      ...patch,
-      attYear: patch.atttYear || year,
-      attMonth: month,
-      epfNo: epfNo,
-      dayIn: dayIn,
-      dayOut: normalizeLocalDateTime(patch.dayOut, patch.timeOut),
-      daysForAttAllowance: patch.dasForAttAllowance
-    };
-    try {
-      await api.put(`/attendance/${year}/${month}/${epfNo}/${dayIn}`, payload);
-    } catch {}
+  if (parts.length < 4) {
+    throw new Error('Invalid attendance record identifier.');
   }
-
-  const stored = getStoredAttendance();
-  const index = stored.findIndex(item => item.id === id);
-  if (index >= 0) {
-    stored[index] = { ...stored[index], ...patch };
-    saveStoredAttendance(stored);
-    return stored[index];
-  }
-
-  return { id, ...patch } as Attendance;
+  const [year, month, epfNo, dayIn] = parts;
+  const payload = {
+    ...patch,
+    attYear: patch.atttYear || year,
+    attMonth: month,
+    epfNo,
+    dayIn,
+    dayOut: normalizeLocalDateTime(patch.dayOut, patch.timeOut),
+    daysForAttAllowance: patch.dasForAttAllowance
+  };
+  const res = await api.put(
+    `/attendance/${encodeURIComponent(year)}/${encodeURIComponent(month)}/${encodeURIComponent(epfNo)}/${encodeURIComponent(dayIn)}`,
+    payload
+  );
+  return fromApi(res.data);
 };
 
 export type BulkSaveSummary = {
@@ -324,111 +169,48 @@ export type BulkSaveResult = {
   failed: number;
   summaries: BulkSaveSummary[];
   message: string;
-  isFallback: boolean;
-  error?: string;
   records?: Attendance[];
 };
 
 export const bulkSave = async (records: Attendance[]): Promise<BulkSaveResult> => {
-  let apiResponse: any = null;
-  let apiError: string | null = null;
-
-  try {
-    const res = await api.post('/attendance/bulk', records);
-    if (res.data) {
-      apiResponse = res.data;
-    }
-  } catch (err: any) {
-    apiError = err?.response?.data?.message || err?.message || 'Server connection failed';
+  const res = await api.post('/attendance/bulk', records);
+  const result = res.data;
+  if (!result || !Array.isArray(result.summaries)) {
+    throw new Error('Attendance bulk endpoint returned an invalid response.');
   }
-
-  // Fallback store in localStorage
-  const stored = getStoredAttendance();
-  const map = new Map<string, Attendance>();
-  stored.forEach(r => map.set(r.id || `${r.atttYear}_${r.attMonth}_${r.epfNo}_${r.dayIn}`, r));
-
-  let localInserted = 0;
-  let localUpdated = 0;
-  records.forEach(r => {
-    const key = r.id || `${r.atttYear}_${r.attMonth}_${r.epfNo}_${r.dayIn}`;
-    if (map.has(key)) {
-      localUpdated++;
-    } else {
-      localInserted++;
-    }
-    map.set(key, { ...map.get(key), ...r, id: key });
-  });
-
-  saveStoredAttendance(Array.from(map.values()));
-
-  if (apiResponse && apiResponse.summaries && Array.isArray(apiResponse.summaries)) {
-    return {
-      status: apiResponse.status || 'success',
-      totalSaved: apiResponse.totalSaved || records.length,
-      inserted: apiResponse.inserted || 0,
-      updated: apiResponse.updated || 0,
-      failed: apiResponse.failed || 0,
-      summaries: apiResponse.summaries,
-      message: apiResponse.message || (apiResponse.summaries[0]?.message ?? `${records.length} rows saved`),
-      isFallback: false,
-      records: apiResponse.records
-    };
-  }
-
-  // Generate plant & month grouped summaries for local save
-  const plantGroups = new Map<string, { epfs: Set<string>; count: number }>();
-  records.forEach(r => {
-    const p = (r.plantCode || 'DEFAULT').trim();
-    const y = (r.atttYear || '2026').trim();
-    const m = (r.attMonth || '01').trim();
-    const key = `${p}|${y}|${m}`;
-    if (!plantGroups.has(key)) {
-      plantGroups.set(key, { epfs: new Set(), count: 0 });
-    }
-    const g = plantGroups.get(key)!;
-    g.count++;
-    if (r.epfNo) g.epfs.add(r.epfNo.trim());
-  });
-
-  const summaries: BulkSaveSummary[] = [];
-  plantGroups.forEach((v, k) => {
-    const [p, y, m] = k.split('|');
-    const msg = `Plant ${p} – ${y}/${m} – ${v.epfs.size} employees – ${v.count} rows saved (inserted ${localInserted}, updated ${localUpdated}, failed 0)`;
-    summaries.push({
-      plantCode: p,
-      year: y,
-      month: m,
-      employeeCount: v.epfs.size,
-      totalRows: v.count,
-      inserted: localInserted,
-      updated: localUpdated,
-      failed: 0,
-      message: msg
-    });
-  });
-
   return {
-    status: apiError ? 'fallback' : 'success',
-    totalSaved: records.length,
-    inserted: localInserted,
-    updated: localUpdated,
-    failed: 0,
-    summaries,
-    message: summaries[0]?.message || `${records.length} rows saved`,
-    isFallback: true,
-    error: apiError || undefined
+    status: result.status,
+    totalSaved: result.totalSaved,
+    inserted: result.inserted,
+    updated: result.updated,
+    failed: result.failed,
+    summaries: result.summaries,
+    message: result.message,
+    records: Array.isArray(result.records) ? result.records.map(fromApi) : undefined
   };
+};
+
+export type AttendancePlantRange = {
+  epfNo: string;
+  fromDate: string;
+  toDate: string;
+  plantCode: string;
+  sectionCode?: string;
+  businessCenter: string;
+};
+
+export const updatePlantRange = async (range: AttendancePlantRange): Promise<{ updatedRows: number }> => {
+  const response = await api.put('/attendance/plant-range', range);
+  return response.data;
 };
 
 export const remove = async (id: string): Promise<void> => {
   const parts = id.split('_');
-  if (parts.length >= 4) {
-    const [year, month, epfNo, dayIn] = parts;
-    try {
-      await api.delete(`/attendance/${encodeURIComponent(year)}/${encodeURIComponent(month)}/${encodeURIComponent(epfNo)}/${encodeURIComponent(dayIn)}`);
-    } catch {}
+  if (parts.length < 4) {
+    throw new Error('Invalid attendance record identifier.');
   }
-
-  const stored = getStoredAttendance().filter(item => item.id !== id);
-  saveStoredAttendance(stored);
+  const [year, month, epfNo, dayIn] = parts;
+  await api.delete(
+    `/attendance/${encodeURIComponent(year)}/${encodeURIComponent(month)}/${encodeURIComponent(epfNo)}/${encodeURIComponent(dayIn)}`
+  );
 };

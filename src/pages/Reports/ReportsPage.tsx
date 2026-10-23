@@ -58,6 +58,7 @@ export default function ReportsPage() {
 
   const activeBc = localStorage.getItem('hsb_active_bc') || 'ALL'
   const cleanBc = activeBc && activeBc !== 'ALL' ? activeBc.split(' / ')[0].trim() : ''
+  const companyName = businessCenters.find(center => center.code === selectedBc)?.name || ''
 
   useEffect(() => {
     listBC().then(setBusinessCenters)
@@ -296,7 +297,7 @@ export default function ReportsPage() {
 
       {/* Print-only Header */}
       <div className="hidden print:block mb-4 border-b pb-3">
-        <h2 className="text-lg font-bold text-slate-900 uppercase tracking-wide">SHINEX HOUSE KEEPING SERVICES (PVT) LTD</h2>
+        <h2 className="text-lg font-bold text-slate-900 uppercase tracking-wide">{companyName}</h2>
         <h3 className="text-sm font-semibold text-slate-700 capitalize">{reportType.replace('_', ' ')} Report</h3>
         <p className="text-xs text-slate-500 mt-1">Generated on: {new Date().toLocaleString()} &bull; Total Records: {filteredData.length}</p>
       </div>

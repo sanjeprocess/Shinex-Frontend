@@ -3,76 +3,56 @@ import A4Report from '../../components/reports/A4Report'
 import { list as listEmployees, Employee } from '../../mocks/employees'
 import { list as listCustomers, Customer } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
-import { list as listDeductionTransactions } from '../../mocks/deductionTransactions'
+import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
 
 export default function TelephoneDeductReportPage() {
-  const [year, setYear] = useState<string>('2024')
-  const [month, setMonth] = useState<string>('12')
-  const [businessCenter, setBusinessCenter] = useState<string>(
-    localStorage.getItem('hsb_active_bc') || 'ALL'
-  )
+  const [year, setYear] = useState<string>(String(new Date().getFullYear()))
+  const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
+  const [businessCenter, setBusinessCenter] = useState<string>('ALL')
 
   const [businessCenters, setBusinessCenters] = useState<any[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState<boolean>(false)
-  const [isFallback, setIsFallback] = useState<boolean>(false)
   const [rows, setRows] = useState<Array<[string, string, string, number]>>([])
 
   useEffect(() => {
     Promise.all([
       listBC().catch(() => []),
-      listCustomers().catch(() => []),
-      listEmployees().catch(() => []),
+      listCustomers(businessCenter),
+      listEmployees(businessCenter),
     ]).then(([bcs, custs, emps]) => {
       setBusinessCenters(bcs)
       setCustomers(custs)
       setEmployees(emps)
     })
-  }, [])
+  }, [businessCenter])
 
   const loadData = async () => {
     setLoading(true)
     try {
       const cleanBc = businessCenter && businessCenter !== 'ALL' ? businessCenter.split(' / ')[0].trim() : ''
-      const [txs, emps, custs] = await Promise.all([
-        listDeductionTransactions(cleanBc).catch(() => []),
-        listEmployees(cleanBc).catch(() => []),
-        listCustomers(cleanBc).catch(() => []),
+      const [report, emps, custs] = await Promise.all([
+        api.get('/reports/telephone-deduct', {
+          params: { businessCenter: cleanBc || 'ALL', year, month }
+        }),
+        listEmployees(cleanBc),
+        listCustomers(cleanBc),
       ])
-
-      // Look for deduction transactions whose master name is Telephone
-      const telTxs = txs.filter(t => {
-        const name = (t.deductionName || '').toLowerCase()
-        const code = (t.didCode || '').toLowerCase()
-        return name.includes('telephone') || name.includes('phone') || code.includes('tel')
-      })
-
-      if (telTxs.length > 0) {
-        const mapped = telTxs.map(t => {
-          const emp = emps.find(e => (e.epfNo || '').trim() === (t.epfNo || '').trim())
-          const fullName = emp ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim() : t.employeeName || t.epfNo
-          const cust = custs.find(c => c.code === emp?.plantCode)
-          const custName = cust ? cust.name : 'BRANDIX APPAREL SOLUTIONS - RIDIGAMA'
-          const amt = t.monthlyCut || t.totalAmount || 450
-          return [t.epfNo, fullName, custName, amt] as [string, string, string, number]
-        })
-        setRows(mapped)
-        setIsFallback(false)
-        return
+      if (!Array.isArray(report.data)) {
+        throw new Error('Telephone deduction report returned an invalid response.')
       }
-
-      // Default sample matching prototype
-      const defaultRows: Array<[string, string, string, number]> = [
-        ['E73', 'D M CHANDRALATHA', 'BRANDIX APPAREL SOLUTIONS - RIDIGAMA', 450],
-        ['E79', 'R GUNAWATHI', 'BRANDIX APPAREL SOLUTIONS - RIDIGAMA', 600],
-        ['E74', 'W A PEMALATHA', 'BRANDIX APPAREL SOLUTIONS - RIDIGAMA', 750],
-      ]
-      setRows(defaultRows)
-      setIsFallback(true)
-    } catch {
-      setIsFallback(true)
+      const mapped = report.data.map((item: any) => {
+        const employee = emps.find(e => (e.epfNo || '').trim() === (item.epfNo || '').trim())
+        const fullName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : item.employeeName || item.epfNo
+        const customer = custs.find(c => c.code === employee?.plantCode)
+        return [item.epfNo, fullName, customer?.name || '', Number(item.monthlyCut ?? 0)] as [string, string, string, number]
+      })
+      setRows(mapped)
+    } catch (error) {
+      setRows([])
+      console.error('Telephone deduction report could not be loaded', error)
     } finally {
       setLoading(false)
     }
@@ -80,7 +60,7 @@ export default function TelephoneDeductReportPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [businessCenter, year, month])
 
   const metaLeft = (
     <div>
@@ -164,7 +144,7 @@ export default function TelephoneDeductReportPage() {
       numericFromColIndex={3}
       rowsPerPage={28}
       isLoading={loading}
-      isFallback={isFallback}
+      emptyMessage="No data for the selected filters."
       filterControls={filterControls}
       onGenerate={loadData}
     />

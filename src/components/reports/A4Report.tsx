@@ -1,7 +1,7 @@
 import React, { useEffect, useId } from 'react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { Printer, Download, RefreshCw, AlertCircle } from 'lucide-react'
+import { Printer, Download, RefreshCw } from 'lucide-react'
 import './a4report.css'
 
 export type A4ReportColumn = {
@@ -32,7 +32,6 @@ export interface A4ReportProps {
   customTopBlock?: (pageIndex: number, totalPages: number) => React.ReactNode
   isLoading?: boolean
   emptyMessage?: string
-  isFallback?: boolean
   onGenerate?: () => void
   onExportPdf?: () => void
   filterControls?: React.ReactNode
@@ -71,8 +70,7 @@ export default function A4Report({
   numericFromColIndex,
   customTopBlock,
   isLoading = false,
-  emptyMessage = 'No data for the selected filters',
-  isFallback = false,
+  emptyMessage = 'No data for the selected filters.',
   onGenerate,
   onExportPdf,
   filterControls,
@@ -232,12 +230,6 @@ export default function A4Report({
           </div>
 
           <div className="flex items-center gap-2">
-            {isFallback && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">
-                <AlertCircle className="w-3.5 h-3.5" />
-                Saved locally only
-              </span>
-            )}
             <button
               onClick={handlePrint}
               disabled={isLoading || normalizedRows.length === 0}

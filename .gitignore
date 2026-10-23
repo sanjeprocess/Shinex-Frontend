@@ -1,3 +1,5 @@
 node_modules/ 
 dist/ 
 .env 
+.env.local
+run-local.ps1

@@ -1,27 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { list as listBC } from '../mocks/businessCenters'
 import api from '../api/axios'
 import { toast } from 'sonner'
 
 export default function Login() {
   const navigate = useNavigate()
-  const [bcList, setBcList] = useState<Array<any>>([])
-  const [selectedBc, setSelectedBc] = useState<string>('')
   const [submitting, setSubmitting] = useState(false)
   const [password, setPassword] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
-
-  useEffect(() => {
-    listBC()
-      .then(list => {
-        setBcList(list)
-        if (list.length > 0) {
-          setSelectedBc(list[0]?.code || '')
-        }
-      })
-      .catch(() => {})
-  }, [])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -32,18 +18,12 @@ export default function Login() {
       toast.error('Username and password are required')
       return
     }
-    if (!selectedBc) {
-      toast.error('Please select a Business Center to log in')
-      return
-    }
     setSubmitting(true)
     setErrorMessage('')
     try {
-      const businessCode = selectedBc.split(' / ')[0].trim()
       const response = await api.post('/auth/login', {
         loginName,
-        password: enteredPassword,
-        clientBusinessCode: businessCode || undefined
+        password: enteredPassword
       })
 
       const userRole = (response.data.role || 'ADMIN').toUpperCase()
@@ -52,12 +32,7 @@ export default function Login() {
       const assignedBc = rawAssignedBc.split(' - ')[0].split(' / ')[0].trim()
 
       // If user has a specific assigned business center (not ALL and not superadmin), strictly lock to it
-      const effectiveBc = (!isSuperAdminUser && assignedBc && assignedBc !== 'ALL')
-        ? assignedBc
-        : businessCode
-
-      const matchedBc = bcList.find(b => b.code === effectiveBc)
-      const bcDisplayName = matchedBc ? `${matchedBc.code} / ${matchedBc.name}` : effectiveBc
+      const effectiveBc = assignedBc || 'ALL'
 
       localStorage.setItem('hsb_auth_token', response.data.token)
       localStorage.setItem('hsb_test_user', response.data.loginName || loginName)
@@ -65,7 +40,7 @@ export default function Login() {
         fullName: response.data.fullName || response.data.loginName || loginName,
         nicNumber: response.data.nicNumber || '',
         role: userRole,
-        businessCenterName: bcDisplayName
+        businessCenterName: effectiveBc
       }))
       localStorage.setItem('hsb_user_role', userRole)
       localStorage.setItem('hsb_assigned_bc', (!isSuperAdminUser && assignedBc && assignedBc !== 'ALL') ? assignedBc : 'ALL')
@@ -111,10 +86,16 @@ export default function Login() {
       toast.success(`Welcome back, ${response.data.loginName || loginName}!`)
       navigate('/')
     } catch (error: any) {
-      const message =
-        error.response?.data?.message ||
+      const status = error.response?.status
+      const message = error.response?.data?.message ||
         (typeof error.response?.data === 'string' ? error.response.data : '') ||
-        'Invalid username or password. Please try again.'
+        (status === 401
+          ? 'Invalid username or password.'
+          : status === 403
+            ? 'Access denied. Your account does not have permission to sign in.'
+            : !error.response
+              ? "Can't reach the server. Check your network connection and backend availability."
+              : 'Sign-in failed. Please try again.')
       setErrorMessage(message)
       setPassword('')
       toast.error(message)
@@ -167,27 +148,6 @@ export default function Login() {
                 {errorMessage}
               </div>
             )}
-            <div>
-              <label className="block text-xs text-slate-300">
-                Business Center / Company Scope *
-              </label>
-              <select
-                value={selectedBc}
-                onChange={e => setSelectedBc(e.target.value)}
-                className="mt-1 w-full border border-slate-600 rounded-md px-3 py-2 bg-transparent text-white appearance-none focus:outline-none focus:border-[#3F9884]"
-                required
-              >
-                <option value="" className="text-slate-900">-- Select Business Center --</option>
-                {bcList.map(b => (
-                  <option key={b.code} value={b.code} className="text-slate-900">
-                    {b.code} / {b.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="text-xs text-slate-400"></div>
-
             <button
               type="submit"
               disabled={submitting}

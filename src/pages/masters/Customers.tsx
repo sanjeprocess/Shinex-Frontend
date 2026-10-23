@@ -205,7 +205,7 @@ export default function CustomersPage() {
                 className={`mt-1 w-full form-input mono-numeric ${errors.code ? 'border-red-300 ring-2 ring-red-100' : ''}`}
                 value={form.code || ''}
                 disabled={!!editing}
-                placeholder="e.g. PL001"
+                placeholder="Plant code"
                 onChange={e => {
                   setForm({ ...form, code: e.target.value.toUpperCase() })
                   if (errors.code) setErrors(prev => ({ ...prev, code: undefined }))
@@ -393,4 +393,3 @@ export default function CustomersPage() {
     </div>
   )
 }
-

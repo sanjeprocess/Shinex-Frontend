@@ -20,6 +20,7 @@ import {
   create as createAttendance,
   update as updateAttendance,
   bulkSave as bulkSaveAttendance,
+  updatePlantRange,
   remove as removeAttendance,
   Attendance
 } from '../../mocks/attendance'
@@ -122,8 +123,8 @@ function parseAttendanceRows(
     })
 
     const dayInVal = record.dayIn || ''
-    const yearFromDate = dayInVal.includes('-') ? dayInVal.split('-')[0] : '2026'
-    const monthFromDate = dayInVal.includes('-') ? dayInVal.split('-')[1] : '01'
+    const yearFromDate = dayInVal.includes('-') ? dayInVal.split('-')[0] : ''
+    const monthFromDate = dayInVal.includes('-') ? dayInVal.split('-')[1] : ''
 
     return {
       ...defaultAttendanceRecord,
@@ -154,12 +155,14 @@ function validateUploadRow(
   // 1. Unknown EPF check
   if (!cleanEpf) {
     errs.push('Missing EPF No')
-  } else if (empList.length > 0 && !empList.some(e => (e.epfNo || '').trim().toLowerCase() === cleanEpf)) {
+  } else if (!empList.some(e => (e.epfNo || '').trim().toLowerCase() === cleanEpf)) {
     errs.push('Unknown EPF No')
   }
 
   // 2. Bad date check
-  if (!row.dayIn || !/^\d{4}-\d{2}-\d{2}$/.test(String(row.dayIn).trim())) {
+  const dateText = String(row.dayIn || '').trim()
+  const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(dateText) ? new Date(`${dateText}T00:00:00`) : null
+  if (!parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== dateText) {
     errs.push('Invalid Date')
   }
 
@@ -194,9 +197,9 @@ export default function AttendancePage() {
     plantCode: '',
     workingDays: 1,
     otCalAuto: 'Y',
-    noOfStaff: 5,
+    noOfStaff: 0,
     attAllowance: 'Y',
-    dasForAttAllowance: 22,
+    dasForAttAllowance: 0,
     poyaSaturdayNormal: 'N',
     basicSalary: 0,
     dayAllowance: 0,
@@ -217,10 +220,10 @@ export default function AttendancePage() {
     nightShift: 'N',
     fullNight: 'N',
     noOfMeal: 1,
-    totalMealValue: 120,
+    totalMealValue: 0,
     statutoryHolidays: 0,
     sundayPoyaExtra: 0,
-    businessCenter: localStorage.getItem('hsb_active_bc') || '001'
+    businessCenter: localStorage.getItem('hsb_active_bc') || ''
   };
 
   const [rows, setRows] = useState<Attendance[]>([])
@@ -250,10 +253,9 @@ export default function AttendancePage() {
   // View Mode: 'logs' (Daily logs table) or 'savedRecords' (Month & Plant wise summary)
   const [activeTab, setActiveTab] = useState<'logs' | 'savedRecords'>('logs')
   const [isSavingDb, setIsSavingDb] = useState(false)
-  const [isLocalFallback, setIsLocalFallback] = useState(false)
   const [saveSummaries, setSaveSummaries] = useState<string[]>([])
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [lastSavedTimestamp, setLastSavedTimestamp] = useState<string>(() => localStorage.getItem('hsb_att_last_saved') || '')
+  const [lastSavedTimestamp, setLastSavedTimestamp] = useState<string>('')
 
   // Filters for Saved Records view
   const [savedRecordsYear, setSavedRecordsYear] = useState<string>('ALL')
@@ -280,8 +282,8 @@ export default function AttendancePage() {
   }>>([])
 
   const [syncModalOpen, setSyncModalOpen] = useState(false)
-  const [syncYear, setSyncYear] = useState('2026')
-  const [syncMonth, setSyncMonth] = useState('09')
+  const [syncYear, setSyncYear] = useState(String(new Date().getFullYear()))
+  const [syncMonth, setSyncMonth] = useState(String(new Date().getMonth() + 1).padStart(2, '0'))
   const [syncing, setSyncing] = useState(false)
   const [syncResults, setSyncResults] = useState<any[]>([])
 
@@ -331,33 +333,42 @@ export default function AttendancePage() {
     }
   }
 
-  function refresh() {
+  async function refresh() {
     const activeBc = localStorage.getItem('hsb_active_bc') || '';
     const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
-
-    listAttendance().then(setRows).catch(console.error);
-    listTransfers(cleanBc).then(setTransfers).catch(console.error);
-    listSections(cleanBc).then((sections) => {
-      setSectionList(sections);
-      listEmployees(cleanBc).then((employees) => {
-        setEmployeeList(employees);
-        const firstEmployee = employees.find((employee) => employee?.epfNo);
-        if (firstEmployee) {
-          const autoSalary = resolveEmployeeBasicSalary(firstEmployee, sections);
-          setForm((prev) => ({
-            ...prev,
-            epfNo: prev.epfNo && employees.some(e => e.epfNo === prev.epfNo) ? prev.epfNo : firstEmployee.epfNo,
-            plantCode: prev.plantCode || firstEmployee.plantCode || '',
-            businessCenter: cleanBc || firstEmployee.businessCenter || '001',
-            basicSalary: prev.basicSalary && prev.basicSalary !== 0 ? prev.basicSalary : autoSalary,
-            dayAllowance: prev.dayAllowance && prev.dayAllowance !== 0 ? prev.dayAllowance : (firstEmployee.dayAllowance || 0),
-            nightAllowance: prev.nightAllowance && prev.nightAllowance !== 0 ? prev.nightAllowance : (firstEmployee.nightAllowance || 0)
-          }));
-        }
-      }).catch(console.error);
-    }).catch(console.error);
-    listCustomers(cleanBc).then(setCustomerList).catch(console.error);
-    listBC().then(setBcList).catch(console.error);
+    try {
+      const [attendance, plantTransfers, sections, employees, customers, centers] = await Promise.all([
+        listAttendance(cleanBc),
+        listTransfers(cleanBc),
+        listSections(cleanBc),
+        listEmployees(cleanBc),
+        listCustomers(cleanBc),
+        listBC()
+      ])
+      setRows(attendance)
+      setTransfers(plantTransfers)
+      setSectionList(sections)
+      setEmployeeList(employees)
+      setCustomerList(customers)
+      setBcList(centers)
+      const firstEmployee = employees.find(employee => employee?.epfNo)
+      if (firstEmployee) {
+        const autoSalary = resolveEmployeeBasicSalary(firstEmployee, sections)
+        setForm(prev => ({
+          ...prev,
+          epfNo: prev.epfNo && employees.some(e => e.epfNo === prev.epfNo) ? prev.epfNo : firstEmployee.epfNo,
+          plantCode: prev.plantCode || firstEmployee.plantCode || '',
+          businessCenter: cleanBc || firstEmployee.businessCenter || '',
+          basicSalary: prev.basicSalary || autoSalary,
+          dayAllowance: prev.dayAllowance || firstEmployee.dayAllowance || 0,
+          nightAllowance: prev.nightAllowance || firstEmployee.nightAllowance || 0
+        }))
+      }
+      setSaveError(null)
+    } catch (error) {
+      console.error('Failed to load attendance data', error)
+      setSaveError('Unable to load attendance data from the server.')
+    }
   }
 
   function resolveEmployeeBasicSalary(emp?: any, listSec: Section[] = sectionList): number {
@@ -436,36 +447,27 @@ export default function AttendancePage() {
       return { ...r, employeeName: name }
     })
 
+    setSaveError(null)
+    setSaveSummaries([])
     try {
       const result = await bulkSaveAttendance(enrichedValid)
       const nowStr = new Date().toLocaleString()
       setLastSavedTimestamp(nowStr)
-      localStorage.setItem('hsb_att_last_saved', nowStr)
 
       const summaryLines = result.summaries.map(s => s.message)
       setSaveSummaries(summaryLines)
-
-      if (result.isFallback) {
-        setIsLocalFallback(true)
-        const errMsg = result.error || 'Server connection failed'
-        setSaveError(errMsg)
-        toast.error(`Saved locally only – not in database: ${errMsg}`)
-      } else {
-        setIsLocalFallback(false)
-        setSaveError(null)
-        toast.success(`Successfully saved ${result.totalSaved} rows to database!${invalidCount > 0 ? ` ${invalidCount} invalid rows retained for review.` : ''}`)
-      }
+      setSaveError(null)
+      toast.success(`${summaryLines.join('\n')}${invalidCount > 0 ? `\n${invalidCount} invalid rows retained for review.` : ''}`)
 
       if (invalidCount > 0) {
         setUploadRows(invalidRows)
       } else {
         setUploadRows([])
       }
-      refresh()
+      await listAttendance(localStorage.getItem('hsb_active_bc') || '').then(setRows)
     } catch (error: any) {
       console.error('Bulk attendance save failed', error)
       const msg = error?.response?.data?.message || error?.message || 'Bulk attendance save failed'
-      setIsLocalFallback(true)
       setSaveError(msg)
       toast.error(String(msg))
     }
@@ -483,6 +485,7 @@ export default function AttendancePage() {
 
     setIsSavingDb(true)
     setSaveError(null)
+    setSaveSummaries([])
 
     // Enrich rows with employeeName
     const enrichedRows = rows.map(r => {
@@ -495,26 +498,15 @@ export default function AttendancePage() {
       const result = await bulkSaveAttendance(enrichedRows)
       const nowStr = new Date().toLocaleString()
       setLastSavedTimestamp(nowStr)
-      localStorage.setItem('hsb_att_last_saved', nowStr)
 
       const summaryLines = result.summaries.map(s => s.message)
       setSaveSummaries(summaryLines)
-
-      if (result.isFallback) {
-        setIsLocalFallback(true)
-        const errMsg = result.error || 'Server connection failed'
-        setSaveError(errMsg)
-        toast.error(`Saved locally only – not in database: ${errMsg}`)
-      } else {
-        setIsLocalFallback(false)
-        setSaveError(null)
-        toast.success(`Saved ${result.totalSaved} attendance records to database!`)
-      }
-      refresh()
+      setSaveError(null)
+      toast.success(summaryLines.join('\n'))
+      await listAttendance(localStorage.getItem('hsb_active_bc') || '').then(setRows)
     } catch (err: any) {
       console.error('Save all to database failed', err)
       const msg = err?.response?.data?.message || err?.message || 'Database save failed'
-      setIsLocalFallback(true)
       setSaveError(msg)
       toast.error(String(msg))
     } finally {
@@ -553,19 +545,18 @@ export default function AttendancePage() {
       return
     }
 
-    const newRangeEntry = {
-      id: uuid(),
-      epfNo: rangeEmployee,
-      fromDate: rangeFrom,
-      toDate: rangeTo,
-      plantCode: rangePlant,
-      sectionCode: rangeSection
-    }
-    setAppliedRanges(prev => [...prev, newRangeEntry])
-
-    // 1. Update matching rows in uploadRows if present
     let uploadMatchCount = 0
-    if (uploadRows.length > 0) {
+    try {
+      const activeBc = localStorage.getItem('hsb_active_bc') || ''
+      const businessCenter = activeBc.split(' / ')[0].trim()
+      const result = await updatePlantRange({
+        epfNo: rangeEmployee,
+        fromDate: rangeFrom,
+        toDate: rangeTo,
+        plantCode: rangePlant,
+        sectionCode: rangeSection || undefined,
+        businessCenter
+      })
       setUploadRows(prev => prev.map(row => {
         if (row.epfNo === rangeEmployee && row.dayIn >= rangeFrom && row.dayIn <= rangeTo) {
           uploadMatchCount++
@@ -578,45 +569,23 @@ export default function AttendancePage() {
         }
         return row
       }))
-    }
-
-    // 2. Update matching existing saved rows in stages
-    const matchingSaved = rows.filter(r =>
-      r.epfNo === rangeEmployee &&
-      r.dayIn >= rangeFrom &&
-      r.dayIn <= rangeTo
-    )
-
-    if (matchingSaved.length > 0) {
-      const updatedSaved = matchingSaved.map(r => ({
-        ...r,
+      setAppliedRanges(prev => [...prev, {
+        id: uuid(),
+        epfNo: rangeEmployee,
+        fromDate: rangeFrom,
+        toDate: rangeTo,
         plantCode: rangePlant,
-        customerCode: rangePlant,
-        sectionCode: rangeSection || r.sectionCode
-      }))
-
-      try {
-        await bulkSaveAttendance(updatedSaved)
-        setRows(prev => prev.map(r => {
-          if (r.epfNo === rangeEmployee && r.dayIn >= rangeFrom && r.dayIn <= rangeTo) {
-            return {
-              ...r,
-              plantCode: rangePlant,
-              customerCode: rangePlant,
-              sectionCode: rangeSection || r.sectionCode
-            }
-          }
-          return r
-        }))
-        toast.success(`Applied plant ${rangePlant} to ${updatedSaved.length} saved attendance logs (${rangeFrom} to ${rangeTo}).`)
-      } catch (err) {
-        console.error('Failed to update saved plant rows', err)
-        toast.error('Failed to update plant range in system.')
+        sectionCode: rangeSection
+      }])
+      await listAttendance(businessCenter).then(setRows)
+      toast.success(`Applied plant ${rangePlant} to ${result.updatedRows} saved attendance logs (${rangeFrom} to ${rangeTo}).`)
+      if (uploadMatchCount > 0) {
+        toast.info(`Updated ${uploadMatchCount} uploaded rows in the preview.`)
       }
-    } else if (uploadMatchCount > 0) {
-      toast.success(`Applied plant ${rangePlant} to ${uploadMatchCount} uploaded rows (${rangeFrom} to ${rangeTo}).`)
-    } else {
-      toast.info(`Plant range registered for ${rangeEmployee} (${rangeFrom} to ${rangeTo}). No day logs loaded in range.`)
+    } catch (error: any) {
+      const message = error?.response?.data?.message || error?.message || 'Failed to update plant range in the database.'
+      setSaveError(String(message))
+      toast.error(String(message))
     }
   }
 
@@ -652,7 +621,7 @@ export default function AttendancePage() {
     return {
       epfNo: employee.epfNo || '',
       plantCode: employee.plantCode || '',
-      businessCenter: employee.businessCenter || localStorage.getItem('hsb_active_bc') || '001',
+      businessCenter: employee.businessCenter || localStorage.getItem('hsb_active_bc') || '',
       basicSalary: autoSalary,
       dayAllowance: employee.dayAllowance || 0,
       nightAllowance: isNight ? (employee.nightAllowance || 0) : 0
@@ -766,8 +735,8 @@ export default function AttendancePage() {
     const toSave: Attendance = {
       ...form,
       employeeName: empName,
-      atttYear: yr || form.atttYear || '2026',
-      attMonth: mo || form.attMonth || '01',
+      atttYear: yr || form.atttYear,
+      attMonth: mo || form.attMonth,
       dayOut: normalizeLocalDateTime(form.dayOut || form.dayIn, form.timeOut) || form.dayIn,
       totalWorkingHours: hours,
       totalOt: ot,
@@ -835,7 +804,7 @@ export default function AttendancePage() {
     })
   }, [rows, employeeList, q, filterYear, filterMonth, filterEmployee, filterPlant])
 
-  // Plants worked summary map per employee across attendance rows: e.g. "PL001 (10 days), PL002 (8 days)"
+  // Plants worked summary map per employee across attendance rows.
   const employeePlantsWorkedMap = useMemo(() => {
     const map: Record<string, string> = {}
     const empGroup: Record<string, Record<string, number>> = {}
@@ -871,13 +840,12 @@ export default function AttendancePage() {
     const groups = new Map<string, GroupData>();
 
     rows.forEach(r => {
-      const plant = (r.plantCode || 'DEFAULT').trim();
+      const plant = (r.plantCode || '').trim();
       let yr = (r.atttYear || '').trim();
       let mo = (r.attMonth || '').trim();
       if (!yr && r.dayIn) yr = r.dayIn.slice(0, 4);
       if (!mo && r.dayIn) mo = r.dayIn.slice(5, 7);
-      if (!yr) yr = '2026';
-      if (!mo) mo = '01';
+      if (!plant || !yr || !mo) return;
 
       if (savedRecordsYear !== 'ALL' && yr !== savedRecordsYear) return;
       if (savedRecordsMonth !== 'ALL' && mo !== savedRecordsMonth) return;
@@ -895,7 +863,7 @@ export default function AttendancePage() {
           employees: new Set<string>(),
           totalDays: 0,
           totalOt: 0,
-          lastSaved: lastSavedTimestamp || 'Saved in session'
+          lastSaved: lastSavedTimestamp || '—'
         });
       }
 
@@ -986,7 +954,7 @@ export default function AttendancePage() {
         ...prev,
         epfNo: epf,
         plantCode: effectivePlant,
-        businessCenter: emp.businessCenter || prev.businessCenter || localStorage.getItem('hsb_active_bc') || '001',
+        businessCenter: emp.businessCenter || prev.businessCenter || localStorage.getItem('hsb_active_bc') || '',
         basicSalary: autoSalary,
         dayAllowance: emp.dayAllowance || 0,
         nightAllowance: isNight ? (emp.nightAllowance || 0) : 0
@@ -1204,23 +1172,11 @@ export default function AttendancePage() {
       </div>
 
       {/* Offline / Local Storage Badge & Alerts */}
-      {isLocalFallback && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-800">
-          <AlertCircle size={16} className="text-amber-600 shrink-0" />
-          <span className="font-semibold px-2 py-0.5 rounded bg-amber-200 text-amber-900 text-[11px]">
-            Saved locally only – not in database
-          </span>
-          <span className="text-amber-700">
-            {saveError ? `(${saveError})` : 'Backend server is unreachable. Attendance records are saved in local storage.'}
-          </span>
-        </div>
-      )}
-
-      {saveError && !isLocalFallback && (
+      {saveError && (
         <div className="flex items-center gap-2 px-3 py-2 bg-rose-50 border border-rose-300 rounded-lg text-xs text-rose-800">
           <AlertCircle size={16} className="text-rose-600 shrink-0" />
           <span className="font-semibold">Save Error:</span>
-          <span>{saveError}</span>
+          <span>Not saved to the database: {saveError}</span>
         </div>
       )}
 

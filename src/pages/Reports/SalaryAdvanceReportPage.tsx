@@ -3,79 +3,64 @@ import A4Report from '../../components/reports/A4Report'
 import { list as listEmployees, Employee } from '../../mocks/employees'
 import { list as listCustomers, Customer } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
-import { list as listDeductions } from '../../mocks/deductionTransactions'
+import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
 
 export default function SalaryAdvanceReportPage() {
-  const [year, setYear] = useState<string>('2024')
-  const [month, setMonth] = useState<string>('12')
-  const [businessCenter, setBusinessCenter] = useState<string>(
-    localStorage.getItem('hsb_active_bc') || 'ALL'
-  )
+  const [year, setYear] = useState<string>(String(new Date().getFullYear()))
+  const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
+  const [businessCenter, setBusinessCenter] = useState<string>('ALL')
   const [selectedClient, setSelectedClient] = useState<string>('')
 
   const [businessCenters, setBusinessCenters] = useState<any[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState<boolean>(false)
-  const [isFallback, setIsFallback] = useState<boolean>(false)
   const [rows, setRows] = useState<Array<[string, string, string, string, number]>>([])
 
   useEffect(() => {
     Promise.all([
       listBC().catch(() => []),
-      listCustomers().catch(() => []),
-      listEmployees().catch(() => []),
+      listCustomers(businessCenter),
+      listEmployees(businessCenter),
     ]).then(([bcs, custs, emps]) => {
       setBusinessCenters(bcs)
       setCustomers(custs)
       setEmployees(emps)
-      if (custs.length > 0 && !selectedClient) {
-        setSelectedClient(custs[0].code)
-      }
+      setSelectedClient(current => custs.some(customer => customer.code === current)
+        ? current
+        : custs[0]?.code || '')
     })
-  }, [])
+  }, [businessCenter])
 
   const loadData = async () => {
     setLoading(true)
     try {
       const cleanBc = businessCenter && businessCenter !== 'ALL' ? businessCenter.split(' / ')[0].trim() : ''
-      const [txs, emps] = await Promise.all([
-        listDeductions(cleanBc).catch(() => []),
-        listEmployees(cleanBc).catch(() => []),
+      const [report, emps] = await Promise.all([
+        api.get('/reports/salary-advance', {
+          params: { businessCenter: cleanBc || 'ALL', year, month }
+        }),
+        listEmployees(cleanBc),
       ])
-
-      // Look for advance deductions
-      const advances = txs.filter(t => {
-        const name = (t.deductionName || '').toLowerCase()
-        const code = (t.didCode || '').toLowerCase()
-        return name.includes('advance') || code.includes('adv')
-      })
-
-      if (advances.length > 0) {
-        const mapped = advances.map(adv => {
-          const emp = emps.find(e => (e.epfNo || '').trim() === (adv.epfNo || '').trim())
-          const fullName = emp ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim() : adv.employeeName || adv.epfNo
-          const bankAcc = emp?.bankAccountNumber || '001234567'
-          const bankCode = emp?.branchCode || '7056'
-          const amt = adv.monthlyCut || adv.totalAmount || 5000
-          return [adv.epfNo, fullName, bankAcc, bankCode, amt] as [string, string, string, string, number]
-        })
-        setRows(mapped)
-        setIsFallback(false)
-        return
+      if (!Array.isArray(report.data)) {
+        throw new Error('Salary advance report returned an invalid response.')
       }
-
-      // Default sample matching prototype
-      const defaultRows: Array<[string, string, string, string, number]> = [
-        ['E73', 'D M CHANDRALATHA', '001234567', '7056', 5000],
-        ['E79', 'R GUNAWATHI', '001234658', '7056', 7500],
-        ['E74', 'W A PEMALATHA', '001234749', '7056', 10000],
-      ]
-      setRows(defaultRows)
-      setIsFallback(true)
-    } catch {
-      setIsFallback(true)
+      const mapped = report.data.map((advance: any) => {
+        const employee = emps.find(e => (e.epfNo || '').trim() === (advance.epfNo || '').trim())
+        const fullName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : advance.employeeName || advance.epfNo
+        return [
+          advance.epfNo,
+          fullName,
+          employee?.bankAccountNumber || '',
+          employee?.branchCode || '',
+          Number(advance.monthlyCut ?? 0)
+        ] as [string, string, string, string, number]
+      })
+      setRows(mapped)
+    } catch (error) {
+      setRows([])
+      console.error('Salary advance report could not be loaded', error)
     } finally {
       setLoading(false)
     }
@@ -83,10 +68,10 @@ export default function SalaryAdvanceReportPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [businessCenter, year, month])
 
   const selectedCust = customers.find(c => c.code === selectedClient)
-  const clientName = selectedCust ? selectedCust.name : 'BRANDIX - RIDIGAMA'
+  const clientName = selectedCust ? selectedCust.name : ''
 
   const metaLeft = (
     <div>
@@ -188,7 +173,7 @@ export default function SalaryAdvanceReportPage() {
       numericFromColIndex={4}
       rowsPerPage={28}
       isLoading={loading}
-      isFallback={isFallback}
+      emptyMessage="No data for the selected filters."
       filterControls={filterControls}
       onGenerate={loadData}
     />

@@ -28,45 +28,14 @@ export const getById = async (epf: string): Promise<Employee | undefined> => {
 };
 
 export const getNextEpfNo = async (businessCenter?: string): Promise<string> => {
-  try {
-    const activeBc = businessCenter || localStorage.getItem('hsb_active_bc') || '';
-    const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
-    const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
-    const res = await api.get<{ nextEpf: string }>('/employees/next-epf', { params });
-    if (res.data?.nextEpf) {
-      return res.data.nextEpf;
-    }
-  } catch (err) {
-    console.warn('Failed to fetch next EPF from server, falling back to local calculation', err);
+  const activeBc = businessCenter || localStorage.getItem('hsb_active_bc') || '';
+  const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
+  const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
+  const response = await api.get<{ nextEpf?: string }>('/employees/next-epf', { params });
+  if (!response.data?.nextEpf) {
+    throw new Error('The server did not provide the next EPF number.');
   }
-
-  try {
-    const emps = await list(businessCenter);
-    let maxNum = 0;
-    let maxDigits = 3;
-    emps.forEach(e => {
-      const epf = (e.epfNo || '').trim().toUpperCase();
-      let numPart = '';
-      if (epf.startsWith('91EPF')) {
-        numPart = epf.slice(5).trim();
-      } else if (epf.startsWith('EPF')) {
-        numPart = epf.slice(3).trim();
-      } else {
-        numPart = epf.replace(/\D/g, '');
-      }
-      if (numPart) {
-        const val = parseInt(numPart, 10);
-        if (!isNaN(val) && val > maxNum) {
-          maxNum = val;
-          if (numPart.length > maxDigits) maxDigits = numPart.length;
-        }
-      }
-    });
-    const nextVal = maxNum + 1;
-    return `91EPF${String(nextVal).padStart(Math.max(3, maxDigits), '0')}`;
-  } catch {
-    return '91EPF001';
-  }
+  return response.data.nextEpf;
 };
 
 export const create = async (e: Employee): Promise<Employee> => {

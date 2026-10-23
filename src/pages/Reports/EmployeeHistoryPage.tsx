@@ -16,6 +16,7 @@ import { list as listSections } from '../../mocks/sections'
 import { list as listTransfers, PlantTransfer } from '../../mocks/plantTransfers'
 import { list as listPlants, Customer } from '../../mocks/customers'
 import { getMonthlySummary, type MonthlySummary } from '../../mocks/monthlySummary'
+import { list as listBusinessCenters } from '../../mocks/businessCenters'
 
 interface PlantAssignmentOption {
   id: string
@@ -32,6 +33,7 @@ export default function EmployeeHistoryPage() {
   const [loading, setLoading] = useState(false)
   const [companyEmployees, setCompanyEmployees] = useState<any[]>([])
   const [plants, setPlants] = useState<Customer[]>([])
+  const [businessCenters, setBusinessCenters] = useState<any[]>([])
 
   // Payroll Period Filter
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
@@ -51,12 +53,19 @@ export default function EmployeeHistoryPage() {
 
   const activeBc = localStorage.getItem('hsb_active_bc') || 'ALL'
   const cleanBc = activeBc && activeBc !== 'ALL' ? activeBc.split(' / ')[0].trim() : ''
+  const companyName = businessCenters.find(center =>
+    center.code === employee?.businessCenter || center.name === employee?.businessCenter
+  )?.name || ''
   const years = Array.from({ length: 5 }, (_, index) => String(new Date().getFullYear() - 2 + index))
 
   useEffect(() => {
     loadCompanyEmployees()
     listPlants(cleanBc).then(setPlants).catch(console.error)
   }, [activeBc])
+
+  useEffect(() => {
+    listBusinessCenters().then(setBusinessCenters).catch(console.error)
+  }, [])
 
   async function loadCompanyEmployees() {
     try {
@@ -446,7 +455,7 @@ export default function EmployeeHistoryPage() {
     const calc = payrollCalculation
 
     const lines: string[] = [
-      `SHINEX HOUSE KEEPING SERVICES (PVT) LTD,,,${currentPeriod},`,
+      `${companyName},,,${currentPeriod},`,
       `,,,,`,
       `NAME AND EPF NO / பெயர் / නම සහ අංකය,,,${employee.firstName} ${employee.lastName || ''} - ${employee.epfNo},`,
       `,DAY,HOUR,RATE,AMOUNT`,
@@ -583,12 +592,12 @@ export default function EmployeeHistoryPage() {
       <div className="hidden print:block border-b-2 border-slate-800 pb-2 mb-3">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-black uppercase text-slate-900 tracking-wider">SHINEX HOUSE KEEPING SERVICES (PVT) LTD</h2>
+            <h2 className="text-sm font-black uppercase text-slate-900 tracking-wider">{companyName}</h2>
             <p className="text-[10px] text-slate-600 font-medium">EMPLOYEE COMPLETE RECORD DOSSIER &bull; A5 OFFICIAL RECORD</p>
           </div>
           <div className="text-right text-[9px] text-slate-500">
             <div>Period: <strong>{month.padStart(2, '0')}/{year}</strong></div>
-            <div>Company: {employee?.businessCenter || activeBc}</div>
+            <div>Company: {companyName}</div>
           </div>
         </div>
       </div>

@@ -1,79 +1,36 @@
 import React, { useState, useEffect } from 'react'
 import A4Report from '../../components/reports/A4Report'
-import { list as listCustomers, Customer } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
-import { list as listDeductionTransactions } from '../../mocks/deductionTransactions'
+import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
 
 export default function SalaryAdvanceTotalPage() {
-  const [year, setYear] = useState<string>('2024')
-  const [month, setMonth] = useState<string>('12')
-  const [businessCenter, setBusinessCenter] = useState<string>(
-    localStorage.getItem('hsb_active_bc') || 'ALL'
-  )
+  const [year, setYear] = useState<string>(String(new Date().getFullYear()))
+  const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
+  const [businessCenter, setBusinessCenter] = useState<string>('ALL')
 
   const [businessCenters, setBusinessCenters] = useState<any[]>([])
-  const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState<boolean>(false)
-  const [isFallback, setIsFallback] = useState<boolean>(false)
   const [companyRows, setCompanyRows] = useState<Array<[string, number]>>([])
 
   useEffect(() => {
-    Promise.all([
-      listBC().catch(() => []),
-      listCustomers().catch(() => []),
-    ]).then(([bcs, custs]) => {
-      setBusinessCenters(bcs)
-      setCustomers(custs)
-    })
+    listBC().then(setBusinessCenters)
   }, [])
 
   const loadData = async () => {
     setLoading(true)
     try {
       const cleanBc = businessCenter && businessCenter !== 'ALL' ? businessCenter.split(' / ')[0].trim() : ''
-      const [custs, txs] = await Promise.all([
-        listCustomers(cleanBc).catch(() => []),
-        listDeductionTransactions(cleanBc).catch(() => []),
-      ])
-
-      // Find advance deductions
-      const advanceTxs = txs.filter(t => {
-        const name = (t.deductionName || '').toLowerCase()
-        const code = (t.didCode || '').toLowerCase()
-        return name.includes('advance') || code.includes('adv')
+      const response = await api.get('/reports/salary-advance-total', {
+        params: { businessCenter: cleanBc || 'ALL', year, month }
       })
-
-      if (advanceTxs.length > 0 && custs.length > 0) {
-        // Group by company
-        const map = new Map<string, number>()
-        custs.forEach(c => map.set(c.name, 0))
-        advanceTxs.forEach(t => {
-          // allocate to company or business center
-          const key = t.businessCenter || 'Default Company'
-          map.set(key, (map.get(key) || 0) + (t.monthlyCut || t.totalAmount || 0))
-        })
-        const rows = Array.from(map.entries()).filter(([, amt]) => amt > 0)
-        if (rows.length > 0) {
-          setCompanyRows(rows)
-          setIsFallback(false)
-          return
-        }
+      if (!Array.isArray(response.data)) {
+        throw new Error('Salary advance total report returned an invalid response.')
       }
-
-      // Default sample companies matching prototype
-      const defaultCompanies: Array<[string, number]> = [
-        ['ASIAN GROUP OF COMPANIES - COLOMBO 13', 46000],
-        ['BCCT RATHMALANA', 17500],
-        ['BRANDIX APPAREL SOLUTIONS (PVT) LTD - BATTICALOA', 200000],
-        ['BRANDIX APPAREL SOLUTIONS (PVT) LTD - GIRITHALE', 41000],
-        ['PORT CITY COLOMBO', 95000],
-        ['VARNA LTD - RATHMALANA', 40000],
-      ]
-      setCompanyRows(defaultCompanies)
-      setIsFallback(true)
-    } catch {
-      setIsFallback(true)
+      setCompanyRows(response.data.map((row: any) => [row.companyName || row.businessCenter, Number(row.amount || 0)]))
+    } catch (error) {
+      setCompanyRows([])
+      console.error('Salary advance total report could not be loaded', error)
     } finally {
       setLoading(false)
     }
@@ -81,7 +38,7 @@ export default function SalaryAdvanceTotalPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [businessCenter, year, month])
 
   const columns = ['Company', 'Advance']
 
@@ -156,7 +113,7 @@ export default function SalaryAdvanceTotalPage() {
       numericFromColIndex={1}
       rowsPerPage={28}
       isLoading={loading}
-      isFallback={isFallback}
+      emptyMessage="No data for the selected filters."
       filterControls={filterControls}
       onGenerate={loadData}
     />

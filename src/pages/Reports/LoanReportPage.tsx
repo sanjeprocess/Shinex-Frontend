@@ -3,22 +3,20 @@ import A4Report, { A4ReportColumn } from '../../components/reports/A4Report'
 import { list as listEmployees, Employee } from '../../mocks/employees'
 import { list as listCustomers, Customer } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
-import { list as listDeductionTransactions, computeDeductionMetrics } from '../../mocks/deductionTransactions'
+import { computeDeductionMetrics } from '../../mocks/deductionTransactions'
+import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
 
 export default function LoanReportPage() {
-  const [year, setYear] = useState<string>('2024')
-  const [month, setMonth] = useState<string>('12')
-  const [businessCenter, setBusinessCenter] = useState<string>(
-    localStorage.getItem('hsb_active_bc') || 'ALL'
-  )
+  const [year, setYear] = useState<string>(String(new Date().getFullYear()))
+  const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
+  const [businessCenter, setBusinessCenter] = useState<string>('ALL')
   const [selectedClient, setSelectedClient] = useState<string>('')
 
   const [businessCenters, setBusinessCenters] = useState<any[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState<boolean>(false)
-  const [isFallback, setIsFallback] = useState<boolean>(false)
   const [loanRows, setLoanRows] = useState<
     Array<{
       empId: string
@@ -34,87 +32,50 @@ export default function LoanReportPage() {
   useEffect(() => {
     Promise.all([
       listBC().catch(() => []),
-      listCustomers().catch(() => []),
-      listEmployees().catch(() => []),
+      listCustomers(businessCenter),
+      listEmployees(businessCenter),
     ]).then(([bcs, custs, emps]) => {
       setBusinessCenters(bcs)
       setCustomers(custs)
       setEmployees(emps)
-      if (custs.length > 0 && !selectedClient) {
-        setSelectedClient(custs[0].code)
-      }
+      setSelectedClient(current => custs.some(customer => customer.code === current)
+        ? current
+        : custs[0]?.code || '')
     })
-  }, [])
+  }, [businessCenter])
 
   const loadData = async () => {
     setLoading(true)
     try {
       const cleanBc = businessCenter && businessCenter !== 'ALL' ? businessCenter.split(' / ')[0].trim() : ''
-      const [txs, emps] = await Promise.all([
-        listDeductionTransactions(cleanBc).catch(() => []),
-        listEmployees(cleanBc).catch(() => []),
+      const [report, emps] = await Promise.all([
+        api.get('/reports/loan', {
+          params: { businessCenter: cleanBc || 'ALL', year, month }
+        }),
+        listEmployees(cleanBc),
       ])
-
-      // Filter deduction transactions where isLoan = true
-      const loanTxs = txs.filter(t => t.isLoan === true)
-
-      if (loanTxs.length > 0) {
-        const refDate = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1)
-        const mapped = loanTxs.map(tx => {
-          const emp = emps.find(e => (e.epfNo || '').trim() === (tx.epfNo || '').trim())
-          const fullName = emp ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim() : tx.employeeName || tx.epfNo
-          const metrics = computeDeductionMetrics(tx, refDate)
-          const alreadyDeducted = Math.max(0, tx.totalAmount - metrics.remainingBalance)
-
-          return {
-            empId: tx.epfNo,
-            name: fullName,
-            currentMonthValue: tx.monthlyCut,
-            duration: `${metrics.totalMonthsWindow || 6} months`,
-            alreadyDeduct: alreadyDeducted,
-            totalLoanValue: tx.totalAmount,
-            totalBalance: metrics.remainingBalance,
-          }
-        })
-        setLoanRows(mapped)
-        setIsFallback(false)
-        return
+      if (!Array.isArray(report.data)) {
+        throw new Error('Loan report returned an invalid response.')
       }
-
-      // Default sample matching prototype
-      const defaultLoans = [
-        {
-          empId: 'E73',
-          name: 'D M CHANDRALATHA',
-          currentMonthValue: 2000,
-          duration: '6 months',
-          alreadyDeduct: 4000,
-          totalLoanValue: 12000,
-          totalBalance: 8000,
-        },
-        {
-          empId: 'E79',
-          name: 'R GUNAWATHI',
-          currentMonthValue: 2000,
-          duration: '9 months',
-          alreadyDeduct: 6000,
-          totalLoanValue: 18000,
-          totalBalance: 12000,
-        },
-        {
-          empId: 'E74',
-          name: 'W A PEMALATHA',
-          currentMonthValue: 2000,
-          duration: '12 months',
-          alreadyDeduct: 8000,
-          totalLoanValue: 24000,
-          totalBalance: 16000,
-        },
-      ]
-      setLoanRows(defaultLoans)
-      setIsFallback(true)
-    } catch {
-      setIsFallback(true)
+      const refDate = new Date(Number(year), Number(month) - 1, 1)
+      const mapped = report.data.map((tx: any) => {
+        const employee = emps.find(e => (e.epfNo || '').trim() === (tx.epfNo || '').trim())
+        const fullName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : tx.employeeName || tx.epfNo
+        const metrics = computeDeductionMetrics(tx, refDate)
+        return {
+          empId: tx.epfNo,
+          name: fullName,
+          currentMonthValue: Number(tx.monthlyCut || 0),
+          duration: `${metrics.totalMonthsWindow} months`,
+          alreadyDeduct: Math.max(0, Number(tx.totalAmount || 0) - metrics.remainingBalance),
+          totalLoanValue: Number(tx.totalAmount || 0),
+          totalBalance: metrics.remainingBalance
+        }
+      })
+      setLoanRows(mapped)
+    } catch (error) {
+      setLoanRows([])
+      console.error('Loan report could not be loaded', error)
     } finally {
       setLoading(false)
     }
@@ -122,10 +83,10 @@ export default function LoanReportPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [businessCenter, year, month])
 
   const selectedCust = customers.find(c => c.code === selectedClient)
-  const clientName = selectedCust ? selectedCust.name : 'BRANDIX - RIDIGAMA'
+  const clientName = selectedCust ? selectedCust.name : ''
 
   const metaLeft = (
     <div>
@@ -248,7 +209,7 @@ export default function LoanReportPage() {
       totalRow={totalRow}
       rowsPerPage={18}
       isLoading={loading}
-      isFallback={isFallback}
+      emptyMessage="No data for the selected filters."
       filterControls={filterControls}
       onGenerate={loadData}
     />

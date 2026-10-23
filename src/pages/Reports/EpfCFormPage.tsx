@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import A4Report, { A4ReportColumn } from '../../components/reports/A4Report'
-import { list as listEmployees, Employee } from '../../mocks/employees'
 import { list as listBC } from '../../mocks/businessCenters'
-import { getMonthlySummary } from '../../mocks/monthlySummary'
+import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
 import { Settings, X, Save } from 'lucide-react'
 
@@ -19,49 +18,30 @@ export interface EpfCompanySettings {
   branchName: string
 }
 
-const DEFAULT_SETTINGS: EpfCompanySettings = {
-  companyName: 'SHINEX HOUSE KEEPING SERVICES (PVT) LTD',
-  addressLine1: 'NO:414',
-  addressLine2: 'BATHALAHENAWATHTHA',
-  addressLine3: 'GONAWALA',
+const EMPTY_SETTINGS: EpfCompanySettings = {
+  companyName: '',
+  addressLine1: '',
+  addressLine2: '',
+  addressLine3: '',
   addressLine4: 'KENANIYA',
-  epfRegNo: 'I/30466',
+  epfRegNo: '',
   surcharge: '',
   chequeNo: '',
-  bankName: 'Commercial Bank',
-  branchName: 'Kiribathgoda',
-}
-
-const SETTINGS_KEY = 'hsb_epf_company_settings'
-
-function loadSettings(): EpfCompanySettings {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY)
-    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) }
-  } catch {}
-  return DEFAULT_SETTINGS
-}
-
-function saveSettings(s: EpfCompanySettings) {
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
-  } catch {}
+  bankName: '',
+  branchName: '',
 }
 
 export default function EpfCFormPage() {
-  const [year, setYear] = useState<string>('2024')
-  const [month, setMonth] = useState<string>('12')
-  const [businessCenter, setBusinessCenter] = useState<string>(
-    localStorage.getItem('hsb_active_bc') || 'ALL'
-  )
+  const [year, setYear] = useState<string>(String(new Date().getFullYear()))
+  const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
+  const [businessCenter, setBusinessCenter] = useState<string>('ALL')
 
-  const [settings, setSettings] = useState<EpfCompanySettings>(loadSettings)
+  const [settings, setSettings] = useState<EpfCompanySettings>(EMPTY_SETTINGS)
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false)
   const [draftSettings, setDraftSettings] = useState<EpfCompanySettings>(settings)
 
   const [businessCenters, setBusinessCenters] = useState<any[]>([])
   const [loading, setLoading] = useState<boolean>(false)
-  const [isFallback, setIsFallback] = useState<boolean>(false)
   const [epfRows, setEpfRows] = useState<
     Array<{
       name: string
@@ -74,57 +54,40 @@ export default function EpfCFormPage() {
   useEffect(() => {
     listBC()
       .then(setBusinessCenters)
-      .catch(() => [])
+      .catch(error => console.error('Business centers could not be loaded', error))
   }, [])
+
+  useEffect(() => {
+    const selected = businessCenters.find(center => center.code === businessCenter)
+    const businessSettings = {
+      ...EMPTY_SETTINGS,
+      companyName: selected?.companyName || selected?.name || '',
+      addressLine1: selected?.address || selected?.companyAddress || '',
+      addressLine4: selected?.address || selected?.companyAddress ? '' : 'KENANIYA',
+      epfRegNo: selected?.epfReg || selected?.epfRegNo || '',
+    }
+    setSettings(current => ({ ...businessSettings, surcharge: current.surcharge, chequeNo: current.chequeNo, bankName: current.bankName, branchName: current.branchName }))
+  }, [businessCenters, businessCenter])
 
   const loadData = async () => {
     setLoading(true)
     try {
       const cleanBc = businessCenter && businessCenter !== 'ALL' ? businessCenter.split(' / ')[0].trim() : ''
-      const emps: Employee[] = await listEmployees(cleanBc).catch(() => [])
-
-      if (emps.length > 0) {
-        // Fetch earnings from monthly summary or basic salary for each employee
-        const summaries = await Promise.all(
-          emps.map(async emp => {
-            try {
-              const summary = await getMonthlySummary(emp.epfNo, year, month)
-              const earning = summary.normalAmount || summary.grossSalary || emp.basicSalary || 18000
-              const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || emp.epfNo
-              return {
-                name: fullName,
-                nic: emp.nicNo || '—',
-                epfNo: emp.epfNo,
-                earning,
-              }
-            } catch {
-              const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || emp.epfNo
-              return {
-                name: fullName,
-                nic: emp.nicNo || '—',
-                epfNo: emp.epfNo,
-                earning: emp.basicSalary || 18000,
-              }
-            }
-          })
-        )
-        setEpfRows(summaries)
-        setIsFallback(false)
-        return
+      const response = await api.get('/reports/epf-c-form', {
+        params: { businessCenter: cleanBc || 'ALL', year, month }
+      })
+      if (!Array.isArray(response.data)) {
+        throw new Error('EPF C Form report returned an invalid response.')
       }
-
-      // Default sample matching prototype
-      const defaultRows = [
-        { name: 'U D RAMYALATHA', nic: '196884504816', epfNo: '72', earning: 18060 },
-        { name: 'D M CHANDRALATHA', nic: '707872381V', epfNo: '73', earning: 17640 },
-        { name: 'W A PEMALATHA', nic: '196656304485', epfNo: '74', earning: 18900 },
-        { name: 'W S WARNA MANEL', nic: '676960988V', epfNo: '76', earning: 18900 },
-        { name: 'J B S WARNALATHA MENIKE', nic: '196373600930', epfNo: '78', earning: 12600 },
-      ]
-      setEpfRows(defaultRows)
-      setIsFallback(true)
-    } catch {
-      setIsFallback(true)
+      setEpfRows(response.data.map((row: any) => ({
+        name: row.employeeName || row.name || '',
+        nic: row.nicNo || row.nic || '',
+        epfNo: row.epfNo || '',
+        earning: Number(row.earning || 0),
+      })))
+    } catch (error) {
+      setEpfRows([])
+      console.error('EPF C Form report could not be loaded', error)
     } finally {
       setLoading(false)
     }
@@ -132,7 +95,7 @@ export default function EpfCFormPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [businessCenter, year, month])
 
   const totalEarning = epfRows.reduce((a, b) => a + b.earning, 0)
   const total20 = Math.round(totalEarning * 0.2 * 100) / 100
@@ -211,7 +174,6 @@ export default function EpfCFormPage() {
 
   const handleSaveSettings = () => {
     setSettings(draftSettings)
-    saveSettings(draftSettings)
     setIsSettingsOpen(false)
   }
 
@@ -345,12 +307,11 @@ export default function EpfCFormPage() {
         customTopBlock={customTopBlock}
         rowsPerPage={22}
         isLoading={loading}
-        isFallback={isFallback}
         filterControls={filterControls}
         onGenerate={loadData}
       />
 
-      {/* Editable Company Settings Modal */}
+      {/* Company identity fields are read from the selected business center. */}
       {isSettingsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
@@ -368,13 +329,16 @@ export default function EpfCFormPage() {
             </div>
 
             <div className="space-y-3 text-xs">
+              <p className="text-slate-500">
+                Company name, address, and EPF registration are managed in business center settings.
+              </p>
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">Company Name</label>
                 <input
                   type="text"
                   value={draftSettings.companyName}
-                  onChange={e => setDraftSettings({ ...draftSettings, companyName: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-emerald-500"
+                  readOnly
+                  className="w-full border border-slate-300 rounded-lg px-3 py-1.5 bg-slate-50"
                 />
               </div>
 
@@ -384,8 +348,8 @@ export default function EpfCFormPage() {
                   <input
                     type="text"
                     value={draftSettings.addressLine1}
-                    onChange={e => setDraftSettings({ ...draftSettings, addressLine1: e.target.value })}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-emerald-500"
+                    readOnly
+                    className="w-full border border-slate-300 rounded-lg px-3 py-1.5 bg-slate-50"
                   />
                 </div>
                 <div>
@@ -393,8 +357,8 @@ export default function EpfCFormPage() {
                   <input
                     type="text"
                     value={draftSettings.addressLine2}
-                    onChange={e => setDraftSettings({ ...draftSettings, addressLine2: e.target.value })}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-emerald-500"
+                    readOnly
+                    className="w-full border border-slate-300 rounded-lg px-3 py-1.5 bg-slate-50"
                   />
                 </div>
               </div>
@@ -405,8 +369,8 @@ export default function EpfCFormPage() {
                   <input
                     type="text"
                     value={draftSettings.addressLine3}
-                    onChange={e => setDraftSettings({ ...draftSettings, addressLine3: e.target.value })}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-emerald-500"
+                    readOnly
+                    className="w-full border border-slate-300 rounded-lg px-3 py-1.5 bg-slate-50"
                   />
                 </div>
                 <div>
@@ -414,8 +378,8 @@ export default function EpfCFormPage() {
                   <input
                     type="text"
                     value={draftSettings.addressLine4}
-                    onChange={e => setDraftSettings({ ...draftSettings, addressLine4: e.target.value })}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-emerald-500"
+                    readOnly
+                    className="w-full border border-slate-300 rounded-lg px-3 py-1.5 bg-slate-50"
                   />
                 </div>
               </div>
@@ -426,8 +390,8 @@ export default function EpfCFormPage() {
                   <input
                     type="text"
                     value={draftSettings.epfRegNo}
-                    onChange={e => setDraftSettings({ ...draftSettings, epfRegNo: e.target.value })}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-emerald-500"
+                    readOnly
+                    className="w-full border border-slate-300 rounded-lg px-3 py-1.5 bg-slate-50"
                   />
                 </div>
                 <div>
