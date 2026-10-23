@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { FileSpreadsheet, Building, Calendar, DollarSign, ArrowRightLeft, ShieldCheck, CheckCircle2 } from 'lucide-react'
+import { FileSpreadsheet, Building, Calendar, DollarSign, ArrowRightLeft, ShieldCheck, CheckCircle2, Calculator } from 'lucide-react'
 import { list as listEmployees } from '../../services/employeeService'
 import type { Employee } from '../../types/employee'
 import { getMonthlySummary, type MonthlySummary } from '../../mocks/monthlySummary'
+import { calculateSalary } from '../../services/salaryCalculationService'
 
 const money = (value: number | undefined) => `LKR ${Number(value || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
@@ -146,6 +147,29 @@ export default function MonthlyBreakdown() {
     toast.success(`Pay Advice for ${summary.epfNo} exported successfully!`)
   }
 
+  const [isCalculating, setIsCalculating] = useState(false)
+
+  async function handleCalculateSalary() {
+    setIsCalculating(true)
+    try {
+      const plant = selectedEmployee?.plantCode || undefined
+      const results = await calculateSalary(year, month, plant)
+      toast.success(`Calculated salary for ${results.length} record(s) (${month}/${year}). Saved to database.`)
+      if (epfNo) {
+        setLoading(true)
+        const data = await getMonthlySummary(epfNo.trim(), year.trim(), month.trim())
+        setSummary(data)
+        setLoading(false)
+      }
+    } catch (err: any) {
+      console.error('Calculate salary error:', err)
+      const msg = err?.response?.data?.message || err?.message || 'Failed to calculate salary'
+      toast.error(String(msg))
+    } finally {
+      setIsCalculating(false)
+    }
+  }
+
   const selectedEmployee = employees.find(e => e.epfNo === epfNo)
 
   return (
@@ -164,15 +188,25 @@ export default function MonthlyBreakdown() {
           <p className="text-sm text-slate-400 mt-0.5">Full monthly salary advice with automatic multi-plant split reporting.</p>
         </div>
 
-        {summary && (
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
-            onClick={exportMultiPlantExcel}
-            className="flex items-center gap-2 bg-[#2F6F5E] hover:bg-[#26594b] text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-md shrink-0"
+            onClick={handleCalculateSalary}
+            disabled={isCalculating}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-md shrink-0 disabled:opacity-50"
           >
-            <FileSpreadsheet size={16} />
-            <span>Export Pay Advice (Excel)</span>
+            <Calculator size={16} />
+            <span>{isCalculating ? 'Calculating...' : 'Calculate'}</span>
           </button>
-        )}
+          {summary && (
+            <button
+              onClick={exportMultiPlantExcel}
+              className="flex items-center gap-2 bg-[#2F6F5E] hover:bg-[#26594b] text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-md shrink-0"
+            >
+              <FileSpreadsheet size={16} />
+              <span>Export Pay Advice (Excel)</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Period & Employee Selection */}

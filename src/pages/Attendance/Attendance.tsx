@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
-import { Sun, Sunset, Moon, Star, ArrowRightLeft, Trash2, Filter, Layers, FileSpreadsheet } from 'lucide-react'
+import { Sun, Sunset, Moon, Star, ArrowRightLeft, Trash2, Filter, Layers, FileSpreadsheet, Save, Database, AlertCircle } from 'lucide-react'
 import SearchInput from '../../components/SearchInput'
 import NumericInput from '../../components/NumericInput'
 import DataTable from '../../components/DataTable'
@@ -62,6 +62,7 @@ function normalizeLocalDateTime(dateValue?: string, fallbackTime?: string): stri
 
 const excelFieldMap: Record<string, keyof Attendance> = {
   attyear: 'atttYear', atttyear: 'atttYear', attmonth: 'attMonth', epfno: 'epfNo',
+  name: 'employeeName', employeename: 'employeeName', empname: 'employeeName',
   plantcode: 'plantCode', customercode: 'customerCode', sectioncode: 'sectionCode',
   workingdays: 'workingDays', basicsalary: 'basicSalary', dayallowance: 'dayAllowance',
   nightallowance: 'nightAllowance', dayin: 'dayIn', timein: 'timeIn', dayout: 'dayOut',
@@ -246,6 +247,19 @@ export default function AttendancePage() {
   const [filterEmployee, setFilterEmployee] = useState<string>('ALL')
   const [filterPlant, setFilterPlant] = useState<string>('ALL')
 
+  // View Mode: 'logs' (Daily logs table) or 'savedRecords' (Month & Plant wise summary)
+  const [activeTab, setActiveTab] = useState<'logs' | 'savedRecords'>('logs')
+  const [isSavingDb, setIsSavingDb] = useState(false)
+  const [isLocalFallback, setIsLocalFallback] = useState(false)
+  const [saveSummaries, setSaveSummaries] = useState<string[]>([])
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [lastSavedTimestamp, setLastSavedTimestamp] = useState<string>(() => localStorage.getItem('hsb_att_last_saved') || '')
+
+  // Filters for Saved Records view
+  const [savedRecordsYear, setSavedRecordsYear] = useState<string>('ALL')
+  const [savedRecordsMonth, setSavedRecordsMonth] = useState<string>('ALL')
+  const [savedRecordsPlant, setSavedRecordsPlant] = useState<string>('ALL')
+
   // Upload default selectors
   const [uploadDefaultPlant, setUploadDefaultPlant] = useState<string>('')
   const [uploadDefaultSection, setUploadDefaultSection] = useState<string>('')
@@ -407,30 +421,105 @@ export default function AttendancePage() {
       val: validateUploadRow(r, uploadRows, rows, employeeList)
     }))
     const validRows = validated.filter(v => v.val.isValid).map(v => v.row)
-    const invalidCount = validated.length - validRows.length
+    const invalidRows = validated.filter(v => !v.val.isValid).map(v => v.row)
+    const invalidCount = invalidRows.length
 
     if (validRows.length === 0) {
       toast.error(`All ${uploadRows.length} rows have validation issues. Please correct them before saving.`)
       return
     }
 
+    // Enrich with employeeName from employeeList if not set
+    const enrichedValid = validRows.map(r => {
+      const emp = employeeList.find(e => (e.epfNo || '').trim() === (r.epfNo || '').trim())
+      const name = emp ? `${emp.firstName} ${emp.lastName || ''}`.trim() : (r.employeeName || '')
+      return { ...r, employeeName: name }
+    })
+
     try {
-      await bulkSaveAttendance(validRows)
-      toast.success(`Successfully saved ${validRows.length} valid attendance rows.${invalidCount > 0 ? ` ${invalidCount} invalid rows retained for review.` : ''}`)
+      const result = await bulkSaveAttendance(enrichedValid)
+      const nowStr = new Date().toLocaleString()
+      setLastSavedTimestamp(nowStr)
+      localStorage.setItem('hsb_att_last_saved', nowStr)
+
+      const summaryLines = result.summaries.map(s => s.message)
+      setSaveSummaries(summaryLines)
+
+      if (result.isFallback) {
+        setIsLocalFallback(true)
+        const errMsg = result.error || 'Server connection failed'
+        setSaveError(errMsg)
+        toast.error(`Saved locally only – not in database: ${errMsg}`)
+      } else {
+        setIsLocalFallback(false)
+        setSaveError(null)
+        toast.success(`Successfully saved ${result.totalSaved} rows to database!${invalidCount > 0 ? ` ${invalidCount} invalid rows retained for review.` : ''}`)
+      }
+
       if (invalidCount > 0) {
-        setUploadRows(validated.filter(v => !v.val.isValid).map(v => v.row))
+        setUploadRows(invalidRows)
       } else {
         setUploadRows([])
       }
       refresh()
     } catch (error: any) {
       console.error('Bulk attendance save failed', error)
-      toast.error(String(error?.response?.data?.message || 'Bulk attendance save failed'))
+      const msg = error?.response?.data?.message || error?.message || 'Bulk attendance save failed'
+      setIsLocalFallback(true)
+      setSaveError(msg)
+      toast.error(String(msg))
     }
   }
 
   async function handleBulkSave() {
     await handleBulkSaveValidated()
+  }
+
+  async function handleSaveAllToDb() {
+    if (rows.length === 0) {
+      toast.error('No attendance records available to save.')
+      return
+    }
+
+    setIsSavingDb(true)
+    setSaveError(null)
+
+    // Enrich rows with employeeName
+    const enrichedRows = rows.map(r => {
+      const emp = employeeList.find(e => (e.epfNo || '').trim() === (r.epfNo || '').trim())
+      const name = emp ? `${emp.firstName} ${emp.lastName || ''}`.trim() : (r.employeeName || '')
+      return { ...r, employeeName: name }
+    })
+
+    try {
+      const result = await bulkSaveAttendance(enrichedRows)
+      const nowStr = new Date().toLocaleString()
+      setLastSavedTimestamp(nowStr)
+      localStorage.setItem('hsb_att_last_saved', nowStr)
+
+      const summaryLines = result.summaries.map(s => s.message)
+      setSaveSummaries(summaryLines)
+
+      if (result.isFallback) {
+        setIsLocalFallback(true)
+        const errMsg = result.error || 'Server connection failed'
+        setSaveError(errMsg)
+        toast.error(`Saved locally only – not in database: ${errMsg}`)
+      } else {
+        setIsLocalFallback(false)
+        setSaveError(null)
+        toast.success(`Saved ${result.totalSaved} attendance records to database!`)
+      }
+      refresh()
+    } catch (err: any) {
+      console.error('Save all to database failed', err)
+      const msg = err?.response?.data?.message || err?.message || 'Database save failed'
+      setIsLocalFallback(true)
+      setSaveError(msg)
+      toast.error(String(msg))
+    } finally {
+      setIsSavingDb(false)
+    }
   }
 
   async function handleApplyPlantRange() {
@@ -672,8 +761,11 @@ export default function AttendancePage() {
     }
 
     const isNight = form.nightShift === 'Y' || form.fullNight === 'Y';
+    const currentEmp = employeeList.find(e => (e.epfNo || '').trim() === (form.epfNo || '').trim());
+    const empName = currentEmp ? `${currentEmp.firstName} ${currentEmp.lastName || ''}`.trim() : (form.employeeName || '');
     const toSave: Attendance = {
       ...form,
+      employeeName: empName,
       atttYear: yr || form.atttYear || '2026',
       attMonth: mo || form.attMonth || '01',
       dayOut: normalizeLocalDateTime(form.dayOut || form.dayIn, form.timeOut) || form.dayIn,
@@ -761,6 +853,72 @@ export default function AttendancePage() {
     })
     return map
   }, [rows])
+
+  // Saved Records Grouping (Month & Plant Wise)
+  const savedRecordsGroups = useMemo(() => {
+    type GroupData = {
+      key: string;
+      plantCode: string;
+      plantName: string;
+      year: string;
+      month: string;
+      employees: Set<string>;
+      totalDays: number;
+      totalOt: number;
+      lastSaved: string;
+    };
+
+    const groups = new Map<string, GroupData>();
+
+    rows.forEach(r => {
+      const plant = (r.plantCode || 'DEFAULT').trim();
+      let yr = (r.atttYear || '').trim();
+      let mo = (r.attMonth || '').trim();
+      if (!yr && r.dayIn) yr = r.dayIn.slice(0, 4);
+      if (!mo && r.dayIn) mo = r.dayIn.slice(5, 7);
+      if (!yr) yr = '2026';
+      if (!mo) mo = '01';
+
+      if (savedRecordsYear !== 'ALL' && yr !== savedRecordsYear) return;
+      if (savedRecordsMonth !== 'ALL' && mo !== savedRecordsMonth) return;
+      if (savedRecordsPlant !== 'ALL' && plant !== savedRecordsPlant) return;
+
+      const key = `${plant}|${yr}|${mo}`;
+      if (!groups.has(key)) {
+        const cust = customerList.find(c => c.code === plant);
+        groups.set(key, {
+          key,
+          plantCode: plant,
+          plantName: cust?.name || plant,
+          year: yr,
+          month: mo,
+          employees: new Set<string>(),
+          totalDays: 0,
+          totalOt: 0,
+          lastSaved: lastSavedTimestamp || 'Saved in session'
+        });
+      }
+
+      const g = groups.get(key)!;
+      if (r.epfNo) g.employees.add(r.epfNo.trim());
+      g.totalDays += Number(r.workingDays || (r.halfDay === 1 ? 0.5 : 1));
+      g.totalOt += Number(r.totalOt || 0);
+    });
+
+    return Array.from(groups.values()).sort((a, b) => {
+      if (a.year !== b.year) return b.year.localeCompare(a.year);
+      if (a.month !== b.month) return b.month.localeCompare(a.month);
+      return a.plantCode.localeCompare(b.plantCode);
+    });
+  }, [rows, customerList, savedRecordsYear, savedRecordsMonth, savedRecordsPlant, lastSavedTimestamp]);
+
+  function handleOpenGroupRows(group: { plantCode: string; year: string; month: string }) {
+    setFilterYear(group.year);
+    setFilterMonth(group.month);
+    setFilterPlant(group.plantCode);
+    setActiveTab('logs');
+    toast.info(`Opened logs for Plant ${group.plantCode} (${group.month}/${group.year})`);
+  }
 
   // Custom Form Select Handlers
   function handleNumericInput(field: 'workingDays' | 'noOfStaff' | 'dasForAttAllowance' | 'basicSalary' | 'dayAllowance' | 'nightAllowance' | 'sundayPoyaExtra' | 'noOfMeal' | 'totalMealValue', label: string, value: string) {
@@ -914,7 +1072,7 @@ export default function AttendancePage() {
   // Table Data mapping
   const tableData = filtered.map(r => {
     const emp = employeeList.find(e => e.epfNo === r.epfNo)
-    const empName = emp ? `${emp.firstName} ${emp.lastName || ''}` : 'Unknown'
+    const empName = r.employeeName || (emp ? `${emp.firstName} ${emp.lastName || ''}`.trim() : 'Unknown')
 
     // Plant Code & Name + transferred plant if any
     const cust = customerList.find(c => c.code === r.plantCode)
@@ -1027,6 +1185,16 @@ export default function AttendancePage() {
           </button>
           <button
             type="button"
+            disabled={isSavingDb}
+            className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white px-3.5 py-1.5 rounded-md text-xs font-semibold btn-press shadow-xs disabled:opacity-50"
+            onClick={handleSaveAllToDb}
+            title="Save manual and staged rows to SQL Server database"
+          >
+            <Database size={14} />
+            <span>{isSavingDb ? 'Saving to DB...' : 'Save to Database'}</span>
+          </button>
+          <button
+            type="button"
             className="bg-[#2F6F5E] hover:bg-[#25584a] text-white px-3.5 py-1.5 rounded-md text-xs font-medium btn-press shadow-xs"
             onClick={handleAdd}
           >
@@ -1035,8 +1203,235 @@ export default function AttendancePage() {
         </div>
       </div>
 
-      {/* Filter Strip (Year, Month, Employee, Plant) */}
-      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-flat flex flex-wrap items-center gap-3">
+      {/* Offline / Local Storage Badge & Alerts */}
+      {isLocalFallback && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-800">
+          <AlertCircle size={16} className="text-amber-600 shrink-0" />
+          <span className="font-semibold px-2 py-0.5 rounded bg-amber-200 text-amber-900 text-[11px]">
+            Saved locally only – not in database
+          </span>
+          <span className="text-amber-700">
+            {saveError ? `(${saveError})` : 'Backend server is unreachable. Attendance records are saved in local storage.'}
+          </span>
+        </div>
+      )}
+
+      {saveError && !isLocalFallback && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-rose-50 border border-rose-300 rounded-lg text-xs text-rose-800">
+          <AlertCircle size={16} className="text-rose-600 shrink-0" />
+          <span className="font-semibold">Save Error:</span>
+          <span>{saveError}</span>
+        </div>
+      )}
+
+      {saveSummaries.length > 0 && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-emerald-900 flex items-center gap-1">
+              <Database size={14} /> Database Upsert Summary:
+            </span>
+            <button
+              onClick={() => setSaveSummaries([])}
+              className="text-emerald-700 hover:text-emerald-900 text-[11px] underline"
+            >
+              Dismiss
+            </button>
+          </div>
+          {saveSummaries.map((msg, i) => (
+            <div key={i} className="text-emerald-800 font-mono text-[11px]">
+              {msg}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tabs: Daily Logs vs Saved Records */}
+      <div className="flex items-center border-b border-slate-200 gap-4">
+        <button
+          type="button"
+          onClick={() => setActiveTab('logs')}
+          className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors ${
+            activeTab === 'logs'
+              ? 'border-[#2F6F5E] text-[#2F6F5E]'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Daily Attendance Logs ({rows.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('savedRecords')}
+          className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${
+            activeTab === 'savedRecords'
+              ? 'border-[#2F6F5E] text-[#2F6F5E]'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <Database size={13} />
+          <span>Saved Records (Month & Plant Wise)</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 text-slate-600 font-mono">
+            {savedRecordsGroups.length}
+          </span>
+        </button>
+      </div>
+
+      {/* View Mode Content */}
+      {activeTab === 'savedRecords' ? (
+        <div className="space-y-4">
+          {/* Filters for Saved Records */}
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-flat flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5 text-xs text-slate-500 font-semibold uppercase tracking-wider">
+              <Filter size={14} className="text-[#2F6F5E]" />
+              <span>Filters:</span>
+            </div>
+
+            {/* Year Filter */}
+            <div className="flex items-center gap-1">
+              <label className="text-xs text-slate-600 font-medium">Year:</label>
+              <select
+                value={savedRecordsYear}
+                onChange={e => setSavedRecordsYear(e.target.value)}
+                className="form-input text-xs py-1 px-2 h-8"
+              >
+                <option value="ALL">All Years</option>
+                {['2024', '2025', '2026', '2027', '2028'].map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Month Filter */}
+            <div className="flex items-center gap-1">
+              <label className="text-xs text-slate-600 font-medium">Month:</label>
+              <select
+                value={savedRecordsMonth}
+                onChange={e => setSavedRecordsMonth(e.target.value)}
+                className="form-input text-xs py-1 px-2 h-8"
+              >
+                <option value="ALL">All Months</option>
+                {[
+                  { val: '01', name: 'Jan' }, { val: '02', name: 'Feb' }, { val: '03', name: 'Mar' },
+                  { val: '04', name: 'Apr' }, { val: '05', name: 'May' }, { val: '06', name: 'Jun' },
+                  { val: '07', name: 'Jul' }, { val: '08', name: 'Aug' }, { val: '09', name: 'Sep' },
+                  { val: '10', name: 'Oct' }, { val: '11', name: 'Nov' }, { val: '12', name: 'Dec' },
+                ].map(m => (
+                  <option key={m.val} value={m.val}>{m.val} - {m.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Plant Filter */}
+            <div className="flex items-center gap-1">
+              <label className="text-xs text-slate-600 font-medium">Plant:</label>
+              <select
+                value={savedRecordsPlant}
+                onChange={e => setSavedRecordsPlant(e.target.value)}
+                className="form-input text-xs py-1 px-2 h-8 max-w-[180px]"
+              >
+                <option value="ALL">All Plants ({customerList.length})</option>
+                {customerList.map(c => (
+                  <option key={c.code} value={c.code}>
+                    {c.code} - {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {(savedRecordsYear !== 'ALL' || savedRecordsMonth !== 'ALL' || savedRecordsPlant !== 'ALL') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSavedRecordsYear('ALL')
+                  setSavedRecordsMonth('ALL')
+                  setSavedRecordsPlant('ALL')
+                }}
+                className="text-xs text-teal-700 hover:text-teal-900 underline font-medium ml-auto"
+              >
+                Reset Filters
+              </button>
+            )}
+          </div>
+
+          {/* Grouped Records Table */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-flat overflow-hidden">
+            <div className="p-3.5 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <Database size={15} className="text-[#2F6F5E]" />
+                <span>Saved Attendance Records by Plant and Month ({savedRecordsGroups.length} Groups)</span>
+              </h3>
+              <span className="text-[11px] text-slate-500">
+                Click "Open Rows" to view and edit individual attendance logs for that plant and month.
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-600 font-semibold border-b">
+                  <tr>
+                    <th className="p-3">Plant (Customer)</th>
+                    <th className="p-3">Payroll Period</th>
+                    <th className="p-3 text-center">Employees</th>
+                    <th className="p-3 text-center">Total Days</th>
+                    <th className="p-3 text-center">Total OT (Hours)</th>
+                    <th className="p-3">Last Saved Time</th>
+                    <th className="p-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {savedRecordsGroups.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-slate-400">
+                        No saved attendance records found for the selected filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    savedRecordsGroups.map(group => (
+                      <tr key={group.key} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="p-3">
+                          <div className="font-semibold text-slate-800">
+                            <span className="font-mono text-[#2F6F5E] mr-1">{group.plantCode}</span>
+                            <span>- {group.plantName}</span>
+                          </div>
+                        </td>
+                        <td className="p-3 font-mono font-medium text-slate-700">
+                          {group.year} / {group.month}
+                        </td>
+                        <td className="p-3 text-center">
+                          <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                            {group.employees.size} employees
+                          </span>
+                        </td>
+                        <td className="p-3 text-center font-mono font-semibold text-slate-800">
+                          {group.totalDays}
+                        </td>
+                        <td className="p-3 text-center font-mono font-semibold text-[#C08A2E]">
+                          {group.totalOt.toFixed(1)} hrs
+                        </td>
+                        <td className="p-3 text-slate-500 text-[11px] font-mono">
+                          {group.lastSaved}
+                        </td>
+                        <td className="p-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenGroupRows(group)}
+                            className="inline-flex items-center gap-1 px-3 py-1 bg-[#2F6F5E] hover:bg-[#25584a] text-white rounded text-xs font-semibold transition shadow-2xs"
+                          >
+                            <span>Open Rows</span>
+                            <ArrowRightLeft size={11} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Filter Strip (Year, Month, Employee, Plant) */}
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-flat flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1.5 text-xs text-slate-500 font-semibold uppercase tracking-wider">
           <Filter size={14} className="text-[#2F6F5E]" />
           <span>Filters:</span>
@@ -1662,6 +2057,7 @@ export default function AttendancePage() {
                 <tr>
                   <th className="px-2 py-2">Validation Status</th>
                   <th className="px-2 py-2">EPF No</th>
+                  <th className="px-2 py-2">Employee Name</th>
                   <th className="px-2 py-2">Plant Code *</th>
                   <th className="px-2 py-2">Section Code</th>
                   <th className="px-2 py-2">Day In</th>
@@ -1679,6 +2075,8 @@ export default function AttendancePage() {
               <tbody className="divide-y">
                 {uploadRows.map((row, index) => {
                   const val = validateUploadRow(row, uploadRows, rows, employeeList);
+                  const matchedEmp = employeeList.find(e => (e.epfNo || '').trim() === (row.epfNo || '').trim());
+                  const empDisplayName = row.employeeName || (matchedEmp ? `${matchedEmp.firstName} ${matchedEmp.lastName || ''}`.trim() : '-');
                   return (
                     <tr key={row.id || index} className={val.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/40 hover:bg-rose-50/60'}>
                       <td className="px-2 py-1.5">
@@ -1703,6 +2101,11 @@ export default function AttendancePage() {
                           onChange={e => updateUploadRow(index, { epfNo: e.target.value })} 
                           className={`form-input w-24 text-xs font-mono ${val.errors.some(er => er.includes('EPF')) ? 'border-red-400 bg-red-50 ring-1 ring-red-200' : ''}`}
                         />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <span className="text-slate-700 truncate block max-w-[120px]" title={empDisplayName}>
+                          {empDisplayName}
+                        </span>
                       </td>
                       <td className="px-2 py-1.5">
                         <select 
@@ -1836,6 +2239,8 @@ export default function AttendancePage() {
             </table>
           </div>
         </section>
+      )}
+        </div>
       )}
 
       <ConfirmDialog open={!!confirm} title="Delete Entry" message="Are you sure you want to delete this attendance log?" onConfirm={handleDeleteConfirm} onCancel={() => setConfirm(null)} />

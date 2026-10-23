@@ -5,6 +5,7 @@ export type Attendance = {
   atttYear: string;            // Attt_Year (NCHAR(4))
   attMonth: string;            // Att_Month (NCHAR(2))
   epfNo: string;               // EPF_No (NCHAR(10))
+  employeeName?: string;       // Employee_Name (NVARCHAR(100))
   plantCode: string;           // Plant_Code (NCHAR(10))
   sectionCode?: string;        // Section_Code (Optional)
   customerCode?: string;       // Customer_Code (Optional)
@@ -175,6 +176,7 @@ export const list = async (businessCenter?: string): Promise<Attendance[]> => {
         atttYear: (a.attYear || a.atttYear || '').trim(),
         attMonth: (a.attMonth || '').trim(),
         epfNo: (a.epfNo || '').trim(),
+        employeeName: (a.employeeName || a.empName || '').trim() || undefined,
         plantCode: (a.plantCode || '').trim(),
         sectionCode: (a.sectionCode || '').trim() || undefined,
         customerCode: (a.customerCode || '').trim() || undefined,
@@ -302,23 +304,120 @@ export const update = async (id: string, patch: Partial<Attendance>): Promise<At
   return { id, ...patch } as Attendance;
 };
 
-export const bulkSave = async (records: Attendance[]): Promise<void> => {
+export type BulkSaveSummary = {
+  plantCode: string;
+  year: string;
+  month: string;
+  employeeCount: number;
+  totalRows: number;
+  inserted: number;
+  updated: number;
+  failed: number;
+  message: string;
+};
+
+export type BulkSaveResult = {
+  status: string;
+  totalSaved: number;
+  inserted: number;
+  updated: number;
+  failed: number;
+  summaries: BulkSaveSummary[];
+  message: string;
+  isFallback: boolean;
+  error?: string;
+  records?: Attendance[];
+};
+
+export const bulkSave = async (records: Attendance[]): Promise<BulkSaveResult> => {
+  let apiResponse: any = null;
+  let apiError: string | null = null;
+
   try {
-    await api.post('/attendance/bulk', records);
-  } catch {
-    // Fallback store
+    const res = await api.post('/attendance/bulk', records);
+    if (res.data) {
+      apiResponse = res.data;
+    }
+  } catch (err: any) {
+    apiError = err?.response?.data?.message || err?.message || 'Server connection failed';
   }
 
+  // Fallback store in localStorage
   const stored = getStoredAttendance();
   const map = new Map<string, Attendance>();
   stored.forEach(r => map.set(r.id || `${r.atttYear}_${r.attMonth}_${r.epfNo}_${r.dayIn}`, r));
 
+  let localInserted = 0;
+  let localUpdated = 0;
   records.forEach(r => {
     const key = r.id || `${r.atttYear}_${r.attMonth}_${r.epfNo}_${r.dayIn}`;
+    if (map.has(key)) {
+      localUpdated++;
+    } else {
+      localInserted++;
+    }
     map.set(key, { ...map.get(key), ...r, id: key });
   });
 
   saveStoredAttendance(Array.from(map.values()));
+
+  if (apiResponse && apiResponse.summaries && Array.isArray(apiResponse.summaries)) {
+    return {
+      status: apiResponse.status || 'success',
+      totalSaved: apiResponse.totalSaved || records.length,
+      inserted: apiResponse.inserted || 0,
+      updated: apiResponse.updated || 0,
+      failed: apiResponse.failed || 0,
+      summaries: apiResponse.summaries,
+      message: apiResponse.message || (apiResponse.summaries[0]?.message ?? `${records.length} rows saved`),
+      isFallback: false,
+      records: apiResponse.records
+    };
+  }
+
+  // Generate plant & month grouped summaries for local save
+  const plantGroups = new Map<string, { epfs: Set<string>; count: number }>();
+  records.forEach(r => {
+    const p = (r.plantCode || 'DEFAULT').trim();
+    const y = (r.atttYear || '2026').trim();
+    const m = (r.attMonth || '01').trim();
+    const key = `${p}|${y}|${m}`;
+    if (!plantGroups.has(key)) {
+      plantGroups.set(key, { epfs: new Set(), count: 0 });
+    }
+    const g = plantGroups.get(key)!;
+    g.count++;
+    if (r.epfNo) g.epfs.add(r.epfNo.trim());
+  });
+
+  const summaries: BulkSaveSummary[] = [];
+  plantGroups.forEach((v, k) => {
+    const [p, y, m] = k.split('|');
+    const msg = `Plant ${p} – ${y}/${m} – ${v.epfs.size} employees – ${v.count} rows saved (inserted ${localInserted}, updated ${localUpdated}, failed 0)`;
+    summaries.push({
+      plantCode: p,
+      year: y,
+      month: m,
+      employeeCount: v.epfs.size,
+      totalRows: v.count,
+      inserted: localInserted,
+      updated: localUpdated,
+      failed: 0,
+      message: msg
+    });
+  });
+
+  return {
+    status: apiError ? 'fallback' : 'success',
+    totalSaved: records.length,
+    inserted: localInserted,
+    updated: localUpdated,
+    failed: 0,
+    summaries,
+    message: summaries[0]?.message || `${records.length} rows saved`,
+    isFallback: true,
+    error: apiError || undefined
+  };
 };
 
 export const remove = async (id: string): Promise<void> => {

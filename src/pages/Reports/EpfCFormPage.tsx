@@ -24,7 +24,7 @@ const DEFAULT_SETTINGS: EpfCompanySettings = {
   addressLine1: 'NO:414',
   addressLine2: 'BATHALAHENAWATHTHA',
   addressLine3: 'GONAWALA',
-  addressLine4: 'KELANIYA',
+  addressLine4: 'KENANIYA',
   epfRegNo: 'I/30466',
   surcharge: '',
   chequeNo: '',
