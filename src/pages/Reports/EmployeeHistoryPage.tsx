@@ -70,17 +70,17 @@ export default function EmployeeHistoryPage() {
   async function loadCompanyEmployees() {
     try {
       const list = await listEmployees(cleanBc)
-      // De-duplicate by unique employee (epfNo) for logged-in company only
+      // De-duplicate by current employee (epfNo) for logged-in company only
       const map = new Map<string, any>()
       list.forEach((emp: any) => {
         if (emp?.epfNo && !map.has(emp.epfNo.trim())) {
           map.set(emp.epfNo.trim(), emp)
         }
       })
-      const uniqueEmps = Array.from(map.values())
-      setCompanyEmployees(uniqueEmps)
+      const currentEmps = Array.from(map.values())
+      setCompanyEmployees(currentEmps)
     } catch (err) {
-      console.error('Failed to load scoped unique employees', err)
+      console.error('Failed to load scoped current employees', err)
     }
   }
 
@@ -607,7 +607,7 @@ export default function EmployeeHistoryPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex-1 max-w-xl">
             <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-              <span>Select Employee ({companyEmployees.length} unique employees in company)</span>
+              <span>Select Employee ({companyEmployees.length} current employees in company)</span>
               <span className="text-slate-400 font-normal text-[11px]">Company Scoped</span>
             </label>
             <SearchableEmployeeSelect
