@@ -20,10 +20,18 @@ export default function Login() {
   // Load business centers on mount for the dropdown
   useEffect(() => {
     setBcLoading(true)
-    api.get('/business-centers')
+    // Use a direct fetch without auth token since this must work before login
+    fetch('/api/business-centers', {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(8000)
+    })
       .then(res => {
-        if (Array.isArray(res.data)) {
-          const centers: BusinessCenter[] = res.data.map((b: any) => ({
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
+      .then(data => {
+        if (Array.isArray(data)) {
+          const centers: BusinessCenter[] = data.map((b: any) => ({
             code: (b.code || b.companyId || '').trim(),
             name: (b.name || b.companyName || '').trim()
           })).filter(b => b.code)
@@ -34,7 +42,7 @@ export default function Login() {
         }
       })
       .catch(() => {
-        // If backend not reachable yet, allow login without BC selection
+        // Backend unreachable or returned error — login can still proceed without BC dropdown
         setBusinessCenters([])
       })
       .finally(() => setBcLoading(false))
