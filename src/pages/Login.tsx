@@ -3,11 +3,42 @@ import { useNavigate } from 'react-router-dom'
 import api from '../api/axios'
 import { toast } from 'sonner'
 
+type BusinessCenter = {
+  code: string
+  name: string
+}
+
 export default function Login() {
   const navigate = useNavigate()
   const [submitting, setSubmitting] = useState(false)
   const [password, setPassword] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
+  const [businessCenters, setBusinessCenters] = useState<BusinessCenter[]>([])
+  const [selectedBc, setSelectedBc] = useState<string>('')
+  const [bcLoading, setBcLoading] = useState(true)
+
+  // Load business centers on mount for the dropdown
+  useEffect(() => {
+    setBcLoading(true)
+    api.get('/business-centers')
+      .then(res => {
+        if (Array.isArray(res.data)) {
+          const centers: BusinessCenter[] = res.data.map((b: any) => ({
+            code: (b.code || b.companyId || '').trim(),
+            name: (b.name || b.companyName || '').trim()
+          })).filter(b => b.code)
+          setBusinessCenters(centers)
+          if (centers.length > 0) {
+            setSelectedBc(centers[0].code)
+          }
+        }
+      })
+      .catch(() => {
+        // If backend not reachable yet, allow login without BC selection
+        setBusinessCenters([])
+      })
+      .finally(() => setBcLoading(false))
+  }, [])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -23,7 +54,8 @@ export default function Login() {
     try {
       const response = await api.post('/auth/login', {
         loginName,
-        password: enteredPassword
+        password: enteredPassword,
+        clientBusinessCode: selectedBc || undefined
       })
 
       const userRole = (response.data.role || 'ADMIN').toUpperCase()
@@ -31,8 +63,10 @@ export default function Login() {
       const rawAssignedBc = response.data.clientBusinessCode || ''
       const assignedBc = rawAssignedBc.split(' - ')[0].split(' / ')[0].trim()
 
-      // If user has a specific assigned business center (not ALL and not superadmin), strictly lock to it
-      const effectiveBc = assignedBc || 'ALL'
+      // Determine effective BC: for non-superadmin with assigned BC, lock to it; otherwise use selected
+      const effectiveBc = (!isSuperAdminUser && assignedBc && assignedBc !== 'ALL')
+        ? assignedBc
+        : (selectedBc || assignedBc || 'ALL')
 
       localStorage.setItem('hsb_auth_token', response.data.token)
       localStorage.setItem('hsb_test_user', response.data.loginName || loginName)
@@ -43,7 +77,7 @@ export default function Login() {
         businessCenterName: effectiveBc
       }))
       localStorage.setItem('hsb_user_role', userRole)
-      localStorage.setItem('hsb_assigned_bc', (!isSuperAdminUser && assignedBc && assignedBc !== 'ALL') ? assignedBc : 'ALL')
+      localStorage.setItem('hsb_assigned_bc', (!isSuperAdminUser && assignedBc && assignedBc !== 'ALL') ? assignedBc : (isSuperAdminUser ? 'ALL' : effectiveBc))
       localStorage.setItem('hsb_active_bc', effectiveBc)
 
       // Save base permissions immediately so app can load
@@ -92,7 +126,7 @@ export default function Login() {
         (status === 401
           ? 'Invalid username or password.'
           : status === 403
-            ? 'Access denied. Your account does not have permission to sign in.'
+            ? 'Access denied. You are not authorized to log into this Business Center.'
             : !error.response
               ? "Can't reach the server. Check your network connection and backend availability."
               : 'Sign-in failed. Please try again.')
@@ -142,6 +176,34 @@ export default function Login() {
                 className="mt-1 w-full border border-slate-600 rounded-md px-3 py-2 bg-transparent text-white focus:outline-none focus:border-[#3F9884]"
                 required
               />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-300">Business Center *</label>
+              {bcLoading ? (
+                <div className="mt-1 w-full border border-slate-600 rounded-md px-3 py-2 text-slate-400 text-sm bg-transparent">
+                  Loading business centers…
+                </div>
+              ) : businessCenters.length > 0 ? (
+                <select
+                  value={selectedBc}
+                  onChange={e => setSelectedBc(e.target.value)}
+                  className="mt-1 w-full border border-slate-600 rounded-md px-3 py-2 bg-[#1B2028] text-white focus:outline-none focus:border-[#3F9884] cursor-pointer"
+                  required
+                >
+                  {businessCenters.map(bc => (
+                    <option key={bc.code} value={bc.code} className="bg-[#1B2028] text-white">
+                      {bc.name || bc.code}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="mt-1 w-full border border-slate-600 rounded-md px-3 py-2 text-slate-400 text-sm bg-transparent">
+                  No business centers found — proceeding without selection
+                </div>
+              )}
+              <p className="mt-1 text-[10px] text-slate-500">
+                Your account must be authorized for the selected business center.
+              </p>
             </div>
             {errorMessage && (
               <div role="alert" className="rounded-md border border-red-500/60 bg-red-500/10 px-3 py-2 text-sm text-red-300">
