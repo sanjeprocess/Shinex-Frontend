@@ -465,6 +465,7 @@ export default function AttendancePage() {
         setUploadRows([])
       }
       await listAttendance(localStorage.getItem('hsb_active_bc') || '').then(setRows)
+      setActiveTab('savedRecords')
     } catch (error: any) {
       console.error('Bulk attendance save failed', error)
       const msg = error?.response?.data?.message || error?.message || 'Bulk attendance save failed'
@@ -1342,9 +1343,14 @@ export default function AttendancePage() {
                     </tr>
                   ) : (
                     savedRecordsGroups.map(group => (
-                      <tr key={group.key} className="hover:bg-slate-50/80 transition-colors">
+                      <tr
+                        key={group.key}
+                        onClick={() => handleOpenGroupRows(group)}
+                        className="hover:bg-emerald-50/60 transition-colors cursor-pointer group"
+                        title="Click to view and edit attendance records for this plant and month"
+                      >
                         <td className="p-3">
-                          <div className="font-semibold text-slate-800">
+                          <div className="font-semibold text-slate-800 group-hover:text-[#2F6F5E] transition-colors">
                             <span className="font-mono text-[#2F6F5E] mr-1">{group.plantCode}</span>
                             <span>- {group.plantName}</span>
                           </div>
@@ -1369,7 +1375,10 @@ export default function AttendancePage() {
                         <td className="p-3 text-right">
                           <button
                             type="button"
-                            onClick={() => handleOpenGroupRows(group)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenGroupRows(group);
+                            }}
                             className="inline-flex items-center gap-1 px-3 py-1 bg-[#2F6F5E] hover:bg-[#25584a] text-white rounded text-xs font-semibold transition shadow-2xs"
                           >
                             <span>Open Rows</span>
@@ -1478,118 +1487,6 @@ export default function AttendancePage() {
         )}
       </div>
 
-      {/* Multi-Plant Date Range Editor Card */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-flat p-4 space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-2 gap-2">
-          <div className="flex items-center gap-2">
-            <Layers size={16} className="text-[#2F6F5E]" />
-            <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider">
-              Multi-Plant Assignment by Date Range (Staged Multi-Plant Editing)
-            </h3>
-          </div>
-          <span className="text-[11px] text-slate-500">
-            Apply different plants for date ranges (e.g. 01–10 Plant A, 11–20 Plant B) without overwriting.
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5 items-end text-xs">
-          <div>
-            <label className="block text-slate-600 font-semibold mb-1">Employee *</label>
-            <select
-              value={rangeEmployee}
-              onChange={e => setRangeEmployee(e.target.value)}
-              className="form-input w-full text-xs"
-            >
-              <option value="">-- Select Employee --</option>
-              {employeeList.map(e => (
-                <option key={e.epfNo} value={e.epfNo}>
-                  {e.epfNo} - {e.firstName} {e.lastName || ''}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-slate-600 font-semibold mb-1">From Date *</label>
-            <input
-              type="date"
-              value={rangeFrom}
-              onChange={e => setRangeFrom(e.target.value)}
-              className="form-input w-full text-xs"
-            />
-          </div>
-
-          <div>
-            <label className="block text-slate-600 font-semibold mb-1">To Date *</label>
-            <input
-              type="date"
-              value={rangeTo}
-              onChange={e => setRangeTo(e.target.value)}
-              className="form-input w-full text-xs"
-            />
-          </div>
-
-          <div>
-            <label className="block text-slate-600 font-semibold mb-1">Plant (Customer Code) *</label>
-            <select
-              value={rangePlant}
-              onChange={e => setRangePlant(e.target.value)}
-              className="form-input w-full text-xs"
-            >
-              <option value="">-- Select Plant --</option>
-              {customerList.map(c => (
-                <option key={c.code} value={c.code}>
-                  {c.code} - {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-slate-600 font-semibold mb-1">Section Code (Optional)</label>
-            <select
-              value={rangeSection}
-              onChange={e => setRangeSection(e.target.value)}
-              className="form-input w-full text-xs"
-            >
-              <option value="">-- Select Section --</option>
-              {sectionList.map(s => (
-                <option key={s.code} value={s.code}>
-                  {s.code} - {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between pt-1 gap-2">
-          <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            {appliedRanges.length > 0 && (
-              <>
-                <span className="text-slate-500 font-medium">Session Applied Ranges:</span>
-                {appliedRanges.map(ar => (
-                  <span
-                    key={ar.id}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200"
-                  >
-                    <span>{ar.epfNo}:</span>
-                    <span>{ar.fromDate} to {ar.toDate}</span>
-                    <strong className="text-emerald-950">({ar.plantCode})</strong>
-                  </span>
-                ))}
-              </>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={handleApplyPlantRange}
-            className="px-4 py-1.5 bg-[#2F6F5E] hover:bg-[#25584a] text-white text-xs font-semibold rounded-lg shadow-sm transition shrink-0"
-          >
-            Apply Plant to Date Range
-          </button>
-        </div>
-      </div>
 
       <DataTable
         columns={columns}
@@ -1640,66 +1537,45 @@ export default function AttendancePage() {
                   )}
                   {form.epfNo && !hasPlantTransfer && (
                     <span className="text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded font-medium border border-slate-200">
-                      Current Plant
+                      Current Plant: {form.plantCode || 'Not Set'}
                     </span>
                   )}
                 </div>
-                {form.epfNo && !hasPlantTransfer ? (
-                  <select 
-                    value={form.plantCode} 
-                    disabled
-                    className="w-full form-input bg-slate-100 cursor-not-allowed text-slate-700 font-medium"
-                  >
-                    {relevantPlants.map(c => {
-                      const emp = employeeList.find(e => e.epfNo === form.epfNo);
-                      const isCurrent = emp?.plantCode?.startsWith(c.code);
-                      return (
-                        <option key={c.code} value={c.code}>
-                          {c.code} - {c.name}{isCurrent ? ' (Current Plant)' : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                ) : (
-                  <select 
-                    value={form.plantCode} 
-                    onChange={e => { 
-                      setForm({ ...form, plantCode: e.target.value }); 
-                      if (errors.plantCode) setErrors(prev => ({ ...prev, plantCode: undefined })) 
-                    }} 
-                    className={`w-full form-input ${errors.plantCode ? 'border-red-300 ring-2 ring-red-100' : ''}`}
-                  >
-                    <option value="">Select plant</option>
-                    {relevantPlants.map(c => {
-                      const emp = employeeList.find(e => e.epfNo === form.epfNo);
-                      const isCurrent = emp?.plantCode?.startsWith(c.code);
-                      const isFromPlant = empTransfers.some(t => t.fromPlant?.includes(c.code));
-                      const isToPlant = empTransfers.some(t => t.toPlant?.includes(c.code));
-                      let tag = '';
-                      if (isCurrent) tag = ' (Current Plant)';
-                      else if (isFromPlant) tag = ' (Previous Plant)';
-                      else if (isToPlant) tag = ' (Transferred Plant)';
-                      return (
-                        <option key={c.code} value={c.code}>
-                          {c.code} - {c.name}{tag}
-                        </option>
-                      );
-                    })}
-                    {!form.epfNo && (
-                      <optgroup label="── All Other Plants ──">
-                        {customerList.map(c => (
+                <select 
+                  value={form.plantCode} 
+                  onChange={e => { 
+                    setForm({ ...form, plantCode: e.target.value }); 
+                    if (errors.plantCode) setErrors(prev => ({ ...prev, plantCode: undefined })) 
+                  }} 
+                  className={`w-full form-input ${errors.plantCode ? 'border-red-300 ring-2 ring-red-100' : ''}`}
+                >
+                  <option value="">Select plant</option>
+                  {relevantPlants.map(c => {
+                    const emp = employeeList.find(e => e.epfNo === form.epfNo);
+                    const isCurrent = emp?.plantCode?.startsWith(c.code);
+                    const isFromPlant = empTransfers.some(t => t.fromPlant?.includes(c.code));
+                    const isToPlant = empTransfers.some(t => t.toPlant?.includes(c.code));
+                    let tag = '';
+                    if (isCurrent) tag = ' (Current Plant)';
+                    else if (isFromPlant) tag = ' (Previous Plant)';
+                    else if (isToPlant) tag = ' (Transferred Plant)';
+                    return (
+                      <option key={c.code} value={c.code}>
+                        {c.code} - {c.name}{tag}
+                      </option>
+                    );
+                  })}
+                  {customerList.filter(c => !relevantPlants.some(rp => rp.code === c.code)).length > 0 && (
+                    <optgroup label="── All Other Plants ──">
+                      {customerList
+                        .filter(c => !relevantPlants.some(rp => rp.code === c.code))
+                        .map(c => (
                           <option key={c.code} value={c.code}>{c.code} - {c.name}</option>
                         ))}
-                      </optgroup>
-                    )}
-                  </select>
-                )}
+                    </optgroup>
+                  )}
+                </select>
                 {errors.plantCode && <p className="mt-1 text-xs text-red-500">{errors.plantCode}</p>}
-                {form.epfNo && !hasPlantTransfer && (
-                  <p className="mt-1 text-[11px] text-slate-500 italic">
-                    Employee has not transferred plants. Assigned to current plant only.
-                  </p>
-                )}
               </div>
 
               {/* Active Plant Transfer Banner */}
