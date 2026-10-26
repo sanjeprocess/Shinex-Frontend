@@ -524,7 +524,12 @@ export default function AttendancePage() {
         setUploadRows([])
       }
       await listAttendance(localStorage.getItem('hsb_active_bc') || '').then(setRows)
-      setActiveTab('savedRecords')
+      // Switch to logs tab and reset filters so newly saved rows are immediately visible
+      setFilterYear('ALL')
+      setFilterMonth('ALL')
+      setFilterPlant('ALL')
+      setFilterEmployee('ALL')
+      setActiveTab('logs')
     } catch (error: any) {
       console.error('Bulk attendance save failed', error)
       const msg = error?.response?.data?.message || error?.message || 'Bulk attendance save failed'

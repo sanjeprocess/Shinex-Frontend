@@ -16,7 +16,7 @@ export default function SalaryAdvanceReportPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState<boolean>(false)
-  const [rows, setRows] = useState<Array<[string, string, string, string, number]>>([])
+  const [rows, setRows] = useState<Array<[string, string, string, string, string, number, number]>>([])
 
   useEffect(() => {
     Promise.all([
@@ -27,9 +27,6 @@ export default function SalaryAdvanceReportPage() {
       setBusinessCenters(bcs)
       setCustomers(custs)
       setEmployees(emps)
-      setSelectedClient(current => custs.some(customer => customer.code === current)
-        ? current
-        : custs[0]?.code || '')
     })
   }, [businessCenter])
 
@@ -39,7 +36,7 @@ export default function SalaryAdvanceReportPage() {
       const cleanBc = businessCenter && businessCenter !== 'ALL' ? businessCenter.split(' / ')[0].trim() : ''
       const [report, emps] = await Promise.all([
         api.get('/reports/salary-advance', {
-          params: { businessCenter: cleanBc || 'ALL', year, month }
+          params: { businessCenter: cleanBc || 'ALL', year, month, plant: selectedClient || undefined }
         }),
         listEmployees(cleanBc),
       ])
@@ -49,13 +46,16 @@ export default function SalaryAdvanceReportPage() {
       const mapped = report.data.map((advance: any) => {
         const employee = emps.find(e => (e.epfNo || '').trim() === (advance.epfNo || '').trim())
         const fullName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : advance.employeeName || advance.epfNo
+        const plantDisplay = advance.plantCode || employee?.plantCode || '—'
         return [
           advance.epfNo,
           fullName,
+          plantDisplay,
           employee?.bankAccountNumber || '',
           employee?.branchCode || '',
+          Number(advance.totalAmount ?? 0),
           Number(advance.monthlyCut ?? 0)
-        ] as [string, string, string, string, number]
+        ] as [string, string, string, string, string, number, number]
       })
       setRows(mapped)
     } catch (error) {
@@ -68,31 +68,34 @@ export default function SalaryAdvanceReportPage() {
 
   useEffect(() => {
     loadData()
-  }, [businessCenter, year, month])
+  }, [businessCenter, year, month, selectedClient])
 
   const selectedCust = customers.find(c => c.code === selectedClient)
-  const clientName = selectedCust ? selectedCust.name : ''
+  const clientName = selectedCust ? `${selectedCust.code} - ${selectedCust.name}` : (selectedClient || 'All Plants')
 
   const metaLeft = (
     <div>
-      <div>Year {year}</div>
-      <div>Month {month}</div>
-      <div>Client Name: {clientName}</div>
+      <div>Year: {year}</div>
+      <div>Month: {month}</div>
+      <div>Plant / Client: {clientName}</div>
     </div>
   )
 
-  const columns = ['Emp_ID', 'Name', 'Bank Account No', 'Bank_Code', 'D_Value']
+  const columns = ['Emp_ID', 'Name', 'Plant', 'Bank Account No', 'Bank_Code', 'Total Advance', 'Monthly Cut']
 
-  const displayRows = rows.map(([empId, name, acc, code, val]) => [
+  const displayRows = rows.map(([empId, name, plant, acc, code, totAdv, cutVal]) => [
     empId,
     name,
+    plant,
     acc,
     code,
-    formatCurrency(val),
+    formatCurrency(totAdv),
+    formatCurrency(cutVal),
   ])
 
-  const totalVal = rows.reduce((acc, [, , , , v]) => acc + v, 0)
-  const totalRow = ['', 'Total', '', '', formatCurrency(totalVal)]
+  const grandTotalAdvance = rows.reduce((acc, [, , , , , totAdv]) => acc + totAdv, 0)
+  const grandMonthlyCut = rows.reduce((acc, [, , , , , , cutVal]) => acc + cutVal, 0)
+  const totalRow = ['', 'Total', '', '', '', formatCurrency(grandTotalAdvance), formatCurrency(grandMonthlyCut)]
 
   const filterControls = (
     <>
