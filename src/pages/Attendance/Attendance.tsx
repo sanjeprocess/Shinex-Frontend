@@ -75,13 +75,44 @@ const excelFieldMap: Record<string, keyof Attendance> = {
 }
 
 function excelDate(value: unknown): string {
-  if (value instanceof Date) return value.toISOString().slice(0, 10)
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const yr = value.getFullYear()
+    const mo = String(value.getMonth() + 1).padStart(2, '0')
+    const da = String(value.getDate()).padStart(2, '0')
+    return `${yr}-${mo}-${da}`
+  }
   if (typeof value === 'number') {
     const date = XLSX.SSF.parse_date_code(value)
     return date ? `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}` : ''
   }
   const text = String(value ?? '').trim()
-  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10)
+  if (!text) return ''
+  // YYYY-MM-DD or YYYY/MM/DD
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(text)) {
+    const parts = text.split(/[-/]/)
+    return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].slice(0, 2).padStart(2, '0')}`
+  }
+  // MM/DD/YYYY or DD/MM/YYYY
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(text)) {
+    const parts = text.split('/')
+    let p0 = parseInt(parts[0], 10)
+    let p1 = parseInt(parts[1], 10)
+    const yr = parts[2].slice(0, 4)
+    // If first number > 12, it must be DD/MM/YYYY
+    if (p0 > 12 && p1 <= 12) {
+      return `${yr}-${String(p1).padStart(2, '0')}-${String(p0).padStart(2, '0')}`
+    }
+    // Default standard US format MM/DD/YYYY
+    return `${yr}-${String(p0).padStart(2, '0')}-${String(p1).padStart(2, '0')}`
+  }
+  // Try native Date parsing
+  const d = new Date(text)
+  if (!Number.isNaN(d.getTime())) {
+    const yr = d.getFullYear()
+    const mo = String(d.getMonth() + 1).padStart(2, '0')
+    const da = String(d.getDate()).padStart(2, '0')
+    return `${yr}-${mo}-${da}`
+  }
   return text
 }
 
@@ -98,7 +129,8 @@ function parseAttendanceRows(
   data: unknown[][],
   businessCenter: string,
   defaultPlant?: string,
-  defaultSection?: string
+  defaultSection?: string,
+  employeeList: any[] = []
 ): Attendance[] {
   if (!data.length) return []
   const headers = data[0].map(value => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, ''))
@@ -126,15 +158,22 @@ function parseAttendanceRows(
     const yearFromDate = dayInVal.includes('-') ? dayInVal.split('-')[0] : ''
     const monthFromDate = dayInVal.includes('-') ? dayInVal.split('-')[1] : ''
 
+    const cleanEpf = (record.epfNo || '').trim().toLowerCase()
+    const matchedEmployee = cleanEpf ? employeeList.find(e => (e.epfNo || '').trim().toLowerCase() === cleanEpf) : undefined
+    const autoPlant = (matchedEmployee?.plantCode ? matchedEmployee.plantCode.split(' ')[0].trim() : '') || defaultPlant || ''
+    const autoSection = matchedEmployee?.sectionCode || defaultSection || ''
+    const autoName = matchedEmployee ? `${matchedEmployee.firstName} ${matchedEmployee.lastName || ''}`.trim() : ''
+
     return {
       ...defaultAttendanceRecord,
       ...record,
       id: record.id || `${record.epfNo || 'row'}-${index}`,
+      employeeName: record.employeeName || autoName || '',
       atttYear: record.atttYear || yearFromDate,
       attMonth: record.attMonth || monthFromDate,
-      plantCode: record.plantCode || defaultPlant || '',
-      customerCode: record.customerCode || record.plantCode || defaultPlant || '',
-      sectionCode: record.sectionCode || defaultSection || '',
+      plantCode: record.plantCode || autoPlant,
+      customerCode: record.customerCode || record.plantCode || autoPlant,
+      sectionCode: record.sectionCode || autoSection,
       businessCenter: record.businessCenter || businessCenter
     } as Attendance
   })
@@ -159,10 +198,11 @@ function validateUploadRow(
     errs.push('Unknown EPF No')
   }
 
-  // 2. Bad date check
-  const dateText = String(row.dayIn || '').trim()
-  const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(dateText) ? new Date(`${dateText}T00:00:00`) : null
-  if (!parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== dateText) {
+  // 2. Date check
+  const rawDate = String(row.dayIn || '').trim()
+  const normalized = excelDate(rawDate)
+  const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? new Date(`${normalized}T00:00:00`) : null
+  if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
     errs.push('Invalid Date')
   }
 
@@ -404,7 +444,8 @@ export default function AttendancePage() {
         XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true }),
         localStorage.getItem('hsb_active_bc') || defaultForm.businessCenter,
         defaultPlant,
-        defaultSection
+        defaultSection,
+        employeeList
       )
       if (!parsed.length) {
         toast.error('The selected file contains no attendance rows.')
@@ -440,11 +481,29 @@ export default function AttendancePage() {
       return
     }
 
-    // Enrich with employeeName from employeeList if not set
+    // Enrich with employeeName and normalize date/plant fields from employeeList if not set
     const enrichedValid = validRows.map(r => {
-      const emp = employeeList.find(e => (e.epfNo || '').trim() === (r.epfNo || '').trim())
+      const cleanEpf = (r.epfNo || '').trim().toLowerCase()
+      const emp = cleanEpf ? employeeList.find(e => (e.epfNo || '').trim().toLowerCase() === cleanEpf) : undefined
       const name = emp ? `${emp.firstName} ${emp.lastName || ''}`.trim() : (r.employeeName || '')
-      return { ...r, employeeName: name }
+      const cleanDayIn = excelDate(r.dayIn) || r.dayIn
+      const cleanDayOut = excelDate(r.dayOut) || cleanDayIn
+      const yr = r.atttYear || (cleanDayIn.includes('-') ? cleanDayIn.split('-')[0] : '')
+      const mo = r.attMonth || (cleanDayIn.includes('-') ? cleanDayIn.split('-')[1] : '')
+      const autoPlant = r.plantCode || (emp?.plantCode ? emp.plantCode.split(' ')[0].trim() : '') || uploadDefaultPlant || (customerList[0]?.code || '')
+      const autoSection = r.sectionCode || emp?.sectionCode || uploadDefaultSection || (sectionList[0]?.code || '')
+
+      return {
+        ...r,
+        employeeName: name,
+        dayIn: cleanDayIn,
+        dayOut: cleanDayOut,
+        atttYear: yr,
+        attMonth: mo,
+        plantCode: autoPlant,
+        customerCode: r.customerCode || autoPlant,
+        sectionCode: autoSection
+      }
     })
 
     setSaveError(null)
@@ -1930,7 +1989,21 @@ export default function AttendancePage() {
                         <input 
                           type="text" 
                           value={row.epfNo || ''} 
-                          onChange={e => updateUploadRow(index, { epfNo: e.target.value })} 
+                          onChange={e => {
+                            const newEpf = e.target.value;
+                            const clean = newEpf.trim().toLowerCase();
+                            const matched = clean ? employeeList.find(emp => (emp.epfNo || '').trim().toLowerCase() === clean) : undefined;
+                            const autoPlant = (matched?.plantCode ? matched.plantCode.split(' ')[0].trim() : '') || row.plantCode;
+                            const autoSection = matched?.sectionCode || row.sectionCode;
+                            const autoName = matched ? `${matched.firstName} ${matched.lastName || ''}`.trim() : row.employeeName;
+                            updateUploadRow(index, {
+                              epfNo: newEpf,
+                              plantCode: autoPlant,
+                              customerCode: autoPlant,
+                              sectionCode: autoSection,
+                              employeeName: autoName
+                            });
+                          }} 
                           className={`form-input w-24 text-xs font-mono ${val.errors.some(er => er.includes('EPF')) ? 'border-red-400 bg-red-50 ring-1 ring-red-200' : ''}`}
                         />
                       </td>
@@ -1966,7 +2039,7 @@ export default function AttendancePage() {
                       <td className="px-2 py-1.5">
                         <input 
                           type="date" 
-                          value={row.dayIn || ''} 
+                          value={excelDate(row.dayIn) || ''} 
                           onChange={e => updateUploadRow(index, { dayIn: e.target.value, dayOut: row.dayOut || e.target.value })} 
                           className={`form-input w-32 text-xs ${val.errors.some(er => er.includes('Date')) ? 'border-red-400 bg-red-50' : ''}`}
                         />
@@ -1974,7 +2047,7 @@ export default function AttendancePage() {
                       <td className="px-2 py-1.5">
                         <input 
                           type="date" 
-                          value={row.dayOut ? String(row.dayOut).split('T')[0] : (row.dayIn || '')} 
+                          value={excelDate(row.dayOut) || excelDate(row.dayIn) || ''} 
                           onChange={e => updateUploadRow(index, { dayOut: e.target.value })} 
                           className="form-input w-32 text-xs" 
                         />
