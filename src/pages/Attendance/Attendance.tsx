@@ -1019,11 +1019,11 @@ export default function AttendancePage() {
     return rows.filter(r => {
       // Year filter
       if (filterYear !== 'ALL' && r.atttYear !== filterYear) {
-        if (!r.dayIn || !r.dayIn.startsWith(filterYear)) return false
+        if (!r.dayIn || !String(r.dayIn).startsWith(filterYear)) return false
       }
       // Month filter
       if (filterMonth !== 'ALL' && r.attMonth !== filterMonth) {
-        if (!r.dayIn || r.dayIn.slice(5, 7) !== filterMonth) return false
+        if (!r.dayIn || String(r.dayIn).slice(5, 7) !== filterMonth) return false
       }
       // Employee filter
       if (filterEmployee !== 'ALL' && (r.epfNo || '').trim() !== filterEmployee.trim()) {
@@ -1080,8 +1080,8 @@ export default function AttendancePage() {
       const plant = (r.plantCode || '').trim();
       let yr = (r.atttYear || '').trim();
       let mo = (r.attMonth || '').trim();
-      if (!yr && r.dayIn) yr = r.dayIn.slice(0, 4);
-      if (!mo && r.dayIn) mo = r.dayIn.slice(5, 7);
+      if (!yr && r.dayIn) yr = String(r.dayIn).slice(0, 4);
+      if (!mo && r.dayIn) mo = String(r.dayIn).slice(5, 7);
       if (!plant || !yr || !mo) return;
 
       if (savedRecordsYear !== 'ALL' && yr !== savedRecordsYear) return;
@@ -1139,13 +1139,13 @@ export default function AttendancePage() {
       if (!epf) return;
       const prev = updated[epf];
       const eligible = prev ? prev.eligible : (emp.statutoryHolidayEligible !== false);
-      const worked = config.hasHoliday && config.holidayDates.length > 0
+      const worked = config?.hasHoliday && Array.isArray(config?.holidayDates) && config.holidayDates.length > 0
         ? detectEmployeeWorkedOnHoliday(epf, config.holidayDates, rows)
         : (prev ? prev.workedOnHoliday : false);
       const dayValue = prev && prev.dayValue !== undefined
         ? prev.dayValue
         : (emp.dayRate || emp.basicSalary || 2000);
-      const holidayValue = config.hasHoliday
+      const holidayValue = config?.hasHoliday
         ? computeHolidayValue(dayValue, eligible, worked, settings)
         : 0;
 
@@ -1577,7 +1577,7 @@ export default function AttendancePage() {
     }
 
     // OT Node
-    const otVal = r.totalOt || 0
+    const otVal = Number(r.totalOt) || 0
     const otNode = otVal > 0 ? (
       <span className="mono-numeric text-[#C08A2E] font-medium">{otVal.toFixed(1)}</span>
     ) : (
@@ -1602,7 +1602,7 @@ export default function AttendancePage() {
           1 - Full Day
         </span>
       ),
-      totalHours: r.totalWorkingHours?.toFixed(1) || '0.0',
+      totalHours: (Number(r.totalWorkingHours) || 0).toFixed(1),
       otHours: otNode,
       meals: r.noOfMeal || 0,
       id: r.id
@@ -1760,7 +1760,7 @@ export default function AttendancePage() {
         >
           <Calendar size={13} />
           <span>Statutory Holidays</span>
-          {statMonthConfig.hasHoliday && (
+          {statMonthConfig?.hasHoliday && Array.isArray(statMonthConfig?.holidayDates) && statMonthConfig.holidayDates.length > 0 && (
             <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-semibold">
               {statMonthConfig.holidayDates.length} date{statMonthConfig.holidayDates.length !== 1 ? 's' : ''}
             </span>
@@ -2080,12 +2080,12 @@ export default function AttendancePage() {
                 {/* Display added dates */}
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs font-semibold text-slate-600">Configured Holiday Date(s):</span>
-                  {statMonthConfig.holidayDates.length === 0 ? (
+                  {(!Array.isArray(statMonthConfig?.holidayDates) || statMonthConfig.holidayDates.length === 0) ? (
                     <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                       ⚠️ No dates added yet. Please add a date above to check attendance automatically.
                     </span>
                   ) : (
-                    statMonthConfig.holidayDates.map(date => (
+                    (statMonthConfig.holidayDates || []).map(date => (
                       <span
                         key={date}
                         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-900 border border-emerald-200"

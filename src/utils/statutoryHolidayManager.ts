@@ -58,12 +58,21 @@ export function saveStatutorySettings(settings: StatutoryHolidaySettings): void 
 }
 
 export function getStatutoryMonthConfig(year: string, month: string): StatutoryMonthConfig {
-  const cleanYear = year.trim();
-  const cleanMonth = String(month).trim().padStart(2, '0');
+  const cleanYear = (year || '').trim();
+  const cleanMonth = String(month || '').trim().padStart(2, '0');
   const key = `${CONFIG_PREFIX}${cleanYear}_${cleanMonth}`;
   try {
     const raw = localStorage.getItem(key);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        year: cleanYear,
+        month: cleanMonth,
+        hasHoliday: Boolean(parsed && parsed.hasHoliday),
+        holidayDates: Array.isArray(parsed?.holidayDates) ? parsed.holidayDates : [],
+        holidayName: parsed?.holidayName || ''
+      };
+    }
   } catch {}
   return {
     year: cleanYear,
