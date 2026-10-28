@@ -333,6 +333,7 @@ export default function AttendancePage() {
   const [sectionList, setSectionList] = useState<Section[]>([])
   const [customerList, setCustomerList] = useState<any[]>([])
   const [bcList, setBcList] = useState<any[]>([])
+  const [transfers, setTransfers] = useState<PlantTransfer[]>([])
   const [uploadRows, setUploadRows] = useState<Attendance[]>(() => {
     try {
       const cached = localStorage.getItem('hsb_attendance_staged_upload')
