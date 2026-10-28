@@ -58,6 +58,8 @@ export default function EmployeesList() {
     dayAllowance: 0,
     nightAllowance: 0,
     sundayPoyaExtra: 0,
+    mealType: 'Standard',
+    mealValue: 200,
 
     bankAccountNumber: '',
     bankName: '',
@@ -654,9 +656,33 @@ export default function EmployeesList() {
                 <NumericInput value={form.nightAllowance || 0} onChange={e => setForm({ ...form, nightAllowance: Number(e.target.value) })} className="mt-1 w-full form-input mono-numeric" />
               </div>
             </div>
-            <div className="mt-2">
-              <label className="block text-xs text-slate-600">Sunday / Poya Extra Payment</label>
-              <NumericInput value={form.sundayPoyaExtra || 0} onChange={e => setForm({ ...form, sundayPoyaExtra: Number(e.target.value) })} className="mt-1 w-40 form-input mono-numeric" />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
+              <div>
+                <label className="block text-xs text-slate-600">Sunday / Poya Extra Payment</label>
+                <NumericInput value={form.sundayPoyaExtra || 0} onChange={e => setForm({ ...form, sundayPoyaExtra: Number(e.target.value) })} className="mt-1 w-full form-input mono-numeric" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-600">Meal Type</label>
+                <select
+                  value={form.mealType || 'Standard'}
+                  onChange={e => setForm({ ...form, mealType: e.target.value })}
+                  className="mt-1 w-full form-input text-xs"
+                >
+                  <option value="Standard">Standard Meal</option>
+                  <option value="Staff Meal">Staff Meal</option>
+                  <option value="Subsidized">Subsidized</option>
+                  <option value="Special">Special Meal</option>
+                  <option value="Free Meal">Free Meal</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-600">Meal Rate / Value (Rs.)</label>
+                <NumericInput
+                  value={form.mealValue ?? 200}
+                  onChange={e => setForm({ ...form, mealValue: e.target.value === '' ? undefined : Number(e.target.value) })}
+                  className="mt-1 w-full form-input mono-numeric"
+                />
+              </div>
             </div>
           </section>
 

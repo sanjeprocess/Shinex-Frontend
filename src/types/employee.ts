@@ -21,6 +21,8 @@ export interface Employee {
   dayAllowance?: number;
   nightAllowance?: number;
   sundayPoyaExtra?: number;
+  mealType?: string;
+  mealValue?: number;
 
   bankAccountNumber?: string;
   bankName?: string;

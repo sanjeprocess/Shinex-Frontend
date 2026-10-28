@@ -24,6 +24,7 @@ import {
   remove as removeAttendance,
   Attendance
 } from '../../mocks/attendance'
+import { computePlantHours, resolvePlantSetting } from '../../utils/shiftHoursCalculator'
 import { logAuditAction } from '../../utils/auditLogger'
 import { v4 as uuid } from 'uuid'
 import * as XLSX from 'xlsx'
@@ -35,21 +36,10 @@ const SHIFT_ICONS: Record<string, any> = {
   'Full Night': Star
 }
 
-// Helper to compute total hours and OT hours dynamically
-function computeHours(timeInStr: string, timeOutStr: string): { hours: number; ot: number } {
-  if (!timeInStr || !timeOutStr) return { hours: 0, ot: 0 };
-  const [hIn, mIn] = timeInStr.split(':').map(Number);
-  const [hOut, mOut] = timeOutStr.split(':').map(Number);
-  
-  let diffMinutes = (hOut * 60 + mOut) - (hIn * 60 + mIn);
-  if (diffMinutes < 0) {
-    // Cross midnight
-    diffMinutes += 24 * 60;
-  }
-  
-  const hours = Math.round((diffMinutes / 60) * 10) / 10;
-  const ot = Math.max(0, Math.round((hours - 8.0) * 10) / 10);
-  return { hours, ot };
+// Helper to compute total hours and OT hours dynamically considering Plant shift rules
+function computeHours(timeInStr: string, timeOutStr: string, plant?: any, plantCode?: string): { hours: number; ot: number } {
+  const result = computePlantHours(timeInStr, timeOutStr, plant, plantCode);
+  return { hours: result.hours, ot: result.ot };
 }
 
 function normalizeLocalDateTime(dateValue?: string, fallbackTime?: string): string | undefined {
@@ -65,12 +55,15 @@ const excelFieldMap: Record<string, keyof Attendance> = {
   attyear: 'atttYear', atttyear: 'atttYear', attmonth: 'attMonth', epfno: 'epfNo',
   name: 'employeeName', employeename: 'employeeName', empname: 'employeeName',
   plantcode: 'plantCode', customercode: 'customerCode', sectioncode: 'sectionCode',
-  workingdays: 'workingDays', basicsalary: 'basicSalary', dayallowance: 'dayAllowance',
+  workingdays: 'workingDays', workday: 'workingDays', workdays: 'workingDays',
+  basicsalary: 'basicSalary', dayallowance: 'dayAllowance',
   nightallowance: 'nightAllowance', dayin: 'dayIn', timein: 'timeIn', dayout: 'dayOut',
   timeout: 'timeOut', halfday: 'halfDay', totalworkinghours: 'totalWorkingHours', totalot: 'totalOt',
   normalday: 'normalDay', saturdaypoya: 'saturdayPoya', specialday: 'specialDay',
   dayshift: 'dayShift', secondshift: 'secondShift', nightshift: 'nightShift', fullnight: 'fullNight',
-  noofmeal: 'noOfMeal', totalmealvalue: 'totalMealValue', statutoryholidays: 'statutoryHolidays',
+  noofmeal: 'noOfMeal', noofmeals: 'noOfMeal', meals: 'noOfMeal', meal: 'noOfMeal',
+  mealtype: 'mealType' as any,
+  totalmealvalue: 'totalMealValue', mealvalue: 'totalMealValue', statutoryholidays: 'statutoryHolidays',
   sundaypoyaextra: 'sundayPoyaExtra', businesscenter: 'businessCenter'
 }
 
@@ -130,7 +123,8 @@ function parseAttendanceRows(
   businessCenter: string,
   defaultPlant?: string,
   defaultSection?: string,
-  employeeList: any[] = []
+  employeeList: any[] = [],
+  customerList: any[] = []
 ): Attendance[] {
   if (!data.length) return []
   const headers = data[0].map(value => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, ''))
@@ -138,7 +132,8 @@ function parseAttendanceRows(
     const record: Partial<Attendance> = {
       id: uuid(), atttYear: '', attMonth: '', epfNo: '',
       plantCode: defaultPlant || '', customerCode: defaultPlant || '', sectionCode: defaultSection || '',
-      dayIn: '', timeIn: '', businessCenter
+      dayIn: '', timeIn: '', businessCenter,
+      workingDays: 1, halfDay: 0, noOfMeal: 1
     }
     headers.forEach((header, column) => {
       const field = excelFieldMap[header]
@@ -147,7 +142,22 @@ function parseAttendanceRows(
       if (field === 'dayIn') (record as any)[field] = excelDate(value)
       else if (field === 'dayOut') (record as any)[field] = excelDate(value)
       else if (field === 'timeIn' || field === 'timeOut') (record as any)[field] = excelTime(value)
-      else if (['workingDays', 'basicSalary', 'dayAllowance', 'nightAllowance', 'halfDay', 'totalWorkingHours', 'totalOt', 'noOfMeal', 'totalMealValue', 'statutoryHolidays', 'sundayPoyaExtra'].includes(field)) {
+      else if (field === 'workingDays') {
+        const str = String(value ?? '').trim().toLowerCase()
+        if (str.includes('half') || str.includes('0.5')) {
+          (record as any).workingDays = 0.5
+          ;(record as any).halfDay = 1
+        } else if (str.includes('full') || str === '1' || str === '1.0' || str.includes('1 -')) {
+          (record as any).workingDays = 1.0
+          ;(record as any).halfDay = 0
+        } else {
+          const num = Number(str.replace(/^0+(?=\d)/, ''))
+          ;(record as any).workingDays = Number.isFinite(num) ? num : 1
+          ;(record as any).halfDay = ((record as any).workingDays <= 0.5 && (record as any).workingDays > 0) ? 1 : 0
+        }
+      } else if (field === 'mealType') {
+        (record as any).mealType = String(value ?? '').trim()
+      } else if (['basicSalary', 'dayAllowance', 'nightAllowance', 'halfDay', 'totalWorkingHours', 'totalOt', 'noOfMeal', 'totalMealValue', 'statutoryHolidays', 'sundayPoyaExtra'].includes(field)) {
         const number = Number(String(value ?? '').replace(/^0+(?=\d)/, ''))
         ;(record as any)[field] = Number.isFinite(number) ? number : 0
       } else if (field === 'businessCenter') (record as any)[field] = String(value ?? '').trim() || businessCenter
@@ -160,20 +170,50 @@ function parseAttendanceRows(
 
     const cleanEpf = (record.epfNo || '').trim().toLowerCase()
     const matchedEmployee = cleanEpf ? employeeList.find(e => (e.epfNo || '').trim().toLowerCase() === cleanEpf) : undefined
-    const autoPlant = (matchedEmployee?.plantCode ? matchedEmployee.plantCode.split(' ')[0].trim() : '') || defaultPlant || ''
-    const autoSection = matchedEmployee?.sectionCode || defaultSection || ''
-    const autoName = matchedEmployee ? `${matchedEmployee.firstName} ${matchedEmployee.lastName || ''}`.trim() : ''
+    const autoPlant = record.plantCode || (matchedEmployee?.plantCode ? matchedEmployee.plantCode.split(' ')[0].trim() : '') || defaultPlant || ''
+    const autoSection = record.sectionCode || matchedEmployee?.sectionCode || defaultSection || ''
+    const autoName = record.employeeName || (matchedEmployee ? `${matchedEmployee.firstName} ${matchedEmployee.lastName || ''}`.trim() : '')
+    const autoSalary = (record.basicSalary != null && record.basicSalary > 0) ? record.basicSalary : (matchedEmployee?.basicSalary || 0)
+
+    const plantObj = customerList.find(c => c.code === autoPlant || c.name === autoPlant)
+    const mealType = record.mealType || matchedEmployee?.mealType || 'Standard'
+    const mealRate = matchedEmployee?.mealValue != null ? Number(matchedEmployee.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200)
+    const noOfMeals = record.noOfMeal != null ? Number(record.noOfMeal) : 1
+    const totalMealValue = (record.totalMealValue != null && record.totalMealValue > 0) ? record.totalMealValue : (noOfMeals * mealRate)
+
+    // Compute working hours and OT using Plant shift settings
+    let totalWorkingHours = record.totalWorkingHours
+    let totalOt = record.totalOt
+    if (record.timeIn && record.timeOut) {
+      const computed = computePlantHours(record.timeIn, record.timeOut, plantObj, autoPlant)
+      totalWorkingHours = computed.hours
+      totalOt = computed.ot
+    } else if (record.timeIn) {
+      const computed = computePlantHours(record.timeIn, '16:00', plantObj, autoPlant)
+      totalWorkingHours = computed.hours
+      totalOt = computed.ot
+    }
 
     return {
       ...defaultAttendanceRecord,
       ...record,
       id: record.id || `${record.epfNo || 'row'}-${index}`,
-      employeeName: record.employeeName || autoName || '',
+      employeeName: autoName,
       atttYear: record.atttYear || yearFromDate,
       attMonth: record.attMonth || monthFromDate,
-      plantCode: record.plantCode || autoPlant,
-      customerCode: record.customerCode || record.plantCode || autoPlant,
-      sectionCode: record.sectionCode || autoSection,
+      plantCode: autoPlant,
+      customerCode: record.customerCode || autoPlant,
+      sectionCode: autoSection,
+      basicSalary: autoSalary,
+      dayAllowance: record.dayAllowance ?? matchedEmployee?.dayAllowance ?? 0,
+      nightAllowance: record.nightAllowance ?? matchedEmployee?.nightAllowance ?? 0,
+      workingDays: record.workingDays ?? (record.halfDay === 1 ? 0.5 : 1),
+      halfDay: record.halfDay ?? (record.workingDays === 0.5 ? 1 : 0),
+      noOfMeal: noOfMeals,
+      mealType,
+      totalMealValue,
+      totalWorkingHours: totalWorkingHours ?? 8.0,
+      totalOt: totalOt ?? 0,
       businessCenter: record.businessCenter || businessCenter
     } as Attendance
   })
@@ -445,7 +485,8 @@ export default function AttendancePage() {
         localStorage.getItem('hsb_active_bc') || defaultForm.businessCenter,
         defaultPlant,
         defaultSection,
-        employeeList
+        employeeList,
+        customerList
       )
       if (!parsed.length) {
         toast.error('The selected file contains no attendance rows.')
@@ -457,6 +498,49 @@ export default function AttendancePage() {
       console.error('Attendance Excel import failed', error)
       toast.error('Unable to read the selected Excel file.')
     }
+  }
+
+  function handleAddNewUploadRow() {
+    const today = new Date().toISOString().split('T')[0];
+    const defaultPlant = uploadDefaultPlant || (customerList[0]?.code || '');
+    const defaultSection = uploadDefaultSection || (sectionList[0]?.code || '');
+    const plantObj = customerList.find(c => c.code === defaultPlant || c.name === defaultPlant);
+    const defaultTimeIn = '08:00';
+    const defaultTimeOut = '16:00';
+    const computed = computePlantHours(defaultTimeIn, defaultTimeOut, plantObj, defaultPlant);
+    const mealRate = plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200;
+
+    const newRow: Attendance = {
+      id: uuid(),
+      atttYear: today.split('-')[0],
+      attMonth: today.split('-')[1],
+      epfNo: '',
+      employeeName: '',
+      plantCode: defaultPlant,
+      customerCode: defaultPlant,
+      sectionCode: defaultSection,
+      businessCenter: localStorage.getItem('hsb_active_bc') || defaultForm.businessCenter,
+      dayIn: today,
+      dayOut: today,
+      timeIn: defaultTimeIn,
+      timeOut: defaultTimeOut,
+      workingDays: 1,
+      halfDay: 0,
+      totalWorkingHours: computed.hours,
+      totalOt: computed.ot,
+      dayShift: 'Y',
+      secondShift: 'N',
+      nightShift: 'N',
+      fullNight: 'N',
+      noOfMeal: 1,
+      mealType: 'Standard',
+      totalMealValue: mealRate,
+      normalDay: 'Y',
+      saturdayPoya: 'N',
+      specialDay: 'N'
+    };
+    setUploadRows(prev => [newRow, ...prev]);
+    toast.success('Added a new attendance entry row for editing.');
   }
 
   function updateUploadRow(index: number, patch: Partial<Attendance>) {
@@ -661,22 +745,47 @@ export default function AttendancePage() {
     }
     const exportRows = uploadRows.map(row => {
       const { id, ...record } = row
+      const isHalf = record.workingDays === 0.5 || record.halfDay === 1 || record.halfDay === 0.5
+      const workdayText = isHalf ? '0.5 - Half Day' : '1 - Full Day'
       return {
-        Attt_Year: record.atttYear, Att_Month: record.attMonth, EPF_No: record.epfNo,
-        Plant_Code: record.plantCode, Working_Days: record.workingDays, Basic_Salary: record.basicSalary,
-        Day_Allowance: record.dayAllowance, Night_Allowance: record.nightAllowance, Day_in: record.dayIn,
-        Time_IN: record.timeIn, Day_out: record.dayOut, Time_Out: record.timeOut, Half_Day: record.halfDay,
-        Total_Working_Hours: record.totalWorkingHours, Total_OT: record.totalOt, Normal_Day: record.normalDay,
-        Saturday_Poya: record.saturdayPoya, Special_Day: record.specialDay, Day_shift: record.dayShift,
-        second_Shift: record.secondShift, Night_Shift: record.nightShift, Full_Night: record.fullNight,
-        No_of_Meal: record.noOfMeal, Total_Meal_Value: record.totalMealValue,
-        Statutory_holidays: record.statutoryHolidays, Sunday_Poya_Extra: record.sundayPoyaExtra,
+        Attt_Year: record.atttYear,
+        Att_Month: record.attMonth,
+        EPF_No: record.epfNo,
+        Employee_Name: record.employeeName,
+        Plant_Code: record.plantCode,
+        Section_Code: record.sectionCode,
+        Workday: workdayText,
+        Working_Days: record.workingDays ?? (isHalf ? 0.5 : 1),
+        Day_in: record.dayIn,
+        Time_IN: record.timeIn,
+        Day_out: record.dayOut,
+        Time_Out: record.timeOut,
+        Half_Day: isHalf ? 0.5 : 0,
+        Total_Working_Hours: record.totalWorkingHours,
+        Total_OT: record.totalOt,
+        Shift: record.dayShift === 'Y' ? 'Day' : record.secondShift === 'Y' ? '2nd' : record.nightShift === 'Y' ? 'Night' : 'Full Night',
+        Day_shift: record.dayShift,
+        second_Shift: record.secondShift,
+        Night_Shift: record.nightShift,
+        Full_Night: record.fullNight,
+        No_of_Meal: record.noOfMeal ?? 1,
+        Meal_Type: record.mealType || 'Standard',
+        Total_Meal_Value: record.totalMealValue ?? 0,
+        Basic_Salary: record.basicSalary,
+        Day_Allowance: record.dayAllowance,
+        Night_Allowance: record.nightAllowance,
+        Normal_Day: record.normalDay,
+        Saturday_Poya: record.saturdayPoya,
+        Special_Day: record.specialDay,
+        Statutory_holidays: record.statutoryHolidays,
+        Sunday_Poya_Extra: record.sundayPoyaExtra,
         Business_Center: record.businessCenter
       }
     })
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportRows), 'Attendance')
     XLSX.writeFile(workbook, 'attendance-updated.xlsx')
+    toast.success(`Exported ${uploadRows.length} attendance rows to attendance-updated.xlsx`)
   }
 
   function getDefaultEmployeeValues(employee?: any, shift: string = 'Day') {
@@ -749,11 +858,12 @@ export default function AttendancePage() {
     const targetRow = rows.find(r => r.id === confirm)
     removeAttendance(confirm).then(() => {
       if (targetRow) {
-        logAuditAction('DELETE', 'Attendance', targetRow.id || confirm, {
-          epfNo: targetRow.epfNo,
-          dayIn: targetRow.dayIn,
-          plantCode: targetRow.plantCode
-        }, null);
+        logAuditAction({
+          action: 'DELETE',
+          module: 'Attendance',
+          entityId: String(targetRow.id || confirm),
+          details: `Deleted attendance for ${targetRow.epfNo} on ${targetRow.dayIn}`
+        });
       }
       setConfirm(null)
       refresh()
@@ -785,7 +895,8 @@ export default function AttendancePage() {
       return
     }
 
-    const { hours, ot } = computeHours(form.timeIn || '', form.timeOut || '')
+    const plantObj = customerList.find(c => c.code === form.plantCode || c.name === form.plantCode);
+    const { hours, ot } = computeHours(form.timeIn || '', form.timeOut || '', plantObj, form.plantCode);
     let yr = form.atttYear
     let mo = form.attMonth
     if (form.dayIn && form.dayIn.includes('-')) {
@@ -822,7 +933,12 @@ export default function AttendancePage() {
       if (isEditing && editingId) {
         const oldRow = rows.find(r => r.id === editingId)
         await updateAttendance(editingId, toSave)
-        logAuditAction('UPDATE', 'Attendance', editingId, oldRow || null, toSave)
+        logAuditAction({
+          action: 'UPDATE',
+          module: 'Attendance',
+          entityId: String(editingId),
+          details: `Updated attendance for ${toSave.epfNo} on ${toSave.dayIn}`
+        })
         toast.success('Attendance updated')
       } else {
         const newId = uuid()
@@ -830,7 +946,12 @@ export default function AttendancePage() {
           ...toSave,
           id: newId
         })
-        logAuditAction('CREATE', 'Attendance', newId, null, toSave)
+        logAuditAction({
+          action: 'CREATE',
+          module: 'Attendance',
+          entityId: newId,
+          details: `Created attendance for ${toSave.epfNo} on ${toSave.dayIn}`
+        })
         toast.success('Attendance added')
       }
       setOpen(false)
@@ -1015,6 +1136,10 @@ export default function AttendancePage() {
     if (emp) {
       const autoSalary = resolveEmployeeBasicSalary(emp);
       const isNight = form.nightShift === 'Y' || form.fullNight === 'Y';
+      const plantObj = customerList.find(c => c.code === effectivePlant || c.name === effectivePlant);
+      const mealRate = emp.mealValue != null ? Number(emp.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200);
+      const mealType = emp.mealType || 'Standard';
+      const noOfMeals = form.noOfMeal ?? 1;
       setForm(prev => ({
         ...prev,
         epfNo: epf,
@@ -1022,7 +1147,9 @@ export default function AttendancePage() {
         businessCenter: emp.businessCenter || prev.businessCenter || localStorage.getItem('hsb_active_bc') || '',
         basicSalary: autoSalary,
         dayAllowance: emp.dayAllowance || 0,
-        nightAllowance: isNight ? (emp.nightAllowance || 0) : 0
+        nightAllowance: isNight ? (emp.nightAllowance || 0) : 0,
+        mealType,
+        totalMealValue: noOfMeals * mealRate
       }))
     } else {
       setForm(prev => ({ ...prev, epfNo: epf, plantCode: effectivePlant }))
@@ -1081,10 +1208,11 @@ export default function AttendancePage() {
     }))
   }
 
-  // Live computed hours
+  // Live computed hours with plant shift timing logic
   const liveComputed = useMemo(() => {
-    return computeHours(form.timeIn || '', form.timeOut || '')
-  }, [form.timeIn, form.timeOut])
+    const currentPlant = customerList.find(c => c.code === form.plantCode || c.name === form.plantCode);
+    return computePlantHours(form.timeIn || '', form.timeOut || '', currentPlant, form.plantCode);
+  }, [form.timeIn, form.timeOut, form.plantCode, customerList]);
 
   // Table Column definitions
   const columns = [
@@ -1096,6 +1224,7 @@ export default function AttendancePage() {
     { key: 'shiftNode', label: 'Shift' },
     { key: 'dayType', label: 'Day Type' },
     { key: 'timeRange', label: 'Time In/Out', className: 'mono-numeric' },
+    { key: 'workday', label: 'Workday' },
     { key: 'totalHours', label: 'Total Hours', className: 'mono-numeric' },
     { key: 'otHours', label: 'OT' },
     { key: 'meals', label: 'Meals', className: 'mono-numeric' },
@@ -1182,6 +1311,15 @@ export default function AttendancePage() {
       shiftNode,
       dayType: dayTypeNode,
       timeRange: `${r.timeIn} - ${r.timeOut}`,
+      workday: (r.workingDays === 0.5 || r.halfDay === 1 || r.halfDay === 0.5) ? (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+          0.5 - Half Day
+        </span>
+      ) : (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+          1 - Full Day
+        </span>
+      ),
       totalHours: r.totalWorkingHours?.toFixed(1) || '0.0',
       otHours: otNode,
       meals: r.noOfMeal || 0,
@@ -1775,15 +1913,26 @@ export default function AttendancePage() {
               </div>
             </div>
 
-            {/* Computed read-only StatChips */}
-            <div className="flex gap-4 items-center bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-100">
-              <div>
-                <span className="text-xs text-emerald-800 block font-medium">Total Working Hours</span>
-                <span className="text-lg font-bold font-mono text-emerald-950">{liveComputed.hours.toFixed(1)} hrs</span>
+            {/* Computed read-only StatChips with Plant Shift Rule badge */}
+            <div className="flex flex-col gap-2 bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-100">
+              <div className="flex gap-4 items-center">
+                <div>
+                  <span className="text-xs text-emerald-800 block font-medium">Total Working Hours</span>
+                  <span className="text-lg font-bold font-mono text-emerald-950">{liveComputed.hours.toFixed(1)} hrs</span>
+                </div>
+                <div className="border-l border-emerald-200 pl-4">
+                  <span className="text-xs text-emerald-800 block font-medium">Calculated OT</span>
+                  <span className={`text-lg font-bold font-mono ${liveComputed.ot > 0 ? 'text-[#C08A2E]' : 'text-emerald-900'}`}>{liveComputed.ot.toFixed(1)} hrs</span>
+                </div>
               </div>
-              <div className="border-l border-emerald-200 pl-4">
-                <span className="text-xs text-emerald-800 block font-medium">Calculated OT</span>
-                <span className={`text-lg font-bold font-mono ${liveComputed.ot > 0 ? 'text-[#C08A2E]' : 'text-emerald-900'}`}>{liveComputed.ot.toFixed(1)} hrs</span>
+              <div className="text-[11px] text-slate-600 bg-white/80 px-2 py-1 rounded border border-emerald-200/60 flex items-center justify-between">
+                <span>
+                  {liveComputed.countFromShiftStart
+                    ? `Plant Shift Start: ${liveComputed.appliedShiftStart} (counted from ${liveComputed.startTimeStr})`
+                    : `Actual arrival: ${liveComputed.startTimeStr}`}
+                  {liveComputed.capped ? ` (capped at ${liveComputed.maxHoursCap} hrs)` : ''}
+                </span>
+                <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-100 px-1.5 py-0.5 rounded">Plant Rule</span>
               </div>
             </div>
           </section>
@@ -1837,10 +1986,39 @@ export default function AttendancePage() {
           {/* Section 7: Meals & Misc */}
           <section>
             <h4 className="font-semibold mb-2">Meals & Misc</h4>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <div>
                 <label className="block text-xs text-slate-600">No of Meals</label>
-                <NumericInput integer value={form.noOfMeal || 0} onChange={e => handleNumericInput('noOfMeal', 'No of meals', e.target.value)} className="mt-1 w-full form-input text-right mono-numeric" />
+                <NumericInput
+                  integer
+                  value={form.noOfMeal || 0}
+                  onChange={e => {
+                    const count = Number(e.target.value || 0);
+                    const emp = employeeList.find(em => (em.epfNo || '').trim().toLowerCase() === (form.epfNo || '').trim().toLowerCase());
+                    const plantObj = customerList.find(c => c.code === form.plantCode || c.name === form.plantCode);
+                    const rate = emp?.mealValue != null ? Number(emp.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200);
+                    setForm(prev => ({
+                      ...prev,
+                      noOfMeal: count,
+                      totalMealValue: count * rate
+                    }));
+                  }}
+                  className="mt-1 w-full form-input text-right mono-numeric"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-600">Meal Type</label>
+                <select
+                  value={form.mealType || 'Standard'}
+                  onChange={e => setForm({ ...form, mealType: e.target.value })}
+                  className="mt-1 w-full form-input text-xs"
+                >
+                  <option value="Standard">Standard</option>
+                  <option value="Staff Meal">Staff Meal</option>
+                  <option value="Subsidized">Subsidized</option>
+                  <option value="Special">Special</option>
+                  <option value="Free Meal">Free Meal</option>
+                </select>
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Total Meal Value</label>
@@ -1931,8 +2109,16 @@ export default function AttendancePage() {
                 </button>
               )}
 
-              <button type="button" className="px-2.5 py-1 text-xs border rounded hover:bg-slate-50" onClick={exportUploadRows}>
-                Export Draft
+              <button
+                type="button"
+                onClick={handleAddNewUploadRow}
+                className="px-2.5 py-1 text-xs bg-emerald-700 hover:bg-emerald-800 text-white rounded font-medium flex items-center gap-1 shadow-2xs"
+              >
+                + Add Entry
+              </button>
+
+              <button type="button" className="px-2.5 py-1 text-xs border rounded hover:bg-slate-50 font-medium" onClick={exportUploadRows}>
+                Export Excel
               </button>
               <button type="button" className="px-2.5 py-1 text-xs text-red-600 hover:text-red-800" onClick={() => setUploadRows([])}>
                 Clear All
@@ -1947,12 +2133,26 @@ export default function AttendancePage() {
             </div>
           </div>
 
+          {/* Plant Shift Logic Info Banner */}
+          <div className="mx-4 my-2.5 p-2 bg-slate-50 border border-slate-200 rounded-md text-[11px] text-slate-600 flex flex-wrap items-center gap-x-5 gap-y-1">
+            <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              Plant Shift Logic:
+            </span>
+            <span>
+              <strong>Plant A</strong> (shift starts at 7:30): Hours count from max(ClockIn, 07:30) (e.g. 06:00 to 16:00 = 8.5 hrs).
+            </span>
+            <span>
+              <strong>Plant B</strong> (actual arrival): Hours count from ClockIn, capped up to 9 hrs (e.g. 06:00 to 16:00 = 9 hrs capped).
+            </span>
+          </div>
+
           <div className="overflow-x-auto max-h-96">
-            <table className="min-w-[1450px] w-full text-xs">
+            <table className="min-w-[1600px] w-full text-xs">
               <thead className="bg-slate-50 text-left text-slate-600 sticky top-0 z-10 border-b">
                 <tr>
                   <th className="px-2 py-2">Validation Status</th>
-                  <th className="px-2 py-2">EPF No</th>
+                  <th className="px-2 py-2">EPF / Employee *</th>
                   <th className="px-2 py-2">Employee Name</th>
                   <th className="px-2 py-2">Plant Code *</th>
                   <th className="px-2 py-2">Section Code</th>
@@ -1960,19 +2160,23 @@ export default function AttendancePage() {
                   <th className="px-2 py-2">Day Out</th>
                   <th className="px-2 py-2">Time In</th>
                   <th className="px-2 py-2">Time Out</th>
-                  <th className="px-2 py-2">Work Days</th>
+                  <th className="px-2 py-2">Workday</th>
                   <th className="px-2 py-2">Hours</th>
                   <th className="px-2 py-2">OT</th>
                   <th className="px-2 py-2">Shift</th>
                   <th className="px-2 py-2">Meals</th>
+                  <th className="px-2 py-2">Meal Type</th>
+                  <th className="px-2 py-2">Meal Value</th>
                   <th className="px-2 py-2 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {uploadRows.map((row, index) => {
                   const val = validateUploadRow(row, uploadRows, rows, employeeList);
-                  const matchedEmp = employeeList.find(e => (e.epfNo || '').trim() === (row.epfNo || '').trim());
+                  const matchedEmp = employeeList.find(e => (e.epfNo || '').trim().toLowerCase() === (row.epfNo || '').trim().toLowerCase());
                   const empDisplayName = row.employeeName || (matchedEmp ? `${matchedEmp.firstName} ${matchedEmp.lastName || ''}`.trim() : '-');
+                  const plantObj = customerList.find(c => c.code === row.plantCode || c.name === row.plantCode);
+
                   return (
                     <tr key={row.id || index} className={val.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/40 hover:bg-rose-50/60'}>
                       <td className="px-2 py-1.5">
@@ -1991,26 +2195,53 @@ export default function AttendancePage() {
                         )}
                       </td>
                       <td className="px-2 py-1.5">
-                        <input 
-                          type="text" 
-                          value={row.epfNo || ''} 
-                          onChange={e => {
-                            const newEpf = e.target.value;
-                            const clean = newEpf.trim().toLowerCase();
-                            const matched = clean ? employeeList.find(emp => (emp.epfNo || '').trim().toLowerCase() === clean) : undefined;
-                            const autoPlant = (matched?.plantCode ? matched.plantCode.split(' ')[0].trim() : '') || row.plantCode;
-                            const autoSection = matched?.sectionCode || row.sectionCode;
-                            const autoName = matched ? `${matched.firstName} ${matched.lastName || ''}`.trim() : row.employeeName;
-                            updateUploadRow(index, {
-                              epfNo: newEpf,
-                              plantCode: autoPlant,
-                              customerCode: autoPlant,
-                              sectionCode: autoSection,
-                              employeeName: autoName
-                            });
-                          }} 
-                          className={`form-input w-24 text-xs font-mono ${val.errors.some(er => er.includes('EPF')) ? 'border-red-400 bg-red-50 ring-1 ring-red-200' : ''}`}
-                        />
+                        <div className="flex flex-col gap-1">
+                          <select
+                            value={row.epfNo || ''}
+                            onChange={e => {
+                              const newEpf = e.target.value;
+                              const clean = newEpf.trim().toLowerCase();
+                              const matched = clean ? employeeList.find(emp => (emp.epfNo || '').trim().toLowerCase() === clean) : undefined;
+                              if (matched) {
+                                const autoPlant = (matched.plantCode ? matched.plantCode.split(' ')[0].trim() : '') || row.plantCode || uploadDefaultPlant || (customerList[0]?.code || '');
+                                const targetPlantObj = customerList.find(c => c.code === autoPlant || c.name === autoPlant);
+                                const autoSection = matched.sectionCode || row.sectionCode || uploadDefaultSection || (sectionList[0]?.code || '');
+                                const autoName = `${matched.firstName} ${matched.lastName || ''}`.trim();
+                                const autoSalary = resolveEmployeeBasicSalary(matched, sectionList);
+                                const mealType = matched.mealType || 'Standard';
+                                const mealRate = matched.mealValue != null ? Number(matched.mealValue) : (targetPlantObj?.mealValue != null ? Number(targetPlantObj.mealValue) : 200);
+                                const noOfMeals = row.noOfMeal ?? 1;
+                                const totalMealVal = noOfMeals * mealRate;
+                                const computed = computePlantHours(row.timeIn || '08:00', row.timeOut || '16:00', targetPlantObj, autoPlant);
+
+                                updateUploadRow(index, {
+                                  epfNo: matched.epfNo,
+                                  employeeName: autoName,
+                                  plantCode: autoPlant,
+                                  customerCode: autoPlant,
+                                  sectionCode: autoSection,
+                                  basicSalary: autoSalary,
+                                  dayAllowance: matched.dayAllowance ?? row.dayAllowance ?? 0,
+                                  nightAllowance: matched.nightAllowance ?? row.nightAllowance ?? 0,
+                                  mealType,
+                                  totalMealValue: totalMealVal,
+                                  totalWorkingHours: computed.hours,
+                                  totalOt: computed.ot
+                                });
+                              } else {
+                                updateUploadRow(index, { epfNo: newEpf });
+                              }
+                            }}
+                            className={`form-input w-36 text-xs font-mono ${val.errors.some(er => er.includes('EPF')) ? 'border-red-400 bg-red-50 ring-1 ring-red-200' : ''}`}
+                          >
+                            <option value="">Select Employee...</option>
+                            {employeeList.map(emp => (
+                              <option key={emp.epfNo} value={emp.epfNo}>
+                                {emp.epfNo} - {emp.firstName} {emp.lastName || ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </td>
                       <td className="px-2 py-1.5">
                         <span className="text-slate-700 truncate block max-w-[120px]" title={empDisplayName}>
@@ -2020,7 +2251,21 @@ export default function AttendancePage() {
                       <td className="px-2 py-1.5">
                         <select 
                           value={row.plantCode || ''} 
-                          onChange={e => updateUploadRow(index, { plantCode: e.target.value, customerCode: e.target.value })} 
+                          onChange={e => {
+                            const newPlant = e.target.value;
+                            const targetPlantObj = customerList.find(c => c.code === newPlant || c.name === newPlant);
+                            const computed = computePlantHours(row.timeIn || '08:00', row.timeOut || '16:00', targetPlantObj, newPlant);
+                            const mealRate = matchedEmp?.mealValue != null ? Number(matchedEmp.mealValue) : (targetPlantObj?.mealValue != null ? Number(targetPlantObj.mealValue) : 200);
+                            const noOfMeals = row.noOfMeal ?? 1;
+
+                            updateUploadRow(index, { 
+                              plantCode: newPlant, 
+                              customerCode: newPlant,
+                              totalWorkingHours: computed.hours,
+                              totalOt: computed.ot,
+                              totalMealValue: noOfMeals * mealRate
+                            });
+                          }} 
                           className="form-input w-36 text-xs"
                         >
                           <option value="">Select Plant</option>
@@ -2064,8 +2309,8 @@ export default function AttendancePage() {
                           value={row.timeIn || ''} 
                           onChange={e => {
                             const newTimeIn = e.target.value;
-                            const { hours, ot } = computeHours(newTimeIn, row.timeOut || '');
-                            updateUploadRow(index, { timeIn: newTimeIn, totalWorkingHours: hours, totalOt: ot });
+                            const computed = computePlantHours(newTimeIn, row.timeOut || '', plantObj, row.plantCode);
+                            updateUploadRow(index, { timeIn: newTimeIn, totalWorkingHours: computed.hours, totalOt: computed.ot });
                           }} 
                           className="form-input w-24 text-xs" 
                         />
@@ -2077,18 +2322,27 @@ export default function AttendancePage() {
                           value={(row.timeOut || '').slice(0, 8)} 
                           onChange={e => {
                             const newTimeOut = e.target.value;
-                            const { hours, ot } = computeHours(row.timeIn || '', newTimeOut);
-                            updateUploadRow(index, { timeOut: newTimeOut, totalWorkingHours: hours, totalOt: ot });
+                            const computed = computePlantHours(row.timeIn || '', newTimeOut, plantObj, row.plantCode);
+                            updateUploadRow(index, { timeOut: newTimeOut, totalWorkingHours: computed.hours, totalOt: computed.ot });
                           }} 
                           className="form-input w-24 text-xs" 
                         />
                       </td>
                       <td className="px-2 py-1.5">
-                        <NumericInput 
-                          value={row.workingDays ?? ''} 
-                          onChange={e => updateUploadRow(index, { workingDays: Number(e.target.value || 0) })} 
-                          className="form-input w-16 text-xs text-right" 
-                        />
+                        <select 
+                          value={row.workingDays === 0.5 || row.halfDay === 1 || row.halfDay === 0.5 ? '0.5' : '1'} 
+                          onChange={e => {
+                            const val = Number(e.target.value);
+                            updateUploadRow(index, { 
+                              workingDays: val, 
+                              halfDay: val === 0.5 ? 0.5 : 0 
+                            });
+                          }} 
+                          className="form-input w-28 text-xs font-medium"
+                        >
+                          <option value="1">1 - Full Day</option>
+                          <option value="0.5">0.5 - Half Day</option>
+                        </select>
                       </td>
                       <td className="px-2 py-1.5">
                         <NumericInput 
@@ -2127,9 +2381,36 @@ export default function AttendancePage() {
                       <td className="px-2 py-1.5">
                         <NumericInput 
                           integer 
-                          value={row.noOfMeal ?? ''} 
-                          onChange={e => updateUploadRow(index, { noOfMeal: Number(e.target.value || 0) })} 
+                          value={row.noOfMeal ?? 1} 
+                          onChange={e => {
+                            const count = Number(e.target.value || 0);
+                            const mealRate = matchedEmp?.mealValue != null ? Number(matchedEmp.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200);
+                            updateUploadRow(index, { 
+                              noOfMeal: count,
+                              totalMealValue: count * mealRate 
+                            });
+                          }} 
                           className="form-input w-14 text-xs text-right" 
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <select
+                          value={row.mealType || 'Standard'}
+                          onChange={e => updateUploadRow(index, { mealType: e.target.value })}
+                          className="form-input w-28 text-xs"
+                        >
+                          <option value="Standard">Standard</option>
+                          <option value="Staff Meal">Staff Meal</option>
+                          <option value="Subsidized">Subsidized</option>
+                          <option value="Special">Special</option>
+                          <option value="Free Meal">Free Meal</option>
+                        </select>
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <NumericInput 
+                          value={row.totalMealValue ?? 0} 
+                          onChange={e => updateUploadRow(index, { totalMealValue: Number(e.target.value || 0) })} 
+                          className="form-input w-20 text-xs text-right mono-numeric" 
                         />
                       </td>
                       <td className="px-2 py-1.5 text-center">

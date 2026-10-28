@@ -34,6 +34,7 @@ export type Attendance = {
   nightShift?: string;         // Night_Shift (NCHAR(1)) - 'Y'/'N'
   fullNight?: string;          // Full_Night (NCHAR(1)) - 'Y'/'N'
   noOfMeal?: number;           // No_of_Meal (FLOAT)
+  mealType?: string;           // Meal_Type (NVARCHAR(50))
   totalMealValue?: number;     // Total_Meal_Value (FLOAT)
   statutoryHolidays?: number;  // Statutory_holidays (FLOAT)
   sundayPoyaExtra?: number;    // Sunday_Poya_Extra (FLOAT)
@@ -84,6 +85,7 @@ function fromApi(a: any): Attendance {
     nightShift: String(a.nightShift || '').trim(),
     fullNight: String(a.fullNight || '').trim(),
     noOfMeal: a.noOfMeal,
+    mealType: String(a.mealType || '').trim() || undefined,
     totalMealValue: a.totalMealValue,
     statutoryHolidays: a.statutoryHolidays,
     sundayPoyaExtra: a.sundayPoyaExtra,

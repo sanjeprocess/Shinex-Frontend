@@ -57,7 +57,11 @@ export default function CustomersPage() {
       minStaffQty: '',
       attendanceAllowance: '',
       daysToWorkForAllowance: '',
-      documentUrl: ''
+      documentUrl: '',
+      countFromShiftStart: true,
+      shiftStart: '07:30',
+      maxHoursCap: '',
+      mealValue: 200
     })
     setEditing(null)
     setOpen(true)
@@ -65,7 +69,14 @@ export default function CustomersPage() {
 
   function onEdit(row: Customer) {
     setErrors({})
-    setForm({ ...row })
+    const isPlantB = (row.code || '').toUpperCase().includes('B') || (row.name || '').toUpperCase().includes('PLANT B');
+    setForm({
+      ...row,
+      countFromShiftStart: row.countFromShiftStart !== undefined ? row.countFromShiftStart : !isPlantB,
+      shiftStart: row.shiftStart || '07:30',
+      maxHoursCap: row.maxHoursCap !== undefined ? row.maxHoursCap : (isPlantB ? 9 : ''),
+      mealValue: row.mealValue !== undefined ? row.mealValue : 200
+    })
     setEditing(row.code)
     setOpen(true)
   }
@@ -158,23 +169,7 @@ export default function CustomersPage() {
           { key: 'businessCenter', label: 'Business Center' },
           { key: 'contactName', label: 'Contact Name' },
           { key: 'contactNo', label: 'Contact No' },
-          {
-            key: 'doc',
-            label: 'Attachment',
-            render: (_: any, r: Customer) => (
-              r.documentUrl ? (
-                r.documentUrl.startsWith('data:image') ? (
-                  <img src={r.documentUrl} alt="Plant" className="w-8 h-8 object-cover rounded border border-slate-200 shadow-xs" />
-                ) : (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-xs border border-blue-200 font-medium">
-                    <FileText size={12} /> Doc Attached
-                  </span>
-                )
-              ) : (
-                <span className="text-slate-400 text-xs italic">None</span>
-              )
-            )
-          },
+          { key: 'doc', label: 'Attachment' },
           { key: 'id', label: 'Actions' }
         ]}
         data={rows
@@ -186,6 +181,17 @@ export default function CustomersPage() {
             businessCenter: r.businessCenter || '—',
             contactName: r.contactName || '—',
             contactNo: r.contactNo || '—',
+            doc: r.documentUrl ? (
+              r.documentUrl.startsWith('data:image') ? (
+                <img src={r.documentUrl} alt="Plant" className="w-8 h-8 object-cover rounded border border-slate-200 shadow-xs" />
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-xs border border-blue-200 font-medium">
+                  <FileText size={12} /> Doc Attached
+                </span>
+              )
+            ) : (
+              <span className="text-slate-400 text-xs italic">None</span>
+            ),
             documentUrl: r.documentUrl,
             id: r.code
           }))}
@@ -379,6 +385,60 @@ export default function CustomersPage() {
             <div>
               <label className="block text-xs text-slate-600">Days for Att. Allowance</label>
               <NumericInput integer className="mt-1 w-full form-input mono-numeric" value={form.daysToWorkForAllowance ?? ''} onChange={e => setForm({ ...form, daysToWorkForAllowance: e.target.value === '' ? '' : Number(e.target.value) })} />
+            </div>
+          </div>
+
+          <div className="p-3 bg-emerald-50/60 rounded-lg border border-emerald-200 space-y-2.5">
+            <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
+              <span>Shift Timing & Meal Rules</span>
+              <span className="text-[10px] font-normal text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">Attendance Automation</span>
+            </h4>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700">Shift Start Time</label>
+                <input
+                  type="time"
+                  className="mt-1 w-full form-input text-xs"
+                  value={form.shiftStart || '07:30'}
+                  onChange={e => setForm({ ...form, shiftStart: e.target.value })}
+                />
+                <span className="text-[10px] text-slate-500 mt-0.5 block">e.g. 07:30 for Plant A</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700">Max Hours Cap</label>
+                <NumericInput
+                  className="mt-1 w-full form-input mono-numeric text-xs"
+                  placeholder="e.g. 9 or blank (uncapped)"
+                  value={form.maxHoursCap ?? ''}
+                  onChange={e => setForm({ ...form, maxHoursCap: e.target.value === '' ? '' : Number(e.target.value) })}
+                />
+                <span className="text-[10px] text-slate-500 mt-0.5 block">e.g. 9 for Plant B cap</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700">Standard Meal Value (Rs.)</label>
+                <NumericInput
+                  className="mt-1 w-full form-input mono-numeric text-xs"
+                  value={form.mealValue ?? 200}
+                  onChange={e => setForm({ ...form, mealValue: e.target.value === '' ? '' : Number(e.target.value) })}
+                />
+                <span className="text-[10px] text-slate-500 mt-0.5 block">Cost per meal unit</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="checkbox"
+                id="countFromShiftStart"
+                checked={form.countFromShiftStart !== false}
+                onChange={e => setForm({ ...form, countFromShiftStart: e.target.checked })}
+                className="w-4 h-4 text-teal-600 rounded"
+              />
+              <label htmlFor="countFromShiftStart" className="text-xs text-slate-700 cursor-pointer">
+                <span className="font-semibold">Count from Shift Start</span> (if checked, early arrivals before shift start count only from {form.shiftStart || '07:30'}. If unchecked like Plant B, count from actual arrival).
+              </label>
             </div>
           </div>
         </div>

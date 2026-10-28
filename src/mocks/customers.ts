@@ -18,6 +18,10 @@ export type Customer = {
   businessCenter?: string;
   profitCenter?: string;
   documentUrl?: string;
+  countFromShiftStart?: boolean;
+  shiftStart?: string;
+  maxHoursCap?: number | null;
+  mealValue?: number;
 };
 
 export const customers: Customer[] = [];
@@ -30,8 +34,10 @@ export const list = async (businessCenter?: string): Promise<Customer[]> => {
   if (!Array.isArray(res.data)) {
     throw new Error('Customer endpoint returned an invalid response.');
   }
+  const shiftSettingsCache = JSON.parse(localStorage.getItem('hsb_plant_shift_settings') || '{}');
   return res.data.map((c: any) => {
     const code = (c.code || c.custCode || '').trim();
+    const cached = shiftSettingsCache[code] || {};
     return {
       id: code,
       code,
@@ -49,7 +55,11 @@ export const list = async (businessCenter?: string): Promise<Customer[]> => {
       daysToWorkForAllowance: c.daysToWorkForAttAllowance == null ? undefined : Number(c.daysToWorkForAttAllowance),
       businessCenter: (c.businessCenter || '').trim(),
       profitCenter: (c.profitCenter || '').trim(),
-      documentUrl: (c.docPath || c.documentUrl || '').trim()
+      documentUrl: (c.docPath || c.documentUrl || '').trim(),
+      countFromShiftStart: c.countFromShiftStart != null ? Boolean(c.countFromShiftStart) : (cached.countFromShiftStart != null ? cached.countFromShiftStart : undefined),
+      shiftStart: c.shiftStart || cached.shiftStart || undefined,
+      maxHoursCap: c.maxHoursCap != null ? Number(c.maxHoursCap) : (cached.maxHoursCap != null ? cached.maxHoursCap : undefined),
+      mealValue: c.mealValue != null ? Number(c.mealValue) : (cached.mealValue != null ? cached.mealValue : 200)
     };
   }).filter((customer: Customer) => !cleanBc || cleanBc === 'ALL'
     || customer.businessCenter?.trim().toUpperCase() === cleanBc);
@@ -74,8 +84,23 @@ export const create = async (r: Customer): Promise<Customer> => {
     daysToWorkForAttAllowance: r.daysToWorkForAllowance ?? null,
     businessCenter: r.businessCenter || null,
     profitCenter: r.profitCenter || null,
-    docPath: r.documentUrl && r.documentUrl.length < 500 ? r.documentUrl : null
+    docPath: r.documentUrl && r.documentUrl.length < 500 ? r.documentUrl : null,
+    countFromShiftStart: r.countFromShiftStart,
+    shiftStart: r.shiftStart,
+    maxHoursCap: r.maxHoursCap,
+    mealValue: r.mealValue
   };
+
+  try {
+    const shiftSettingsCache = JSON.parse(localStorage.getItem('hsb_plant_shift_settings') || '{}');
+    shiftSettingsCache[code] = {
+      countFromShiftStart: r.countFromShiftStart,
+      shiftStart: r.shiftStart,
+      maxHoursCap: r.maxHoursCap,
+      mealValue: r.mealValue
+    };
+    localStorage.setItem('hsb_plant_shift_settings', JSON.stringify(shiftSettingsCache));
+  } catch {}
 
   await api.post('/customers', payload);
   return r;
@@ -100,8 +125,24 @@ export const update = async (code: string, patch: Partial<Customer>): Promise<Cu
     daysToWorkForAttAllowance: patch.daysToWorkForAllowance ?? null,
     businessCenter: patch.businessCenter || null,
     profitCenter: patch.profitCenter || null,
-    docPath: patch.documentUrl && patch.documentUrl.length < 500 ? patch.documentUrl : null
+    docPath: patch.documentUrl && patch.documentUrl.length < 500 ? patch.documentUrl : null,
+    countFromShiftStart: patch.countFromShiftStart,
+    shiftStart: patch.shiftStart,
+    maxHoursCap: patch.maxHoursCap,
+    mealValue: patch.mealValue
   };
+
+  try {
+    const shiftSettingsCache = JSON.parse(localStorage.getItem('hsb_plant_shift_settings') || '{}');
+    shiftSettingsCache[cleanCode] = {
+      ...(shiftSettingsCache[cleanCode] || {}),
+      ...(patch.countFromShiftStart !== undefined ? { countFromShiftStart: patch.countFromShiftStart } : {}),
+      ...(patch.shiftStart !== undefined ? { shiftStart: patch.shiftStart } : {}),
+      ...(patch.maxHoursCap !== undefined ? { maxHoursCap: patch.maxHoursCap } : {}),
+      ...(patch.mealValue !== undefined ? { mealValue: patch.mealValue } : {})
+    };
+    localStorage.setItem('hsb_plant_shift_settings', JSON.stringify(shiftSettingsCache));
+  } catch {}
 
   await api.put(`/customers/${encodeURIComponent(cleanCode)}`, payload);
   return { code: cleanCode, ...patch } as Customer;

@@ -7,12 +7,19 @@ export const list = async (businessCenter?: string): Promise<Employee[]> => {
   const cleanBc = activeBc ? activeBc.split(' / ')[0].trim() : '';
   const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
   const response = await api.get<Employee[]>('/employees', { params });
+  const empMealCache = JSON.parse(localStorage.getItem('hsb_employee_meal_settings') || '{}');
   if (Array.isArray(response.data)) {
-    return response.data.map((e: any) => ({
-      ...e,
-      branchName: e.branchName || e.bankBranchName || '',
-      bankBranchName: e.bankBranchName || e.branchName || ''
-    }));
+    return response.data.map((e: any) => {
+      const epf = (e.epfNo || '').trim();
+      const cached = empMealCache[epf] || {};
+      return {
+        ...e,
+        branchName: e.branchName || e.bankBranchName || '',
+        bankBranchName: e.bankBranchName || e.branchName || '',
+        mealType: e.mealType || cached.mealType || 'Standard',
+        mealValue: e.mealValue != null ? Number(e.mealValue) : (cached.mealValue != null ? Number(cached.mealValue) : 200)
+      };
+    });
   }
   return response.data;
 };
@@ -39,6 +46,15 @@ export const getNextEpfNo = async (businessCenter?: string): Promise<string> => 
 };
 
 export const create = async (e: Employee): Promise<Employee> => {
+  try {
+    const empMealCache = JSON.parse(localStorage.getItem('hsb_employee_meal_settings') || '{}');
+    empMealCache[e.epfNo.trim()] = {
+      mealType: e.mealType || 'Standard',
+      mealValue: e.mealValue != null ? Number(e.mealValue) : 200
+    };
+    localStorage.setItem('hsb_employee_meal_settings', JSON.stringify(empMealCache));
+  } catch {}
+
   const response = await api.post<Employee>('/employees', normalizeEmployee(e));
   const result = response.data;
   logAuditAction({
@@ -51,6 +67,16 @@ export const create = async (e: Employee): Promise<Employee> => {
 };
 
 export const update = async (epf: string, e: Partial<Employee>): Promise<Employee> => {
+  try {
+    const empMealCache = JSON.parse(localStorage.getItem('hsb_employee_meal_settings') || '{}');
+    empMealCache[epf.trim()] = {
+      ...(empMealCache[epf.trim()] || {}),
+      ...(e.mealType !== undefined ? { mealType: e.mealType } : {}),
+      ...(e.mealValue !== undefined ? { mealValue: Number(e.mealValue) } : {})
+    };
+    localStorage.setItem('hsb_employee_meal_settings', JSON.stringify(empMealCache));
+  } catch {}
+
   const payload: any = { ...e, epfNo: epf.trim() };
   if (payload.firstName != null) payload.firstName = payload.firstName.trim();
   if (payload.lastName != null) payload.lastName = payload.lastName.trim();
