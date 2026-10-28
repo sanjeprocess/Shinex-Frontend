@@ -59,8 +59,45 @@ export default function SalaryAdvanceReportPage() {
       })
       setRows(mapped)
     } catch (error) {
-      setRows([])
-      console.error('Salary advance report could not be loaded', error)
+      console.warn('Salary advance endpoint failed, falling back to deduction transactions', error)
+      try {
+        const cleanBc = businessCenter && businessCenter !== 'ALL' ? businessCenter.split(' / ')[0].trim() : ''
+        const [transRes, emps] = await Promise.all([
+          api.get('/deduction-transactions', { params: { businessCenter: cleanBc || undefined } }).catch(() => ({ data: [] })),
+          listEmployees(cleanBc)
+        ])
+        const list = Array.isArray(transRes.data) ? transRes.data : []
+        const filtered = list.filter((d: any) => {
+          const code = (d.didCode || '').toLowerCase()
+          const name = (d.deductionName || '').toLowerCase()
+          const isAdv = code.includes('adv') || name.includes('advance')
+          if (!isAdv) return false
+          if (d.status && d.status.toUpperCase() !== 'ACTIVE') return false
+          const targetStr = `${year}-${String(month).padStart(2, '0')}`
+          const s = (d.startDate || '').slice(0, 7)
+          const e = (d.endDate || '').slice(0, 7)
+          if (s && targetStr < s) return false
+          if (e && targetStr > e) return false
+          return true
+        })
+        const mapped = filtered.map((advance: any) => {
+          const employee = emps.find(e => (e.epfNo || '').trim() === (advance.epfNo || '').trim())
+          const fullName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : advance.employeeName || advance.epfNo
+          const plantDisplay = advance.plantCode || employee?.plantCode || '—'
+          return [
+            advance.epfNo,
+            fullName,
+            plantDisplay,
+            employee?.bankAccountNumber || '',
+            employee?.branchCode || '',
+            Number(advance.totalAmount ?? 0),
+            Number(advance.monthlyCut ?? 0)
+          ] as [string, string, string, string, string, number, number]
+        })
+        setRows(mapped)
+      } catch {
+        setRows([])
+      }
     } finally {
       setLoading(false)
     }

@@ -8,16 +8,22 @@ export const list = async (businessCenter?: string): Promise<Employee[]> => {
   const params = cleanBc && cleanBc !== 'ALL' ? { businessCenter: cleanBc } : {};
   const response = await api.get<Employee[]>('/employees', { params });
   const empMealCache = JSON.parse(localStorage.getItem('hsb_employee_meal_settings') || '{}');
+  const empStatCache = JSON.parse(localStorage.getItem('hsb_employee_statutory_settings') || '{}');
   if (Array.isArray(response.data)) {
     return response.data.map((e: any) => {
       const epf = (e.epfNo || '').trim();
       const cached = empMealCache[epf] || {};
+      const cachedStat = empStatCache[epf] || {};
       return {
         ...e,
         branchName: e.branchName || e.bankBranchName || '',
         bankBranchName: e.bankBranchName || e.branchName || '',
         mealType: e.mealType || cached.mealType || 'Standard',
-        mealValue: e.mealValue != null ? Number(e.mealValue) : (cached.mealValue != null ? Number(cached.mealValue) : 200)
+        mealValue: e.mealValue != null ? Number(e.mealValue) : (cached.mealValue != null ? Number(cached.mealValue) : 200),
+        statutoryHolidayEligible: e.statutoryHolidayEligible !== undefined
+          ? Boolean(e.statutoryHolidayEligible)
+          : (cachedStat.eligible !== undefined ? Boolean(cachedStat.eligible) : true),
+        dayRate: e.dayRate != null ? Number(e.dayRate) : (cachedStat.dayRate != null ? Number(cachedStat.dayRate) : (e.basicSalary ? Number(e.basicSalary) : 2000))
       };
     });
   }
@@ -53,6 +59,13 @@ export const create = async (e: Employee): Promise<Employee> => {
       mealValue: e.mealValue != null ? Number(e.mealValue) : 200
     };
     localStorage.setItem('hsb_employee_meal_settings', JSON.stringify(empMealCache));
+
+    const empStatCache = JSON.parse(localStorage.getItem('hsb_employee_statutory_settings') || '{}');
+    empStatCache[e.epfNo.trim()] = {
+      eligible: e.statutoryHolidayEligible !== undefined ? Boolean(e.statutoryHolidayEligible) : true,
+      dayRate: e.dayRate != null ? Number(e.dayRate) : (e.basicSalary ? Number(e.basicSalary) : 2000)
+    };
+    localStorage.setItem('hsb_employee_statutory_settings', JSON.stringify(empStatCache));
   } catch {}
 
   const response = await api.post<Employee>('/employees', normalizeEmployee(e));
@@ -75,6 +88,14 @@ export const update = async (epf: string, e: Partial<Employee>): Promise<Employe
       ...(e.mealValue !== undefined ? { mealValue: Number(e.mealValue) } : {})
     };
     localStorage.setItem('hsb_employee_meal_settings', JSON.stringify(empMealCache));
+
+    const empStatCache = JSON.parse(localStorage.getItem('hsb_employee_statutory_settings') || '{}');
+    empStatCache[epf.trim()] = {
+      ...(empStatCache[epf.trim()] || {}),
+      ...(e.statutoryHolidayEligible !== undefined ? { eligible: Boolean(e.statutoryHolidayEligible) } : {}),
+      ...(e.dayRate !== undefined ? { dayRate: Number(e.dayRate) } : {})
+    };
+    localStorage.setItem('hsb_employee_statutory_settings', JSON.stringify(empStatCache));
   } catch {}
 
   const payload: any = { ...e, epfNo: epf.trim() };

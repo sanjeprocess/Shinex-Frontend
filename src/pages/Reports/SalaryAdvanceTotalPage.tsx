@@ -29,8 +29,29 @@ export default function SalaryAdvanceTotalPage() {
       }
       setCompanyRows(response.data.map((row: any) => [row.companyName || row.businessCenter, Number(row.amount || 0)]))
     } catch (error) {
-      setCompanyRows([])
-      console.error('Salary advance total report could not be loaded', error)
+      console.warn('Salary advance total endpoint failed, calculating from deduction transactions', error)
+      try {
+        const cleanBc = businessCenter && businessCenter !== 'ALL' ? businessCenter.split(' / ')[0].trim() : ''
+        const transRes = await api.get('/deduction-transactions', { params: { businessCenter: cleanBc || undefined } }).catch(() => ({ data: [] }))
+        const list = Array.isArray(transRes.data) ? transRes.data : []
+        const plantSums: Record<string, number> = {}
+        list.forEach((d: any) => {
+          const code = (d.didCode || '').toLowerCase()
+          const name = (d.deductionName || '').toLowerCase()
+          if (!code.includes('adv') && !name.includes('advance')) return
+          if (d.status && d.status.toUpperCase() !== 'ACTIVE') return
+          const targetStr = `${year}-${String(month).padStart(2, '0')}`
+          const s = (d.startDate || '').slice(0, 7)
+          const e = (d.endDate || '').slice(0, 7)
+          if (s && targetStr < s) return
+          if (e && targetStr > e) return
+          const plantKey = d.businessCenter || 'Company'
+          plantSums[plantKey] = (plantSums[plantKey] || 0) + Number(d.monthlyCut || 0)
+        })
+        setCompanyRows(Object.entries(plantSums))
+      } catch {
+        setCompanyRows([])
+      }
     } finally {
       setLoading(false)
     }

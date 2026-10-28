@@ -1,6 +1,7 @@
 import api from '../api/axios';
 import { Employee } from '../types/employee';
 
+export type { Employee };
 export const employees: Employee[] = [];
 
 export const list = async (businessCenter?: string): Promise<Employee[]> => {

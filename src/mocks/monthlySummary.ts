@@ -74,18 +74,28 @@ export type MonthlySummary = {
 
 import { list as listAttendance } from './attendance'
 import { list as listCustomers } from './customers'
+import { getEmployeeStatutoryEntries } from '../utils/statutoryHolidayManager'
 
 export const getMonthlySummary = async (epfNo: string, year: string, month: string): Promise<MonthlySummary> => {
+  const cleanEpf = (epfNo || '').trim().toLowerCase()
+  const cleanYear = year.trim()
+  const cleanMonth = month.trim().padStart(2, '0')
+
   try {
     const response = await api.get<MonthlySummary>('/process/monthly-summary', { params: { epfNo, year, month } })
-    if (response.data) return response.data
+    if (response.data) {
+      const statMap = getEmployeeStatutoryEntries(cleanYear, cleanMonth)
+      const statEntry = statMap[cleanEpf]
+      if (statEntry && statEntry.holidayValue > 0) {
+        response.data.statutoryHolidayAmount = statEntry.holidayValue
+        if (!response.data.attendance) response.data.attendance = {}
+        response.data.attendance.statutoryHolidayAmount = statEntry.holidayValue
+      }
+      return response.data
+    }
   } catch (err) {
     // Fall back to local calculation
   }
-
-  const cleanEpf = (epfNo || '').trim().toLowerCase()
-  const cleanYear = year.trim()
-  const cleanMonth = month.trim()
 
   const [allAtt, customers] = await Promise.all([
     listAttendance(),
@@ -131,8 +141,12 @@ export const getMonthlySummary = async (epfNo: string, year: string, month: stri
   const nightRate = 150
   const nightAmount = Math.round(nightDays * nightRate * 100) / 100
 
+  const statMap = getEmployeeStatutoryEntries(cleanYear, cleanMonth)
+  const statEntry = statMap[cleanEpf]
+  const statutoryHolidayAmount = statEntry ? Number(statEntry.holidayValue || 0) : 0
+
   const totalAdditions = dayAllowance + nightAllowance
-  const grossSalary = normalAmount + otAmount + poyaAmount + nightAmount + totalAdditions
+  const grossSalary = normalAmount + otAmount + poyaAmount + nightAmount + totalAdditions + statutoryHolidayAmount
   const epf8 = Math.round(normalAmount * 0.08 * 100) / 100
   const totalDeductions = epf8
   const netSalary = Math.round((grossSalary - totalDeductions) * 100) / 100
@@ -166,6 +180,7 @@ export const getMonthlySummary = async (epfNo: string, year: string, month: stri
     overtimeRate: otRate,
     overtimeAmount: otAmount,
     dayAllowance,
+    statutoryHolidayAmount,
     totalAdditions,
     grossSalary,
     epf8,

@@ -18,11 +18,13 @@ export interface Employee {
   statusActive?: boolean;
 
   basicSalary?: number;
+  dayRate?: number;
   dayAllowance?: number;
   nightAllowance?: number;
   sundayPoyaExtra?: number;
   mealType?: string;
   mealValue?: number;
+  statutoryHolidayEligible?: boolean;
 
   bankAccountNumber?: string;
   bankName?: string;

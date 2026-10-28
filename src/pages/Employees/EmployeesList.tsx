@@ -60,6 +60,8 @@ export default function EmployeesList() {
     sundayPoyaExtra: 0,
     mealType: 'Standard',
     mealValue: 200,
+    statutoryHolidayEligible: true,
+    dayRate: 2000,
 
     bankAccountNumber: '',
     bankName: '',
@@ -682,6 +684,26 @@ export default function EmployeesList() {
                   onChange={e => setForm({ ...form, mealValue: e.target.value === '' ? undefined : Number(e.target.value) })}
                   className="mt-1 w-full form-input mono-numeric"
                 />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-600">Day Rate / Normal Rate (Rs.)</label>
+                <NumericInput
+                  value={form.dayRate ?? (form.basicSalary || 2000)}
+                  onChange={e => setForm({ ...form, dayRate: e.target.value === '' ? undefined : Number(e.target.value) })}
+                  className="mt-1 w-full form-input mono-numeric"
+                />
+              </div>
+              <div className="flex items-center gap-2 pt-5">
+                <input
+                  type="checkbox"
+                  id="statutoryHolidayEligible"
+                  checked={form.statutoryHolidayEligible !== false}
+                  onChange={e => setForm({ ...form, statutoryHolidayEligible: e.target.checked })}
+                  className="rounded border-slate-300 text-[#3F9884] focus:ring-[#3F9884]"
+                />
+                <label htmlFor="statutoryHolidayEligible" className="text-xs font-medium text-slate-700 cursor-pointer">
+                  Statutory Holiday Eligible (Yes/No)
+                </label>
               </div>
             </div>
           </section>

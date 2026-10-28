@@ -56,6 +56,14 @@ api.interceptors.response.use(
       const status: number = error.response.status
       const isAuthEndpoint = String(error.config?.url || '').includes('/auth/')
       if (status === 401 && !isAuthEndpoint && window.location.pathname !== '/login') {
+        const isWrite = ['post', 'put', 'patch', 'delete'].includes((error.config?.method || '').toLowerCase())
+        if (isWrite) {
+          toast.error('Session expired or unauthorized for this save operation. Your staged records have been saved locally.', {
+            id: 'auth-error',
+            duration: 8000
+          })
+          return Promise.reject(error)
+        }
         localStorage.removeItem('hsb_auth_token')
         toast.error('Your session has expired. Please sign in again.', {
           id: 'auth-error'
