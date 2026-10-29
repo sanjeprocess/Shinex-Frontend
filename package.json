@@ -17,6 +17,7 @@
     "classnames": "^2.3.2",
     "date-fns": "^2.30.0",
     "dayjs": "^1.11.9",
+    "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.9",
     "lucide-react": "^0.266.0",

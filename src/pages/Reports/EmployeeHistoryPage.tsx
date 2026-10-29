@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import {
   Building2, ArrowRightLeft, Calendar, FileText, Printer, CheckCircle,
@@ -51,6 +51,8 @@ export default function EmployeeHistoryPage() {
   // Synced Monthly Summary
   const [monthlyData, setMonthlyData] = useState<MonthlySummary | null>(null)
   const [printSize, setPrintSize] = useState<'A4' | 'A5'>('A5')
+  const [generatingPdf, setGeneratingPdf] = useState<'A4' | 'A5' | null>(null)
+  const paySheetRef = useRef<HTMLDivElement>(null)
 
   const activeBc = localStorage.getItem('hsb_active_bc') || 'ALL'
   const cleanBc = activeBc && activeBc !== 'ALL' ? activeBc.split(' / ')[0].trim() : ''
@@ -532,31 +534,74 @@ export default function EmployeeHistoryPage() {
     toast.success(`Complete dossier for ${employee.epfNo} exported to Excel!`)
   }
 
-  // Prints the pay sheet on A4 or A5; index.css defaults @page to A5, so A4 overrides it for this print only
-  function exportToPDF(size: 'A4' | 'A5') {
+  // Builds the pay sheet PDF on one A4 or A5 page: the sheet is scaled to fit the page, never split
+  async function exportToPDF(size: 'A4' | 'A5') {
     if (!employee) {
       toast.error('Please select an employee first')
       return
     }
-    if (!payrollCalculation) {
+    if (!payrollCalculation || !paySheetRef.current) {
       toast.error('No pay sheet for the selected period')
       return
     }
-    const style = document.createElement('style')
-    style.id = 'paysheet-page-size'
-    style.innerHTML = size === 'A4'
-      ? '@media print { @page { size: A4 portrait; margin: 10mm; } .paysheet-print { zoom: 1.38; } }'
-      : '@media print { @page { size: A5 portrait; margin: 6mm; } }'
-    document.getElementById('paysheet-page-size')?.remove()
-    document.head.appendChild(style)
     setPrintSize(size)
-    const cleanup = () => {
-      style.remove()
-      window.removeEventListener('afterprint', cleanup)
+    setGeneratingPdf(size)
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas'), import('jspdf')])
+      // Fixed render width so A4 and A5 get the same layout, independent of the screen size
+      const canvas = await html2canvas(paySheetRef.current, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        windowWidth: 1000,
+        onclone: (doc: Document) => {
+          // ~680px wide fills a portrait page with readable text; taller sheets are scaled down below
+          const el = doc.querySelector('[data-paysheet]') as HTMLElement | null
+          if (el) el.style.width = '680px'
+        }
+      })
+
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: size.toLowerCase() })
+      const pageW = pdf.internal.pageSize.getWidth()
+      const pageH = pdf.internal.pageSize.getHeight()
+      const margin = size === 'A4' ? 10 : 6
+      const scale = size === 'A4' ? 1 : 0.8
+
+      // Header as PDF text: company, title and period
+      let y = margin + 5 * scale
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(14 * scale)
+      pdf.text((companyName || 'Employee Pay Sheet').toUpperCase(), margin, y)
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(9 * scale)
+      pdf.text(`Period: ${month.padStart(2, '0')}/${year}`, pageW - margin, y, { align: 'right' })
+      y += 5 * scale
+      pdf.text(`EMPLOYEE PAY SHEET  -  ${size}`, margin, y)
+      if (companyName) pdf.text(`Company: ${companyName}`, pageW - margin, y, { align: 'right' })
+      y += 2.5 * scale
+      pdf.setLineWidth(0.5)
+      pdf.line(margin, y, pageW - margin, y)
+      y += 3
+
+      // Fit the sheet in the space left: full width, or smaller if it is taller than the page
+      const availW = pageW - margin * 2
+      const availH = pageH - margin - y
+      const ratio = canvas.width / canvas.height
+      let w = availW
+      let h = w / ratio
+      if (h > availH) {
+        h = availH
+        w = h * ratio
+      }
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', (pageW - w) / 2, y, w, h, undefined, 'FAST')
+      pdf.save(`Pay_Sheet_${employee.epfNo}_${year}_${month.padStart(2, '0')}_${size}.pdf`)
+      toast.success(`${size} pay sheet PDF created`)
+    } catch (err) {
+      console.error('Pay sheet PDF failed', err)
+      toast.error('Could not create the pay sheet PDF')
+    } finally {
+      setGeneratingPdf(null)
     }
-    window.addEventListener('afterprint', cleanup)
-    // let React render the size label before the print dialog opens
-    setTimeout(() => window.print(), 50)
   }
 
   useEffect(() => {
@@ -599,17 +644,19 @@ export default function EmployeeHistoryPage() {
             </button>
             <button
               onClick={() => exportToPDF('A4')}
-              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-md"
+              disabled={generatingPdf !== null}
+              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-md disabled:opacity-60"
             >
               <Printer size={16} />
-              <span>Pay Sheet A4 / PDF</span>
+              <span>{generatingPdf === 'A4' ? 'Creating A4 PDF...' : 'Pay Sheet A4 / PDF'}</span>
             </button>
             <button
               onClick={() => exportToPDF('A5')}
-              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-md"
+              disabled={generatingPdf !== null}
+              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-md disabled:opacity-60"
             >
               <Printer size={16} />
-              <span>Pay Sheet A5 / PDF</span>
+              <span>{generatingPdf === 'A5' ? 'Creating A5 PDF...' : 'Pay Sheet A5 / PDF'}</span>
             </button>
           </div>
         )}
@@ -712,7 +759,7 @@ export default function EmployeeHistoryPage() {
           Please select an employee above to display their complete profile and transaction history.
         </div>
       ) : (
-        <div className="space-y-5 print:space-y-2">
+        <div ref={paySheetRef} data-paysheet className="space-y-5 print:space-y-2 bg-white">
           {/* Master Employee Summary Card */}
           <div className="bg-white p-5 rounded-2xl shadow-flat border border-slate-200 print:p-2 print:rounded-lg print:border-slate-300 print-page-break-avoid">
             <div className="flex items-center gap-4 mb-3 pb-3 border-b print:mb-1.5 print:pb-1.5 print:gap-2">
