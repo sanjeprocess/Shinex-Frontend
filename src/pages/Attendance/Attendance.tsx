@@ -1586,6 +1586,35 @@ export default function AttendancePage() {
     return computePlantHours(form.timeIn || '', form.timeOut || '', currentPlant, form.plantCode);
   }, [form.timeIn, form.timeOut, form.plantCode, customerList]);
 
+  // Statutory holiday lookups for the logs table and the panel
+  const statHolidayMap = useMemo(() => {
+    return new Map((statData?.holidays || []).map(h => [h.holidayDate, h]))
+  }, [statData])
+
+  const statEmployeeMap = useMemo(() => {
+    return new Map((statData?.employees || []).map(e => [(e.epfNo || '').trim().toLowerCase(), e]))
+  }, [statData])
+
+  const statEmployeeRows = useMemo(() => {
+    const query = statSearch.trim().toLowerCase()
+    return (statData?.employees || []).filter(e => {
+      if (!statShowIneligible && !e.eligible) return false
+      if (!query) return true
+      return (e.epfNo || '').toLowerCase().includes(query) || (e.employeeName || '').toLowerCase().includes(query)
+    })
+  }, [statData, statSearch, statShowIneligible])
+
+  const statTotals = useMemo(() => {
+    const all = statData?.employees || []
+    const eligible = all.filter(e => e.eligible)
+    return {
+      employees: all.length,
+      eligible: eligible.length,
+      workingDays: eligible.reduce((n, e) => n + e.lines.filter(l => l.status === 'W').length, 0),
+      total: Math.round(eligible.reduce((sum, e) => sum + (Number(e.total) || 0), 0) * 100) / 100
+    }
+  }, [statData])
+
   // Table Column definitions
   const columns = [
     { key: 'date', label: 'Date', className: 'mono-numeric' },
@@ -1724,34 +1753,6 @@ export default function AttendancePage() {
     }
   })
 
-  // Statutory holiday lookups for the logs table and the panel
-  const statHolidayMap = useMemo(() => {
-    return new Map((statData?.holidays || []).map(h => [h.holidayDate, h]))
-  }, [statData])
-
-  const statEmployeeMap = useMemo(() => {
-    return new Map((statData?.employees || []).map(e => [(e.epfNo || '').trim().toLowerCase(), e]))
-  }, [statData])
-
-  const statEmployeeRows = useMemo(() => {
-    const query = statSearch.trim().toLowerCase()
-    return (statData?.employees || []).filter(e => {
-      if (!statShowIneligible && !e.eligible) return false
-      if (!query) return true
-      return (e.epfNo || '').toLowerCase().includes(query) || (e.employeeName || '').toLowerCase().includes(query)
-    })
-  }, [statData, statSearch, statShowIneligible])
-
-  const statTotals = useMemo(() => {
-    const all = statData?.employees || []
-    const eligible = all.filter(e => e.eligible)
-    return {
-      employees: all.length,
-      eligible: eligible.length,
-      workingDays: eligible.reduce((n, e) => n + e.lines.filter(l => l.status === 'W').length, 0),
-      total: Math.round(eligible.reduce((sum, e) => sum + (Number(e.total) || 0), 0) * 100) / 100
-    }
-  }, [statData])
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
