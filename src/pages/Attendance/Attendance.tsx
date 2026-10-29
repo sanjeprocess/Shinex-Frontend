@@ -72,7 +72,52 @@ const excelFieldMap: Record<string, keyof Attendance> = {
   noofmeal: 'noOfMeal', noofmeals: 'noOfMeal', meals: 'noOfMeal', meal: 'noOfMeal',
   mealtype: 'mealType' as any,
   totalmealvalue: 'totalMealValue', mealvalue: 'totalMealValue', statutoryholidays: 'statutoryHolidays',
-  sundaypoyaextra: 'sundayPoyaExtra', businesscenter: 'businessCenter'
+  sundaypoyaextra: 'sundayPoyaExtra', businesscenter: 'businessCenter',
+  // Attendance Transaction form fields (plant / employee level)
+  year: 'atttYear', month: 'attMonth', employeeid: 'epfNo', empid: 'epfNo', epf: 'epfNo',
+  otcalauto: 'otCalAuto', otcalculateauto: 'otCalAuto', otcalcauto: 'otCalAuto', otauto: 'otCalAuto',
+  poyasaturdaynormal: 'poyaSaturdayNormal', poyasaturdaynormalrate: 'poyaSaturdayNormal', poyasatnormal: 'poyaSaturdayNormal',
+  noofstaff: 'noOfStaff', numberofstaff: 'noOfStaff',
+  attallowance: 'attAllowance', attendanceallowance: 'attAllowance',
+  dasforattallowance: 'dasForAttAllowance', dasforattalowance: 'dasForAttAllowance',
+  daysforattallowance: 'dasForAttAllowance', daysforattendanceallowance: 'dasForAttAllowance',
+  lateallowno: 'lateAllowNo', notallowlate: 'lateAllowNo', secondshift2nd: 'secondShift', '2ndshift': 'secondShift',
+  // Common header names used in client attendance sheets
+  employeeno: 'epfNo', empno: 'epfNo', epfnumber: 'epfNo', employeeepf: 'epfNo', employeecode: 'epfNo',
+  employee: 'employeeName', fullname: 'employeeName',
+  plant: 'plantCode', customer: 'customerCode', section: 'sectionCode',
+  date: 'dayIn', attendancedate: 'dayIn', workdate: 'dayIn', indate: 'dayIn', datein: 'dayIn',
+  outdate: 'dayOut', dateout: 'dayOut',
+  intime: 'timeIn', checkin: 'timeIn', clockin: 'timeIn', starttime: 'timeIn', in: 'timeIn',
+  outtime: 'timeOut', checkout: 'timeOut', clockout: 'timeOut', endtime: 'timeOut', out: 'timeOut',
+  workinghours: 'totalWorkingHours', workhours: 'totalWorkingHours', totalworkhours: 'totalWorkingHours', hours: 'totalWorkingHours',
+  ot: 'totalOt', othours: 'totalOt', totalothours: 'totalOt', totalothm: 'totalOt',
+  numberofmeal: 'noOfMeal', numberofmeals: 'noOfMeal', statutoryholiday: 'statutoryHolidays',
+  shift: 'shiftName' as any, daytype: 'dayTypeName' as any
+}
+
+const excelYesNoFields = new Set<keyof Attendance>([
+  'otCalAuto', 'attAllowance', 'poyaSaturdayNormal', 'lateAllowNo',
+  'normalDay', 'saturdayPoya', 'specialDay', 'dayShift', 'secondShift', 'nightShift', 'fullNight'
+])
+
+// 'Y' / 'N' from Excel cells such as Y, Yes, 1, True, ✓; blank stays blank so masters can fill it
+function excelYN(value: unknown): string {
+  const text = String(value ?? '').trim().toLowerCase()
+  if (!text) return ''
+  return ['y', 'yes', '1', 'true', 'x', '✓', '✔'].includes(text) ? 'Y' : 'N'
+}
+
+// Plant level fields of the Attendance Transaction form, taken from the Plant master
+function plantMasterValues(plant?: any): Partial<Attendance> {
+  if (!plant) return {}
+  const allowance = plant.attendanceAllowance
+  return {
+    otCalAuto: plant.otAuto ? 'Y' : 'N',
+    noOfStaff: plant.minStaffQty != null ? Number(plant.minStaffQty) : 0,
+    attAllowance: allowance != null && allowance !== '' && allowance !== 'N' && Number(allowance) !== 0 ? 'Y' : 'N',
+    dasForAttAllowance: plant.daysToWorkForAllowance != null ? Number(plant.daysToWorkForAllowance) : 0
+  }
 }
 
 function excelDate(value: unknown): string {
@@ -135,7 +180,8 @@ function parseAttendanceRows(
   customerList: any[] = []
 ): Attendance[] {
   if (!data.length) return []
-  const headers = data[0].map(value => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, ''))
+  // "Day_In (yyyy-MM-dd)" -> "dayin": hints in brackets are ignored
+  const headers = data[0].map(value => String(value ?? '').replace(/\(.*?\)/g, '').toLowerCase().replace(/[^a-z0-9]/g, ''))
   return data.slice(1).filter(row => row.some(Boolean)).map((row, index) => {
     const record: Partial<Attendance> = {
       id: uuid(), atttYear: '', attMonth: '', epfNo: '',
@@ -150,6 +196,28 @@ function parseAttendanceRows(
       if (field === 'dayIn') (record as any)[field] = excelDate(value)
       else if (field === 'dayOut') (record as any)[field] = excelDate(value)
       else if (field === 'timeIn' || field === 'timeOut') (record as any)[field] = excelTime(value)
+      else if ((field as string) === 'shiftName') {
+        // "Day" / "2nd" / "Night" / "Full Night" text column
+        const text = String(value ?? '').trim().toLowerCase()
+        if (!text) return
+        const shift = text.includes('full') ? 'fullNight' : text.includes('night') ? 'nightShift' : (text.includes('2') || text.includes('second')) ? 'secondShift' : 'dayShift'
+        ;(['dayShift', 'secondShift', 'nightShift', 'fullNight'] as const).forEach(f => { (record as any)[f] = f === shift ? 'Y' : 'N' })
+      }
+      else if ((field as string) === 'dayTypeName') {
+        // "Normal" / "Saturday and Poya" / "Special" text column
+        const text = String(value ?? '').trim().toLowerCase()
+        if (!text) return
+        const type = text.includes('special') ? 'specialDay' : (text.includes('poya') || text.includes('sat')) ? 'saturdayPoya' : 'normalDay'
+        ;(['normalDay', 'saturdayPoya', 'specialDay'] as const).forEach(f => { (record as any)[f] = f === type ? 'Y' : 'N' })
+      }
+      else if (excelYesNoFields.has(field)) {
+        const yn = excelYN(value)
+        if (yn) (record as any)[field] = yn
+      }
+      else if (field === 'noOfStaff' || field === 'dasForAttAllowance') {
+        const text = String(value ?? '').trim()
+        if (text !== '' && Number.isFinite(Number(text))) (record as any)[field] = Number(text)
+      }
       else if (field === 'workingDays') {
         const str = String(value ?? '').trim().toLowerCase()
         if (str.includes('half') || str.includes('0.5')) {
@@ -166,7 +234,9 @@ function parseAttendanceRows(
       } else if (field === 'mealType') {
         (record as any).mealType = String(value ?? '').trim()
       } else if (['basicSalary', 'dayAllowance', 'nightAllowance', 'halfDay', 'totalWorkingHours', 'totalOt', 'noOfMeal', 'totalMealValue', 'statutoryHolidays', 'sundayPoyaExtra'].includes(field)) {
-        const number = Number(String(value ?? '').replace(/^0+(?=\d)/, ''))
+        const text = String(value ?? '').trim()
+        if (text === '') return // blank: filled from the Employee / Plant master below
+        const number = Number(text.replace(/^0+(?=\d)/, ''))
         ;(record as any)[field] = Number.isFinite(number) ? number : 0
       } else if (field === 'businessCenter') (record as any)[field] = String(value ?? '').trim() || businessCenter
       else (record as any)[field] = String(value ?? '').trim()
@@ -184,6 +254,10 @@ function parseAttendanceRows(
     const autoSalary = (record.basicSalary != null && record.basicSalary > 0) ? record.basicSalary : (matchedEmployee?.basicSalary || 0)
 
     const plantObj = customerList.find(c => c.code === autoPlant || c.name === autoPlant)
+    const plantDefaults = plantMasterValues(plantObj)
+    const hasShift = [record.dayShift, record.secondShift, record.nightShift, record.fullNight].includes('Y')
+    const hasDayType = [record.normalDay, record.saturdayPoya, record.specialDay].includes('Y')
+    const isNightShift = record.nightShift === 'Y' || record.fullNight === 'Y'
     const mealType = record.mealType || matchedEmployee?.mealType || 'Standard'
     const mealRate = matchedEmployee?.mealValue != null ? Number(matchedEmployee.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200)
     const noOfMeals = record.noOfMeal != null ? Number(record.noOfMeal) : 1
@@ -214,8 +288,22 @@ function parseAttendanceRows(
       sectionCode: autoSection,
       basicSalary: autoSalary,
       dayAllowance: record.dayAllowance ?? matchedEmployee?.dayAllowance ?? 0,
-      nightAllowance: record.nightAllowance ?? matchedEmployee?.nightAllowance ?? 0,
-      workingDays: record.workingDays ?? (record.halfDay === 1 ? 0.5 : 1),
+      nightAllowance: record.nightAllowance ?? (isNightShift ? (matchedEmployee?.nightAllowance ?? 0) : 0),
+      // Excel value wins; blanks come from the Plant master
+      otCalAuto: record.otCalAuto || plantDefaults.otCalAuto || 'Y',
+      noOfStaff: record.noOfStaff ?? plantDefaults.noOfStaff ?? 0,
+      attAllowance: record.attAllowance || plantDefaults.attAllowance || 'N',
+      dasForAttAllowance: record.dasForAttAllowance ?? plantDefaults.dasForAttAllowance ?? 0,
+      poyaSaturdayNormal: record.poyaSaturdayNormal || 'N',
+      lateAllowNo: record.lateAllowNo || 'N',
+      dayShift: hasShift ? (record.dayShift || 'N') : 'Y',
+      secondShift: record.secondShift || 'N',
+      nightShift: record.nightShift || 'N',
+      fullNight: record.fullNight || 'N',
+      normalDay: hasDayType ? (record.normalDay || 'N') : 'Y',
+      saturdayPoya: record.saturdayPoya || 'N',
+      specialDay: record.specialDay || 'N',
+      workingDays: (record.halfDay === 1 || record.halfDay === 0.5) ? 0.5 : (record.workingDays ?? 1),
       halfDay: record.halfDay ?? (record.workingDays === 0.5 ? 1 : 0),
       noOfMeal: noOfMeals,
       mealType,
@@ -386,6 +474,9 @@ export default function AttendancePage() {
   // Upload default selectors
   const [uploadDefaultPlant, setUploadDefaultPlant] = useState<string>('')
   const [uploadDefaultSection, setUploadDefaultSection] = useState<string>('')
+  const [collapsedPlants, setCollapsedPlants] = useState<Set<string>>(new Set())
+  // Statutory holiday dates for every month present in the staged Excel rows
+  const [stagedHolidayDates, setStagedHolidayDates] = useState<Set<string>>(new Set())
 
   // Multi-Plant Date Range Batch Editor
   const [rangeEmployee, setRangeEmployee] = useState<string>('')
@@ -588,12 +679,96 @@ export default function AttendancePage() {
     setUploadRows(previous => previous.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
   }
 
-  async function handleBulkSaveValidated() {
+  // Plant level fields (Attendance Transaction header) apply to every staged row of that plant
+  function updatePlantRows(plantCode: string, patch: Partial<Attendance>) {
+    setUploadRows(previous => previous.map(row => (row.plantCode || '') === plantCode ? { ...row, ...patch } : row))
+  }
+
+  function movePlantRows(fromPlant: string, toPlant: string) {
+    const target = customerList.find(c => c.code === toPlant)
+    setUploadRows(previous => previous.map(row => {
+      if ((row.plantCode || '') !== fromPlant) return row
+      const computed = computePlantHours(row.timeIn || '08:00', row.timeOut || '16:00', target, toPlant)
+      return { ...row, ...plantMasterValues(target), plantCode: toPlant, customerCode: toPlant, totalWorkingHours: computed.hours, totalOt: computed.ot }
+    }))
+  }
+
+  // Employee picked on a staged row: Excel-only values are replaced by the Employee master
+  function handleStagedEmployeeChange(index: number, row: Attendance, newEpf: string) {
+    const clean = newEpf.trim().toLowerCase()
+    const matched = clean ? employeeList.find(emp => (emp.epfNo || '').trim().toLowerCase() === clean) : undefined
+    if (!matched) {
+      updateUploadRow(index, { epfNo: newEpf })
+      return
+    }
+    const plantCode = row.plantCode || (matched.plantCode ? matched.plantCode.split(' ')[0].trim() : '') || uploadDefaultPlant || (customerList[0]?.code || '')
+    const plantObj = customerList.find(c => c.code === plantCode || c.name === plantCode)
+    const mealRate = matched.mealValue != null ? Number(matched.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200)
+    const isNight = row.nightShift === 'Y' || row.fullNight === 'Y'
+    const computed = computePlantHours(row.timeIn || '08:00', row.timeOut || '16:00', plantObj, plantCode)
+    updateUploadRow(index, {
+      epfNo: matched.epfNo,
+      employeeName: `${matched.firstName} ${matched.lastName || ''}`.trim(),
+      plantCode,
+      customerCode: plantCode,
+      sectionCode: matched.sectionCode || row.sectionCode || uploadDefaultSection || (sectionList[0]?.code || ''),
+      basicSalary: resolveEmployeeBasicSalary(matched, sectionList),
+      dayAllowance: matched.dayAllowance ?? 0,
+      nightAllowance: isNight ? (matched.nightAllowance ?? 0) : 0,
+      mealType: matched.mealType || 'Standard',
+      totalMealValue: (row.noOfMeal ?? 1) * mealRate,
+      totalWorkingHours: computed.hours,
+      totalOt: computed.ot
+    })
+  }
+
+  function handleStagedShiftChange(index: number, row: Attendance, shift: string) {
+    const matched = employeeList.find(emp => (emp.epfNo || '').trim().toLowerCase() === (row.epfNo || '').trim().toLowerCase())
+    const isNight = shift === 'Night' || shift === 'Full Night'
+    updateUploadRow(index, {
+      dayShift: shift === 'Day' ? 'Y' : 'N',
+      secondShift: shift === '2nd' ? 'Y' : 'N',
+      nightShift: shift === 'Night' ? 'Y' : 'N',
+      fullNight: shift === 'Full Night' ? 'Y' : 'N',
+      nightAllowance: isNight ? (row.nightAllowance || matched?.nightAllowance || 0) : 0
+    })
+  }
+
+  const stagedValidation = useMemo(
+    () => uploadRows.map(r => validateUploadRow(r, uploadRows, rows, employeeList)),
+    [uploadRows, rows, employeeList]
+  )
+
+  const stagedByPlant = useMemo(() => {
+    const groups = new Map<string, Array<{ row: Attendance; index: number }>>()
+    uploadRows.forEach((row, index) => {
+      const code = row.plantCode || ''
+      if (!groups.has(code)) groups.set(code, [])
+      groups.get(code)!.push({ row, index })
+    })
+    return Array.from(groups.entries())
+      .map(([plantCode, items]) => ({
+        plantCode,
+        items: items.sort((a, b) =>
+          (a.row.epfNo || '').localeCompare(b.row.epfNo || '') || String(a.row.dayIn || '').localeCompare(String(b.row.dayIn || ''))
+        )
+      }))
+      .sort((a, b) => a.plantCode.localeCompare(b.plantCode))
+  }, [uploadRows])
+
+  // Saves staged rows; with plantCode only that plant's rows are saved and the other plants stay staged
+  async function handleBulkSaveValidated(plantCode?: string) {
     if (!uploadRows.length) {
       toast.error('Upload an attendance file first.')
       return
     }
-    const validated = uploadRows.map(r => ({
+    const scopeRows = plantCode === undefined ? uploadRows : uploadRows.filter(r => (r.plantCode || '') === plantCode)
+    const otherRows = plantCode === undefined ? [] : uploadRows.filter(r => (r.plantCode || '') !== plantCode)
+    if (!scopeRows.length) {
+      toast.error('No staged rows for this plant.')
+      return
+    }
+    const validated = scopeRows.map(r => ({
       row: r,
       val: validateUploadRow(r, uploadRows, rows, employeeList)
     }))
@@ -602,7 +777,7 @@ export default function AttendancePage() {
     const invalidCount = invalidRows.length
 
     if (validRows.length === 0) {
-      toast.error(`All ${uploadRows.length} rows have validation issues. Please correct them before saving.`)
+      toast.error(`All ${scopeRows.length} rows have validation issues. Please correct them before saving.`)
       return
     }
 
@@ -627,7 +802,9 @@ export default function AttendancePage() {
         attMonth: mo,
         plantCode: autoPlant,
         customerCode: r.customerCode || autoPlant,
-        sectionCode: autoSection
+        sectionCode: autoSection,
+        // Ticked from the statutory holiday calendar (payroll itself reads the calendar)
+        statutoryHolidays: stagedHolidayDates.has(cleanDayIn) ? 1 : 0
       }
     })
 
@@ -643,11 +820,7 @@ export default function AttendancePage() {
       setSaveError(null)
       toast.success(`${summaryLines.join('\n')}${invalidCount > 0 ? `\n${invalidCount} invalid rows retained for review.` : ''}`)
 
-      if (invalidCount > 0) {
-        setUploadRows(invalidRows)
-      } else {
-        setUploadRows([])
-      }
+      setUploadRows([...otherRows, ...invalidRows])
       await listAttendance(localStorage.getItem('hsb_active_bc') || '').then(setRows)
       // Switch to logs tab and reset filters so newly saved rows are immediately visible
       setFilterYear('ALL')
@@ -801,6 +974,11 @@ export default function AttendancePage() {
         Employee_Name: record.employeeName,
         Plant_Code: record.plantCode,
         Section_Code: record.sectionCode,
+        OT_Cal_Auto: record.otCalAuto || 'N',
+        Poya_Saturday_normal: record.poyaSaturdayNormal || 'N',
+        No_Of_Staff: record.noOfStaff ?? 0,
+        Att_Allowance: record.attAllowance || 'N',
+        Das_for_Att_Alowance: record.dasForAttAllowance ?? 0,
         Workday: workdayText,
         Working_Days: record.workingDays ?? (isHalf ? 0.5 : 1),
         Day_in: record.dayIn,
@@ -824,7 +1002,8 @@ export default function AttendancePage() {
         Normal_Day: record.normalDay,
         Saturday_Poya: record.saturdayPoya,
         Special_Day: record.specialDay,
-        Statutory_holidays: record.statutoryHolidays,
+        Late_Allow_No: record.lateAllowNo || 'N',
+        Statutory_holidays: stagedHolidayDates.has(excelDate(record.dayIn)) ? 1 : 0,
         Sunday_Poya_Extra: record.sundayPoyaExtra,
         Business_Center: record.businessCenter
       }
@@ -1146,6 +1325,27 @@ export default function AttendancePage() {
       setStatLoading(false)
     }
   }
+
+  const stagedPeriodsKey = useMemo(() => {
+    const periods = new Set(uploadRows.map(r => excelDate(r.dayIn).slice(0, 7)).filter(p => /^\d{4}-\d{2}$/.test(p)))
+    return Array.from(periods).sort().join(',')
+  }, [uploadRows])
+
+  useEffect(() => {
+    if (!stagedPeriodsKey) {
+      setStagedHolidayDates(new Set())
+      return
+    }
+    let cancelled = false
+    const bc = localStorage.getItem('hsb_active_bc') || ''
+    Promise.all(stagedPeriodsKey.split(',').map(p =>
+      getStatutoryMonth(p.slice(0, 4), p.slice(5, 7), bc).catch(() => null)
+    )).then(months => {
+      if (cancelled) return
+      setStagedHolidayDates(new Set(months.flatMap(m => m ? m.holidays.map(h => h.holidayDate) : [])))
+    })
+    return () => { cancelled = true }
+  }, [stagedPeriodsKey, statData])
 
   // Reload when the period changes or attendance is re-fetched (Working status is read from attendance)
   useEffect(() => {
@@ -2509,19 +2709,19 @@ export default function AttendancePage() {
               <div className="flex items-center gap-2">
                 <FileSpreadsheet size={16} className="text-[#2F6F5E]" />
                 <h3 className="font-semibold text-sm text-slate-800">
-                  Uploaded Attendance Preview ({uploadRows.length} rows)
+                  Uploaded Attendance Preview ({uploadRows.length} rows · {stagedByPlant.length} plant{stagedByPlant.length !== 1 ? 's' : ''})
                 </h3>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  {uploadRows.filter(r => validateUploadRow(r, uploadRows, rows, employeeList).isValid).length} Valid
+                  {stagedValidation.filter(v => v.isValid).length} Valid
                 </span>
-                {uploadRows.some(r => !validateUploadRow(r, uploadRows, rows, employeeList).isValid) && (
+                {stagedValidation.some(v => !v.isValid) && (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
-                    {uploadRows.filter(r => !validateUploadRow(r, uploadRows, rows, employeeList).isValid).length} Flagged
+                    {stagedValidation.filter(v => !v.isValid).length} Flagged
                   </span>
                 )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Each row has its own Plant Code and Section Code dropdown. Defaults apply automatically and can be edited per row.
+                Grouped by plant. Excel values are used first; empty cells are filled from the Employee and Plant masters. Plant fields in each header apply to all rows of that plant.
               </p>
             </div>
 
@@ -2589,9 +2789,9 @@ export default function AttendancePage() {
               <button
                 type="button"
                 className="px-3.5 py-1 text-xs bg-[#2F6F5E] text-white rounded font-semibold hover:bg-[#26594b] shadow-xs"
-                onClick={handleBulkSaveValidated}
+                onClick={() => handleBulkSaveValidated()}
               >
-                Save Valid Rows ({uploadRows.filter(r => validateUploadRow(r, uploadRows, rows, employeeList).isValid).length})
+                Save All Plants ({stagedValidation.filter(v => v.isValid).length})
               </button>
             </div>
           </div>
@@ -2610,287 +2810,332 @@ export default function AttendancePage() {
             </span>
           </div>
 
-          <div className="overflow-x-auto max-h-96">
-            <table className="min-w-[1600px] w-full text-xs">
-              <thead className="bg-slate-50 text-left text-slate-600 sticky top-0 z-10 border-b">
-                <tr>
-                  <th className="px-2 py-2">Validation Status</th>
-                  <th className="px-2 py-2">EPF / Employee *</th>
-                  <th className="px-2 py-2">Employee Name</th>
-                  <th className="px-2 py-2">Plant Code *</th>
-                  <th className="px-2 py-2">Section Code</th>
-                  <th className="px-2 py-2">Day In</th>
-                  <th className="px-2 py-2">Day Out</th>
-                  <th className="px-2 py-2">Time In</th>
-                  <th className="px-2 py-2">Time Out</th>
-                  <th className="px-2 py-2">Workday</th>
-                  <th className="px-2 py-2">Hours</th>
-                  <th className="px-2 py-2">OT</th>
-                  <th className="px-2 py-2">Shift</th>
-                  <th className="px-2 py-2">Meals</th>
-                  <th className="px-2 py-2">Meal Type</th>
-                  <th className="px-2 py-2">Meal Value</th>
-                  <th className="px-2 py-2 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {uploadRows.map((row, index) => {
-                  const val = validateUploadRow(row, uploadRows, rows, employeeList);
-                  const matchedEmp = employeeList.find(e => (e.epfNo || '').trim().toLowerCase() === (row.epfNo || '').trim().toLowerCase());
-                  const empDisplayName = row.employeeName || (matchedEmp ? `${matchedEmp.firstName} ${matchedEmp.lastName || ''}`.trim() : '-');
-                  const plantObj = customerList.find(c => c.code === row.plantCode || c.name === row.plantCode);
+          {/* Plant-wise review: plant fields in the card header, employee + day fields per row */}
+          <div className="px-4 pb-4 space-y-3">
+            {stagedByPlant.map(group => {
+              const plantObj = customerList.find(c => c.code === group.plantCode || c.name === group.plantCode)
+              const first = group.items[0]?.row
+              const plantRows = group.items.map(i => i.row)
+              const varies = (field: keyof Attendance) => new Set(plantRows.map(r => String(r[field] ?? ''))).size > 1
+              const validCount = group.items.filter(i => stagedValidation[i.index]?.isValid).length
+              const employeeCount = new Set(plantRows.map(r => (r.epfNo || '').trim().toLowerCase()).filter(Boolean)).size
+              const years = Array.from(new Set(plantRows.map(r => r.atttYear || excelDate(r.dayIn).slice(0, 4)).filter(Boolean))).join(', ')
+              const months = Array.from(new Set(plantRows.map(r => r.attMonth || excelDate(r.dayIn).slice(5, 7)).filter(Boolean))).join(', ')
+              const setting = resolvePlantSetting(plantObj, group.plantCode)
+              const collapsed = collapsedPlants.has(group.plantCode)
+              const toggleCollapsed = () => setCollapsedPlants(prev => {
+                const next = new Set(prev)
+                if (next.has(group.plantCode)) next.delete(group.plantCode)
+                else next.add(group.plantCode)
+                return next
+              })
+              const variesHint = (field: keyof Attendance) => varies(field)
+                ? <span className="text-[10px] text-amber-700 ml-1" title="Rows of this plant have different values; changing it sets all rows">(varies)</span>
+                : null
 
-                  return (
-                    <tr key={row.id || index} className={val.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/40 hover:bg-rose-50/60'}>
-                      <td className="px-2 py-1.5">
-                        {val.isValid ? (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            Valid
-                          </span>
-                        ) : (
-                          <div className="flex flex-col gap-0.5">
-                            {val.errors.map((e, ei) => (
-                              <span key={ei} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-800 border border-rose-200">
-                                ⚠️ {e}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <div className="flex flex-col gap-1">
-                          <select
-                            value={row.epfNo || ''}
-                            onChange={e => {
-                              const newEpf = e.target.value;
-                              const clean = newEpf.trim().toLowerCase();
-                              const matched = clean ? employeeList.find(emp => (emp.epfNo || '').trim().toLowerCase() === clean) : undefined;
-                              if (matched) {
-                                const autoPlant = (matched.plantCode ? matched.plantCode.split(' ')[0].trim() : '') || row.plantCode || uploadDefaultPlant || (customerList[0]?.code || '');
-                                const targetPlantObj = customerList.find(c => c.code === autoPlant || c.name === autoPlant);
-                                const autoSection = matched.sectionCode || row.sectionCode || uploadDefaultSection || (sectionList[0]?.code || '');
-                                const autoName = `${matched.firstName} ${matched.lastName || ''}`.trim();
-                                const autoSalary = resolveEmployeeBasicSalary(matched, sectionList);
-                                const mealType = matched.mealType || 'Standard';
-                                const mealRate = matched.mealValue != null ? Number(matched.mealValue) : (targetPlantObj?.mealValue != null ? Number(targetPlantObj.mealValue) : 200);
-                                const noOfMeals = row.noOfMeal ?? 1;
-                                const totalMealVal = noOfMeals * mealRate;
-                                const computed = computePlantHours(row.timeIn || '08:00', row.timeOut || '16:00', targetPlantObj, autoPlant);
-
-                                updateUploadRow(index, {
-                                  epfNo: matched.epfNo,
-                                  employeeName: autoName,
-                                  plantCode: autoPlant,
-                                  customerCode: autoPlant,
-                                  sectionCode: autoSection,
-                                  basicSalary: autoSalary,
-                                  dayAllowance: matched.dayAllowance ?? row.dayAllowance ?? 0,
-                                  nightAllowance: matched.nightAllowance ?? row.nightAllowance ?? 0,
-                                  mealType,
-                                  totalMealValue: totalMealVal,
-                                  totalWorkingHours: computed.hours,
-                                  totalOt: computed.ot
-                                });
-                              } else {
-                                updateUploadRow(index, { epfNo: newEpf });
-                              }
-                            }}
-                            className={`form-input w-36 text-xs font-mono ${val.errors.some(er => er.includes('EPF')) ? 'border-red-400 bg-red-50 ring-1 ring-red-200' : ''}`}
-                          >
-                            <option value="">Select Employee...</option>
-                            {employeeList.map(emp => (
-                              <option key={emp.epfNo} value={emp.epfNo}>
-                                {emp.epfNo} - {emp.firstName} {emp.lastName || ''}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <span className="text-slate-700 truncate block max-w-[120px]" title={empDisplayName}>
-                          {empDisplayName}
-                        </span>
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <select 
-                          value={row.plantCode || ''} 
-                          onChange={e => {
-                            const newPlant = e.target.value;
-                            const targetPlantObj = customerList.find(c => c.code === newPlant || c.name === newPlant);
-                            const computed = computePlantHours(row.timeIn || '08:00', row.timeOut || '16:00', targetPlantObj, newPlant);
-                            const mealRate = matchedEmp?.mealValue != null ? Number(matchedEmp.mealValue) : (targetPlantObj?.mealValue != null ? Number(targetPlantObj.mealValue) : 200);
-                            const noOfMeals = row.noOfMeal ?? 1;
-
-                            updateUploadRow(index, { 
-                              plantCode: newPlant, 
-                              customerCode: newPlant,
-                              totalWorkingHours: computed.hours,
-                              totalOt: computed.ot,
-                              totalMealValue: noOfMeals * mealRate
-                            });
-                          }} 
-                          className="form-input w-36 text-xs"
+              return (
+                <div key={group.plantCode || 'none'} className="border border-slate-200 rounded-lg overflow-hidden">
+                  {/* Plant header (blue section of the Attendance Transaction form) */}
+                  <div className="bg-sky-50/70 border-b border-sky-100 p-3 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button type="button" onClick={toggleCollapsed} className="text-xs text-slate-500 hover:text-slate-800 w-4">
+                          {collapsed ? '▸' : '▾'}
+                        </button>
+                        <span className="text-xs font-semibold text-slate-600">Employee Plant:</span>
+                        <select
+                          value={group.plantCode}
+                          onChange={e => movePlantRows(group.plantCode, e.target.value)}
+                          className={`form-input text-xs py-1 h-7 max-w-[220px] ${group.plantCode ? '' : 'border-red-400 bg-red-50'}`}
                         >
                           <option value="">Select Plant</option>
                           {customerList.map(c => (
                             <option key={c.code} value={c.code}>{c.code} - {c.name}</option>
                           ))}
                         </select>
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <select 
-                          value={row.sectionCode || ''} 
-                          onChange={e => updateUploadRow(index, { sectionCode: e.target.value })} 
-                          className="form-input w-36 text-xs"
+                        <span className="text-[11px] text-slate-600">Year: <strong>{years || '—'}</strong></span>
+                        <span className="text-[11px] text-slate-600">Month: <strong>{months || '—'}</strong></span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white border border-slate-200 text-slate-700">
+                          {employeeCount} employee{employeeCount !== 1 ? 's' : ''} · {group.items.length} row{group.items.length !== 1 ? 's' : ''}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 border border-emerald-200 text-emerald-700">{validCount} Valid</span>
+                        {validCount < group.items.length && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 border border-rose-200 text-rose-700">{group.items.length - validCount} Flagged</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={!plantObj}
+                          onClick={() => {
+                            updatePlantRows(group.plantCode, plantMasterValues(plantObj))
+                            toast.success(`Plant ${group.plantCode} values reset from the Plant master`)
+                          }}
+                          className="px-2.5 py-1 text-xs border rounded bg-white hover:bg-slate-50 font-medium disabled:opacity-40"
                         >
-                          <option value="">Select Section</option>
-                          {sectionList.map(s => (
-                            <option key={s.code} value={s.code}>{s.code} - {s.name}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <input 
-                          type="date" 
-                          value={excelDate(row.dayIn) || ''} 
-                          onChange={e => updateUploadRow(index, { dayIn: e.target.value, dayOut: row.dayOut || e.target.value })} 
-                          className={`form-input w-32 text-xs ${val.errors.some(er => er.includes('Date')) ? 'border-red-400 bg-red-50' : ''}`}
-                        />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <input 
-                          type="date" 
-                          value={excelDate(row.dayOut) || excelDate(row.dayIn) || ''} 
-                          onChange={e => updateUploadRow(index, { dayOut: e.target.value })} 
-                          className="form-input w-32 text-xs" 
-                        />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <input 
-                          type="time" 
-                          step="1" 
-                          value={row.timeIn || ''} 
-                          onChange={e => {
-                            const newTimeIn = e.target.value;
-                            const computed = computePlantHours(newTimeIn, row.timeOut || '', plantObj, row.plantCode);
-                            updateUploadRow(index, { timeIn: newTimeIn, totalWorkingHours: computed.hours, totalOt: computed.ot });
-                          }} 
-                          className="form-input w-24 text-xs" 
-                        />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <input 
-                          type="time" 
-                          step="1" 
-                          value={(row.timeOut || '').slice(0, 8)} 
-                          onChange={e => {
-                            const newTimeOut = e.target.value;
-                            const computed = computePlantHours(row.timeIn || '', newTimeOut, plantObj, row.plantCode);
-                            updateUploadRow(index, { timeOut: newTimeOut, totalWorkingHours: computed.hours, totalOt: computed.ot });
-                          }} 
-                          className="form-input w-24 text-xs" 
-                        />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <select 
-                          value={row.workingDays === 0.5 || row.halfDay === 1 || row.halfDay === 0.5 ? '0.5' : '1'} 
-                          onChange={e => {
-                            const val = Number(e.target.value);
-                            updateUploadRow(index, { 
-                              workingDays: val, 
-                              halfDay: val === 0.5 ? 0.5 : 0 
-                            });
-                          }} 
-                          className="form-input w-28 text-xs font-medium"
-                        >
-                          <option value="1">1 - Full Day</option>
-                          <option value="0.5">0.5 - Half Day</option>
-                        </select>
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <NumericInput 
-                          value={row.totalWorkingHours ?? ''} 
-                          onChange={e => updateUploadRow(index, { totalWorkingHours: Number(e.target.value || 0) })} 
-                          className="form-input w-16 text-xs text-right" 
-                        />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <NumericInput 
-                          value={row.totalOt ?? ''} 
-                          onChange={e => updateUploadRow(index, { totalOt: Number(e.target.value || 0) })} 
-                          className="form-input w-16 text-xs text-right" 
-                        />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <select 
-                          value={row.dayShift === 'Y' ? 'Day' : row.secondShift === 'Y' ? '2nd' : row.nightShift === 'Y' ? 'Night' : 'Full Night'} 
-                          onChange={e => {
-                            const shift = e.target.value;
-                            updateUploadRow(index, { 
-                              dayShift: shift === 'Day' ? 'Y' : 'N', 
-                              secondShift: shift === '2nd' ? 'Y' : 'N', 
-                              nightShift: shift === 'Night' ? 'Y' : 'N', 
-                              fullNight: shift === 'Full Night' ? 'Y' : 'N' 
-                            });
-                          }} 
-                          className="form-input w-24 text-xs"
-                        >
-                          <option>Day</option>
-                          <option>2nd</option>
-                          <option>Night</option>
-                          <option>Full Night</option>
-                        </select>
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <NumericInput 
-                          integer 
-                          value={row.noOfMeal ?? 1} 
-                          onChange={e => {
-                            const count = Number(e.target.value || 0);
-                            const mealRate = matchedEmp?.mealValue != null ? Number(matchedEmp.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200);
-                            updateUploadRow(index, { 
-                              noOfMeal: count,
-                              totalMealValue: count * mealRate 
-                            });
-                          }} 
-                          className="form-input w-14 text-xs text-right" 
-                        />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <select
-                          value={row.mealType || 'Standard'}
-                          onChange={e => updateUploadRow(index, { mealType: e.target.value })}
-                          className="form-input w-28 text-xs"
-                        >
-                          <option value="Standard">Standard</option>
-                          <option value="Staff Meal">Staff Meal</option>
-                          <option value="Subsidized">Subsidized</option>
-                          <option value="Special">Special</option>
-                          <option value="Free Meal">Free Meal</option>
-                        </select>
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <NumericInput 
-                          value={row.totalMealValue ?? 0} 
-                          onChange={e => updateUploadRow(index, { totalMealValue: Number(e.target.value || 0) })} 
-                          className="form-input w-20 text-xs text-right mono-numeric" 
-                        />
-                      </td>
-                      <td className="px-2 py-1.5 text-center">
-                        <button 
-                          type="button" 
-                          title="Remove Row"
-                          onClick={() => setUploadRows(uploadRows.filter((_, rIdx) => rIdx !== index))}
-                          className="p-1 text-slate-400 hover:text-red-600 rounded"
-                        >
-                          <Trash2 className="w-4 h-4" />
+                          Reset from Plant master
                         </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        <button
+                          type="button"
+                          disabled={validCount === 0}
+                          onClick={() => handleBulkSaveValidated(group.plantCode)}
+                          className="px-3 py-1 text-xs bg-[#2F6F5E] text-white rounded font-semibold hover:bg-[#26594b] shadow-xs disabled:opacity-40"
+                        >
+                          Save this plant ({validCount})
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-700">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" checked={first?.otCalAuto === 'Y'} onChange={e => updatePlantRows(group.plantCode, { otCalAuto: e.target.checked ? 'Y' : 'N' })} />
+                        <span>OT Calculate Auto</span>{variesHint('otCalAuto')}
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" checked={first?.poyaSaturdayNormal === 'Y'} onChange={e => updatePlantRows(group.plantCode, { poyaSaturdayNormal: e.target.checked ? 'Y' : 'N' })} />
+                        <span>Poya / Saturday Normal Rate</span>{variesHint('poyaSaturdayNormal')}
+                      </label>
+                      <span className="flex items-center gap-1.5">
+                        <span>Working Days:</span>
+                        <span className="px-2 py-0.5 rounded bg-white border border-slate-200 font-mono" title="From the Plant master">{plantObj?.workingDays ?? '—'}</span>
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span>Number Of Staff:</span>
+                        <NumericInput integer value={first?.noOfStaff ?? 0} onChange={e => updatePlantRows(group.plantCode, { noOfStaff: Number(e.target.value || 0) })} className="form-input w-16 text-xs text-right h-7" />
+                        {variesHint('noOfStaff')}
+                      </span>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" checked={first?.attAllowance === 'Y'} onChange={e => updatePlantRows(group.plantCode, { attAllowance: e.target.checked ? 'Y' : 'N' })} />
+                        <span>Attendance Allowance</span>{variesHint('attAllowance')}
+                      </label>
+                      <span className="flex items-center gap-1.5">
+                        <span>Days for Attendance Allowance:</span>
+                        <NumericInput integer value={first?.dasForAttAllowance ?? 0} onChange={e => updatePlantRows(group.plantCode, { dasForAttAllowance: Number(e.target.value || 0) })} className="form-input w-16 text-xs text-right h-7" />
+                        {variesHint('dasForAttAllowance')}
+                      </span>
+                    </div>
+                  </div>
+
+                  {!collapsed && (
+                    <div className="overflow-x-auto max-h-[420px]">
+                      <table className="min-w-[2300px] w-full text-xs">
+                        <thead className="bg-slate-50 text-left text-slate-600 sticky top-0 z-10 border-b">
+                          <tr>
+                            <th className="px-2 py-2">Status</th>
+                            <th className="px-2 py-2">Employee ID *</th>
+                            <th className="px-2 py-2">Employee Name</th>
+                            <th className="px-2 py-2">Section</th>
+                            <th className="px-2 py-2 bg-amber-50/60">Basic Salary</th>
+                            <th className="px-2 py-2 bg-amber-50/60">Day Allowance</th>
+                            <th className="px-2 py-2 bg-amber-50/60">Night Allowance</th>
+                            <th className="px-2 py-2">Day In</th>
+                            <th className="px-2 py-2">Day Out</th>
+                            <th className="px-2 py-2">Time In</th>
+                            <th className="px-2 py-2">Time Out</th>
+                            <th className="px-2 py-2">Half Day</th>
+                            <th className="px-2 py-2">Total Work Hours</th>
+                            <th className="px-2 py-2" title="OT starts after 8 hours">Min Work Hours</th>
+                            <th className="px-2 py-2">Total OT</th>
+                            <th className="px-2 py-2">Day Type</th>
+                            <th className="px-2 py-2">Shift</th>
+                            <th className="px-2 py-2">Not Allow Late</th>
+                            <th className="px-2 py-2">No. Of Meal</th>
+                            <th className="px-2 py-2">Meal Type</th>
+                            <th className="px-2 py-2">Total Meal Value</th>
+                            <th className="px-2 py-2">Statutory Holiday</th>
+                            <th className="px-2 py-2 text-center">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {group.items.map(({ row, index }) => {
+                            const val = stagedValidation[index] || { isValid: true, errors: [] }
+                            const matchedEmp = employeeList.find(e => (e.epfNo || '').trim().toLowerCase() === (row.epfNo || '').trim().toLowerCase())
+                            const empDisplayName = row.employeeName || (matchedEmp ? `${matchedEmp.firstName} ${matchedEmp.lastName || ''}`.trim() : '-')
+                            const mealRate = matchedEmp?.mealValue != null ? Number(matchedEmp.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200)
+                            const dayInValue = excelDate(row.dayIn)
+                            const isHalfDay = row.workingDays === 0.5 || row.halfDay === 1 || row.halfDay === 0.5
+                            const shift = row.dayShift === 'Y' ? 'Day' : row.secondShift === 'Y' ? '2nd' : row.nightShift === 'Y' ? 'Night' : row.fullNight === 'Y' ? 'Full Night' : 'Day'
+                            const dayType = row.saturdayPoya === 'Y' ? 'SaturdayPoya' : row.specialDay === 'Y' ? 'Special' : 'Normal'
+                            const isStatutory = stagedHolidayDates.has(dayInValue)
+                            const recompute = (timeIn: string, timeOut: string) => computePlantHours(timeIn, timeOut, plantObj, row.plantCode)
+
+                            return (
+                              <tr key={row.id || index} className={val.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/40 hover:bg-rose-50/60'}>
+                                <td className="px-2 py-1.5">
+                                  {val.isValid ? (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">Valid</span>
+                                  ) : (
+                                    <div className="flex flex-col gap-0.5">
+                                      {val.errors.map((e, ei) => (
+                                        <span key={ei} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-800 border border-rose-200">⚠️ {e}</span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <select
+                                    value={row.epfNo || ''}
+                                    onChange={e => handleStagedEmployeeChange(index, row, e.target.value)}
+                                    className={`form-input w-36 text-xs font-mono ${val.errors.some(er => er.includes('EPF')) ? 'border-red-400 bg-red-50 ring-1 ring-red-200' : ''}`}
+                                  >
+                                    <option value="">Select Employee...</option>
+                                    {row.epfNo && !matchedEmp && <option value={row.epfNo}>{row.epfNo} (unknown)</option>}
+                                    {employeeList.map(emp => (
+                                      <option key={emp.epfNo} value={emp.epfNo}>{emp.epfNo} - {emp.firstName} {emp.lastName || ''}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <span className="text-slate-700 truncate block max-w-[130px]" title={empDisplayName}>{empDisplayName}</span>
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <select value={row.sectionCode || ''} onChange={e => updateUploadRow(index, { sectionCode: e.target.value })} className="form-input w-28 text-xs">
+                                    <option value="">Select</option>
+                                    {sectionList.map(sec => (
+                                      <option key={sec.code} value={sec.code}>{sec.code} - {sec.name}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="px-2 py-1.5 bg-amber-50/30">
+                                  <NumericInput value={row.basicSalary ?? 0} onChange={e => updateUploadRow(index, { basicSalary: Number(e.target.value || 0) })} className="form-input w-20 text-xs text-right mono-numeric" />
+                                </td>
+                                <td className="px-2 py-1.5 bg-amber-50/30">
+                                  <NumericInput value={row.dayAllowance ?? 0} onChange={e => updateUploadRow(index, { dayAllowance: Number(e.target.value || 0) })} className="form-input w-20 text-xs text-right mono-numeric" />
+                                </td>
+                                <td className="px-2 py-1.5 bg-amber-50/30">
+                                  <NumericInput value={row.nightAllowance ?? 0} onChange={e => updateUploadRow(index, { nightAllowance: Number(e.target.value || 0) })} className="form-input w-20 text-xs text-right mono-numeric" />
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <input
+                                    type="date"
+                                    value={dayInValue || ''}
+                                    onChange={e => updateUploadRow(index, {
+                                      dayIn: e.target.value,
+                                      dayOut: row.dayOut || e.target.value,
+                                      atttYear: e.target.value.slice(0, 4),
+                                      attMonth: e.target.value.slice(5, 7)
+                                    })}
+                                    className={`form-input w-32 text-xs ${val.errors.some(er => er.includes('Date')) ? 'border-red-400 bg-red-50' : ''}`}
+                                  />
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <input type="date" value={excelDate(row.dayOut) || dayInValue || ''} onChange={e => updateUploadRow(index, { dayOut: e.target.value })} className="form-input w-32 text-xs" />
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <input
+                                    type="time"
+                                    step="1"
+                                    value={row.timeIn || ''}
+                                    onChange={e => {
+                                      const computed = recompute(e.target.value, row.timeOut || '')
+                                      updateUploadRow(index, { timeIn: e.target.value, totalWorkingHours: computed.hours, totalOt: computed.ot })
+                                    }}
+                                    className="form-input w-24 text-xs"
+                                  />
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <input
+                                    type="time"
+                                    step="1"
+                                    value={(row.timeOut || '').slice(0, 8)}
+                                    onChange={e => {
+                                      const computed = recompute(row.timeIn || '', e.target.value)
+                                      updateUploadRow(index, { timeOut: e.target.value, totalWorkingHours: computed.hours, totalOt: computed.ot })
+                                    }}
+                                    className="form-input w-24 text-xs"
+                                  />
+                                </td>
+                                <td className="px-2 py-1.5 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={isHalfDay}
+                                    onChange={e => updateUploadRow(index, { workingDays: e.target.checked ? 0.5 : 1, halfDay: e.target.checked ? 0.5 : 0 })}
+                                  />
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <NumericInput value={row.totalWorkingHours ?? ''} onChange={e => updateUploadRow(index, { totalWorkingHours: Number(e.target.value || 0) })} className="form-input w-16 text-xs text-right" />
+                                </td>
+                                <td className="px-2 py-1.5 text-slate-600 font-mono">
+                                  8{setting.maxHoursCap ? <span className="text-[10px] text-slate-400"> (cap {setting.maxHoursCap})</span> : null}
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <NumericInput value={row.totalOt ?? ''} onChange={e => updateUploadRow(index, { totalOt: Number(e.target.value || 0) })} className="form-input w-16 text-xs text-right" />
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <select
+                                    value={dayType}
+                                    onChange={e => updateUploadRow(index, {
+                                      normalDay: e.target.value === 'Normal' ? 'Y' : 'N',
+                                      saturdayPoya: e.target.value === 'SaturdayPoya' ? 'Y' : 'N',
+                                      specialDay: e.target.value === 'Special' ? 'Y' : 'N'
+                                    })}
+                                    className="form-input w-32 text-xs"
+                                  >
+                                    <option value="Normal">Normal Day</option>
+                                    <option value="SaturdayPoya">Saturday and Poya</option>
+                                    <option value="Special">Other Special Day</option>
+                                  </select>
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <select value={shift} onChange={e => handleStagedShiftChange(index, row, e.target.value)} className="form-input w-24 text-xs">
+                                    <option value="Day">Day Shift</option>
+                                    <option value="2nd">2nd Shift</option>
+                                    <option value="Night">Night Shift</option>
+                                    <option value="Full Night">Full Night</option>
+                                  </select>
+                                </td>
+                                <td className="px-2 py-1.5 text-center">
+                                  <input type="checkbox" checked={row.lateAllowNo === 'Y'} onChange={e => updateUploadRow(index, { lateAllowNo: e.target.checked ? 'Y' : 'N' })} />
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <NumericInput
+                                    integer
+                                    value={row.noOfMeal ?? 1}
+                                    onChange={e => {
+                                      const count = Number(e.target.value || 0)
+                                      updateUploadRow(index, { noOfMeal: count, totalMealValue: count * mealRate })
+                                    }}
+                                    className="form-input w-14 text-xs text-right"
+                                  />
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <select value={row.mealType || 'Standard'} onChange={e => updateUploadRow(index, { mealType: e.target.value })} className="form-input w-28 text-xs">
+                                    <option value="Standard">Standard</option>
+                                    <option value="Staff Meal">Staff Meal</option>
+                                    <option value="Subsidized">Subsidized</option>
+                                    <option value="Special">Special</option>
+                                    <option value="Free Meal">Free Meal</option>
+                                  </select>
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <NumericInput value={row.totalMealValue ?? 0} onChange={e => updateUploadRow(index, { totalMealValue: Number(e.target.value || 0) })} className="form-input w-20 text-xs text-right mono-numeric" />
+                                </td>
+                                <td className="px-2 py-1.5 text-center" title="Set automatically from the Statutory Holidays calendar">
+                                  {isStatutory ? (
+                                    <span className="tag-pill bg-amber-50 text-amber-800 border border-amber-200">✓ Yes</span>
+                                  ) : (
+                                    <span className="text-slate-400">—</span>
+                                  )}
+                                </td>
+                                <td className="px-2 py-1.5 text-center">
+                                  <button
+                                    type="button"
+                                    title="Remove Row"
+                                    onClick={() => setUploadRows(prev => prev.filter((_, rIdx) => rIdx !== index))}
+                                    className="p-1 text-slate-400 hover:text-red-600 rounded"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </section>
       )}

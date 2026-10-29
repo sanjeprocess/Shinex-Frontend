@@ -174,8 +174,54 @@ export type BulkSaveResult = {
   records?: Attendance[];
 };
 
+// "7:30" / "07:30" / "07:30:00" -> "07:30:00"; anything else -> undefined (backend applies its default)
+function normalizeTime(value?: string): string | undefined {
+  const text = String(value ?? '').trim();
+  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(text);
+  if (!match) return undefined;
+  return `${match[1].padStart(2, '0')}:${match[2]}:${match[3] || '00'}`;
+}
+
+// Y/N columns are NCHAR(1) in TBL_T_Attendance
+function normalizeYN(value?: string): string | undefined {
+  const text = String(value ?? '').trim().toUpperCase();
+  if (!text) return undefined;
+  return ['Y', 'YES', '1', 'TRUE'].includes(text) ? 'Y' : 'N';
+}
+
+// Maps an Excel / staged row to the backend Attendance JSON (same field names as create/update)
+function toBulkApi(rec: Attendance) {
+  const dayIn = String(rec.dayIn || '').trim().slice(0, 10);
+  const dayOutDate = String(rec.dayOut || '').trim().slice(0, 10) || dayIn;
+  const timeIn = normalizeTime(rec.timeIn);
+  const timeOut = normalizeTime(rec.timeOut);
+  const { id, atttYear, dasForAttAllowance, ...rest } = rec;
+  return {
+    ...rest,
+    attYear: atttYear,
+    attMonth: rec.attMonth ? String(rec.attMonth).trim().padStart(2, '0') : undefined,
+    epfNo: String(rec.epfNo || '').trim(),
+    dayIn,
+    timeIn,
+    timeOut,
+    dayOut: dayOutDate ? normalizeLocalDateTime(dayOutDate, timeOut || '00:00') : undefined,
+    daysForAttAllowance: dasForAttAllowance,
+    otCalAuto: normalizeYN(rec.otCalAuto),
+    attAllowance: normalizeYN(rec.attAllowance),
+    poyaSaturdayNormal: normalizeYN(rec.poyaSaturdayNormal),
+    normalDay: normalizeYN(rec.normalDay),
+    saturdayPoya: normalizeYN(rec.saturdayPoya),
+    specialDay: normalizeYN(rec.specialDay),
+    dayShift: normalizeYN(rec.dayShift),
+    secondShift: normalizeYN(rec.secondShift),
+    nightShift: normalizeYN(rec.nightShift),
+    fullNight: normalizeYN(rec.fullNight),
+    lateAllowNo: rec.lateAllowNo ? String(rec.lateAllowNo).trim().slice(0, 11) : undefined
+  };
+}
+
 export const bulkSave = async (records: Attendance[]): Promise<BulkSaveResult> => {
-  const res = await api.post('/attendance/bulk', records);
+  const res = await api.post('/attendance/bulk', records.map(toBulkApi));
   const result = res.data;
   if (!result || !Array.isArray(result.summaries)) {
     throw new Error('Attendance bulk endpoint returned an invalid response.');
