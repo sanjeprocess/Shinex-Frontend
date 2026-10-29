@@ -50,6 +50,7 @@ export default function EmployeeHistoryPage() {
 
   // Synced Monthly Summary
   const [monthlyData, setMonthlyData] = useState<MonthlySummary | null>(null)
+  const [printSize, setPrintSize] = useState<'A4' | 'A5'>('A5')
 
   const activeBc = localStorage.getItem('hsb_active_bc') || 'ALL'
   const cleanBc = activeBc && activeBc !== 'ALL' ? activeBc.split(' / ')[0].trim() : ''
@@ -531,12 +532,31 @@ export default function EmployeeHistoryPage() {
     toast.success(`Complete dossier for ${employee.epfNo} exported to Excel!`)
   }
 
-  function exportToPDF() {
+  // Prints the pay sheet on A4 or A5; index.css defaults @page to A5, so A4 overrides it for this print only
+  function exportToPDF(size: 'A4' | 'A5') {
     if (!employee) {
       toast.error('Please select an employee first')
       return
     }
-    window.print()
+    if (!payrollCalculation) {
+      toast.error('No pay sheet for the selected period')
+      return
+    }
+    const style = document.createElement('style')
+    style.id = 'paysheet-page-size'
+    style.innerHTML = size === 'A4'
+      ? '@media print { @page { size: A4 portrait; margin: 10mm; } .paysheet-print { zoom: 1.38; } }'
+      : '@media print { @page { size: A5 portrait; margin: 6mm; } }'
+    document.getElementById('paysheet-page-size')?.remove()
+    document.head.appendChild(style)
+    setPrintSize(size)
+    const cleanup = () => {
+      style.remove()
+      window.removeEventListener('afterprint', cleanup)
+    }
+    window.addEventListener('afterprint', cleanup)
+    // let React render the size label before the print dialog opens
+    setTimeout(() => window.print(), 50)
   }
 
   useEffect(() => {
@@ -553,7 +573,7 @@ export default function EmployeeHistoryPage() {
   }, [selectedEpf, year, month])
 
   return (
-    <div className="space-y-6 print:space-y-3">
+    <div className="space-y-6 print:space-y-3 paysheet-print">
       {/* Header Banner */}
       <div className="bg-gradient-to-r from-[#12161C] to-[#1B2028] text-white p-6 rounded-2xl shadow-lg border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
         <div>
@@ -565,7 +585,7 @@ export default function EmployeeHistoryPage() {
             </span>
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-white">Employee Complete Record Dossier</h1>
-          <p className="text-sm text-slate-400 mt-0.5">Scoped to logged-in company employees. View full historical master & transaction records with plant tracing (A5 Export Format).</p>
+          <p className="text-sm text-slate-400 mt-0.5">Scoped to logged-in company employees. Monthly pay sheet for the selected period (A4 / A5 PDF).</p>
         </div>
 
         {employee && (
@@ -578,22 +598,29 @@ export default function EmployeeHistoryPage() {
               <span>Export Dossier (Excel)</span>
             </button>
             <button
-              onClick={exportToPDF}
+              onClick={() => exportToPDF('A4')}
               className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-md"
             >
               <Printer size={16} />
-              <span>Print A5 Sheet / PDF</span>
+              <span>Pay Sheet A4 / PDF</span>
+            </button>
+            <button
+              onClick={() => exportToPDF('A5')}
+              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-md"
+            >
+              <Printer size={16} />
+              <span>Pay Sheet A5 / PDF</span>
             </button>
           </div>
         )}
       </div>
 
       {/* A5 Printable Header (Visible only when printing) */}
-      <div className="hidden print:block border-b-2 border-slate-800 pb-2 mb-3">
+      <div className="hidden print:block border-b-2 border-slate-800 pb-1.5 mb-2">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-sm font-black uppercase text-slate-900 tracking-wider">{companyName}</h2>
-            <p className="text-[10px] text-slate-600 font-medium">EMPLOYEE COMPLETE RECORD DOSSIER &bull; A5 OFFICIAL RECORD</p>
+            <p className="text-[10px] text-slate-600 font-medium">EMPLOYEE PAY SHEET &bull; {printSize} OFFICIAL RECORD</p>
           </div>
           <div className="text-right text-[9px] text-slate-500">
             <div>Period: <strong>{month.padStart(2, '0')}/{year}</strong></div>
@@ -685,10 +712,10 @@ export default function EmployeeHistoryPage() {
           Please select an employee above to display their complete profile and transaction history.
         </div>
       ) : (
-        <div className="space-y-5 print:space-y-3">
+        <div className="space-y-5 print:space-y-2">
           {/* Master Employee Summary Card */}
-          <div className="bg-white p-5 rounded-2xl shadow-flat border border-slate-200 print:p-3 print:rounded-lg print:border-slate-300 print-page-break-avoid">
-            <div className="flex items-center gap-4 mb-3 pb-3 border-b">
+          <div className="bg-white p-5 rounded-2xl shadow-flat border border-slate-200 print:p-2 print:rounded-lg print:border-slate-300 print-page-break-avoid">
+            <div className="flex items-center gap-4 mb-3 pb-3 border-b print:mb-1.5 print:pb-1.5 print:gap-2">
               {employee.photoUrl ? (
                 <img src={employee.photoUrl} alt="Avatar" className="w-14 h-14 rounded-full object-cover border-2 border-[#2F6F5E] shadow-sm flex-shrink-0 print:w-10 print:h-10" />
               ) : (
@@ -710,13 +737,13 @@ export default function EmployeeHistoryPage() {
                     </span>
                   </div>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5 print:text-[9px]">
+                <p className="text-xs text-slate-500 mt-0.5 print:hidden">
                   NIC: <strong className="text-slate-700">{employee.nicNo || '—'}</strong> &bull; Section: <strong className="text-slate-700">{employee.sectionCode || '—'}</strong> &bull; BC: <strong className="text-slate-700">{employee.businessCenter || activeBc}</strong>
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs print:grid-cols-4 print:text-[9px] print:gap-1.5">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs print:grid-cols-4 print:text-[9px] print:gap-x-1.5 print:gap-y-0.5">
               <div><span className="text-slate-500 block">Full Name</span><strong className="text-slate-800">{employee.firstName} {employee.lastName || ''}</strong></div>
               <div><span className="text-slate-500 block">NIC No</span><strong className="text-slate-800">{employee.nicNo || '—'}</strong></div>
               <div><span className="text-slate-500 block">Business Center</span><strong className="text-slate-800">{employee.businessCenter || activeBc}</strong></div>
@@ -765,57 +792,57 @@ export default function EmployeeHistoryPage() {
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-mono">
                       <tr>
-                        <td className="px-2.5 py-1 font-sans font-medium text-slate-800">NORMAL / பொது / සාමාන්‍ය</td>
-                        <td className="px-2 py-1 text-center text-slate-700">{payrollCalculation.normalDays}</td>
-                        <td className="px-2 py-1 text-center text-slate-400">—</td>
-                        <td className="px-2.5 py-1 text-right text-slate-700">{payrollCalculation.normalRate.toFixed(2)}</td>
-                        <td className="px-2.5 py-1 text-right font-semibold text-slate-900">{payrollCalculation.normalAmount.toFixed(2)}</td>
+                        <td className="px-2.5 py-1 print:py-[1px] font-sans font-medium text-slate-800">NORMAL / பொது / සාමාන්‍ය</td>
+                        <td className="px-2 py-1 print:py-[1px] text-center text-slate-700">{payrollCalculation.normalDays}</td>
+                        <td className="px-2 py-1 print:py-[1px] text-center text-slate-400">—</td>
+                        <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap text-slate-700">{payrollCalculation.normalRate.toFixed(2)}</td>
+                        <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-900">{payrollCalculation.normalAmount.toFixed(2)}</td>
                       </tr>
                       <tr>
-                        <td className="px-2.5 py-1 font-sans font-medium text-slate-800">NIGHT / இரவு / රාත්‍රී</td>
-                        <td className="px-2 py-1 text-center text-slate-700">{payrollCalculation.nightDays > 0 ? payrollCalculation.nightDays : '—'}</td>
-                        <td className="px-2 py-1 text-center text-slate-400">—</td>
-                        <td className="px-2.5 py-1 text-right text-slate-700">{payrollCalculation.nightDays > 0 ? payrollCalculation.nightRate.toFixed(2) : (payrollCalculation.nightRate > 0 ? payrollCalculation.nightRate.toFixed(2) : '—')}</td>
-                        <td className="px-2.5 py-1 text-right font-semibold text-slate-900">{payrollCalculation.nightAmount > 0 ? payrollCalculation.nightAmount.toFixed(2) : '—'}</td>
+                        <td className="px-2.5 py-1 print:py-[1px] font-sans font-medium text-slate-800">NIGHT / இரவு / රාත්‍රී</td>
+                        <td className="px-2 py-1 print:py-[1px] text-center text-slate-700">{payrollCalculation.nightDays > 0 ? payrollCalculation.nightDays : '—'}</td>
+                        <td className="px-2 py-1 print:py-[1px] text-center text-slate-400">—</td>
+                        <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap text-slate-700">{payrollCalculation.nightDays > 0 ? payrollCalculation.nightRate.toFixed(2) : (payrollCalculation.nightRate > 0 ? payrollCalculation.nightRate.toFixed(2) : '—')}</td>
+                        <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-900">{payrollCalculation.nightAmount > 0 ? payrollCalculation.nightAmount.toFixed(2) : '—'}</td>
                       </tr>
                       <tr>
-                        <td className="px-2.5 py-1 font-sans font-medium text-slate-800">POYA / SUNDAY / ஞாயிறு / போயா / ඉරිදා / පෝය</td>
-                        <td className="px-2 py-1 text-center text-slate-700">{payrollCalculation.poyaDays > 0 ? payrollCalculation.poyaDays : '—'}</td>
-                        <td className="px-2 py-1 text-center text-slate-400">—</td>
-                        <td className="px-2.5 py-1 text-right text-slate-700">{payrollCalculation.poyaDays > 0 ? payrollCalculation.poyaRate.toFixed(2) : '—'}</td>
-                        <td className="px-2.5 py-1 text-right font-semibold text-slate-900">{payrollCalculation.poyaAmount > 0 ? payrollCalculation.poyaAmount.toFixed(2) : '—'}</td>
+                        <td className="px-2.5 py-1 print:py-[1px] font-sans font-medium text-slate-800">POYA / SUNDAY / ஞாயிறு / போயா / ඉරිදා / පෝය</td>
+                        <td className="px-2 py-1 print:py-[1px] text-center text-slate-700">{payrollCalculation.poyaDays > 0 ? payrollCalculation.poyaDays : '—'}</td>
+                        <td className="px-2 py-1 print:py-[1px] text-center text-slate-400">—</td>
+                        <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap text-slate-700">{payrollCalculation.poyaDays > 0 ? payrollCalculation.poyaRate.toFixed(2) : '—'}</td>
+                        <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-900">{payrollCalculation.poyaAmount > 0 ? payrollCalculation.poyaAmount.toFixed(2) : '—'}</td>
                       </tr>
                       <tr>
-                        <td className="px-2.5 py-1 font-sans font-medium text-slate-800">OVERTIME / மேலதிக நேரம் / අතිකාල (1.5× rate)</td>
-                        <td className="px-2 py-1 text-center text-slate-400">—</td>
-                        <td className="px-2 py-1 text-center text-amber-700 font-bold">{payrollCalculation.otHours > 0 ? payrollCalculation.otHours : '—'}</td>
-                        <td className="px-2.5 py-1 text-right text-slate-700">{payrollCalculation.otRate.toFixed(2)}</td>
-                        <td className="px-2.5 py-1 text-right font-semibold text-amber-900">{payrollCalculation.otAmount > 0 ? payrollCalculation.otAmount.toFixed(2) : '—'}</td>
+                        <td className="px-2.5 py-1 print:py-[1px] font-sans font-medium text-slate-800">OVERTIME / மேலதிக நேரம் / අතිකාල (1.5× rate)</td>
+                        <td className="px-2 py-1 print:py-[1px] text-center text-slate-400">—</td>
+                        <td className="px-2 py-1 print:py-[1px] text-center text-amber-700 font-bold">{payrollCalculation.otHours > 0 ? payrollCalculation.otHours : '—'}</td>
+                        <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap text-slate-700">{payrollCalculation.otRate.toFixed(2)}</td>
+                        <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-amber-900">{payrollCalculation.otAmount > 0 ? payrollCalculation.otAmount.toFixed(2) : '—'}</td>
                       </tr>
                       <tr>
-                        <td className="px-2.5 py-1 font-sans font-medium text-slate-800">INCENTIVE / ஊக்கத்தொகை / දිරිගැන්වීම් දීමනාව</td>
-                        <td className="px-2 py-1 text-center text-slate-400">—</td>
-                        <td className="px-2 py-1 text-center text-slate-400">—</td>
-                        <td className="px-2.5 py-1 text-right text-slate-400">—</td>
-                        <td className="px-2.5 py-1 text-right font-semibold text-slate-900">{payrollCalculation.incentive > 0 ? payrollCalculation.incentive.toFixed(2) : '—'}</td>
+                        <td className="px-2.5 py-1 print:py-[1px] font-sans font-medium text-slate-800">INCENTIVE / ஊக்கத்தொகை / දිරිගැන්වීම් දීමනාව</td>
+                        <td className="px-2 py-1 print:py-[1px] text-center text-slate-400">—</td>
+                        <td className="px-2 py-1 print:py-[1px] text-center text-slate-400">—</td>
+                        <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap text-slate-400">—</td>
+                        <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-900">{payrollCalculation.incentive > 0 ? payrollCalculation.incentive.toFixed(2) : '—'}</td>
                       </tr>
                       <tr>
-                        <td className="px-2.5 py-1 font-sans font-medium text-slate-800">STATUTORY HOLIDAY / சட்டப்பூர்வ விடுமுறை / ව්‍යවස්ථාපිත නිවාඩු</td>
-                        <td className="px-2 py-1 text-center text-slate-700">{payrollCalculation.statutoryDays || '—'}</td>
-                        <td className="px-2 py-1 text-center text-slate-400">—</td>
-                        <td className="px-2.5 py-1 text-right text-slate-700">{payrollCalculation.statutoryDays > 0 ? payrollCalculation.normalRate.toFixed(2) : '—'}</td>
-                        <td className="px-2.5 py-1 text-right font-semibold text-slate-900">{payrollCalculation.statutoryHolidayAmount > 0 ? payrollCalculation.statutoryHolidayAmount.toFixed(2) : '—'}</td>
+                        <td className="px-2.5 py-1 print:py-[1px] font-sans font-medium text-slate-800">STATUTORY HOLIDAY / சட்டப்பூர்வ விடுமுறை / ව්‍යවස්ථාපිත නිවාඩු</td>
+                        <td className="px-2 py-1 print:py-[1px] text-center text-slate-700">{payrollCalculation.statutoryDays || '—'}</td>
+                        <td className="px-2 py-1 print:py-[1px] text-center text-slate-400">—</td>
+                        <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap text-slate-400">—</td>
+                        <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-900">{payrollCalculation.statutoryHolidayAmount > 0 ? payrollCalculation.statutoryHolidayAmount.toFixed(2) : '—'}</td>
                       </tr>
                       <tr>
-                        <td className="px-2.5 py-1 font-sans font-medium text-slate-800">OTHER ADDITIONS / மற்றவை / වෙනත් එකතු කිරීම්</td>
-                        <td className="px-2 py-1 text-center text-slate-400">—</td>
-                        <td className="px-2 py-1 text-center text-slate-400">—</td>
-                        <td className="px-2.5 py-1 text-right text-slate-400">—</td>
-                        <td className="px-2.5 py-1 text-right font-semibold text-slate-900">{payrollCalculation.totalAdditions > 0 ? payrollCalculation.totalAdditions.toFixed(2) : '—'}</td>
+                        <td className="px-2.5 py-1 print:py-[1px] font-sans font-medium text-slate-800">OTHER ADDITIONS / மற்றவை / වෙනත් එකතු කිරීම්</td>
+                        <td className="px-2 py-1 print:py-[1px] text-center text-slate-400">—</td>
+                        <td className="px-2 py-1 print:py-[1px] text-center text-slate-400">—</td>
+                        <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap text-slate-400">—</td>
+                        <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-900">{payrollCalculation.totalAdditions > 0 ? payrollCalculation.totalAdditions.toFixed(2) : '—'}</td>
                       </tr>
                       <tr className="bg-emerald-50 font-bold font-sans border-t-2 border-emerald-300 print:bg-slate-100">
-                        <td className="px-2.5 py-1.5 text-emerald-950 font-bold" colSpan={4}>GROSS SALARY / மொத்த சம்பளம் / දළ වැටුප</td>
-                        <td className="px-2.5 py-1.5 text-right text-emerald-950 font-mono font-bold">LKR {payrollCalculation.grossSalary.toLocaleString('en-LK', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-2.5 py-1.5 print:py-0.5 text-emerald-950 font-bold" colSpan={4}>GROSS SALARY / மொத்த சம்பளம் / දළ වැටුප</td>
+                        <td className="px-2.5 py-1.5 print:py-0.5 text-right whitespace-nowrap text-emerald-950 font-mono font-bold">LKR {payrollCalculation.grossSalary.toLocaleString('en-LK', { minimumFractionDigits: 2 })}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -823,7 +850,7 @@ export default function EmployeeHistoryPage() {
               </div>
 
               {/* Deductions & Company Contributions */}
-              <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3 print:grid-cols-2 print:p-2 print:gap-2">
+              <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3 print:grid-cols-[3fr_2fr] print:p-2 print:gap-2">
                 <div className="border border-slate-200 rounded-xl overflow-hidden print:rounded print:border-slate-300">
                   <div className="px-3 py-1.5 bg-rose-50 border-b border-rose-200 font-bold text-rose-900 text-[11px] uppercase tracking-wider print:text-[8.5px] print:py-1">
                     Deductions / கழிவுகள் / අඩු කිරීම්
@@ -831,32 +858,32 @@ export default function EmployeeHistoryPage() {
                   <table className="w-full text-left text-xs divide-y divide-slate-100 font-mono print:text-[8.5px]">
                     <tbody className="divide-y divide-slate-100">
                       <tr>
-                        <td className="px-3 py-1 font-sans text-slate-700">E.P.F. 8% / ஊ.சே.நி. 8% / සේ.අ.අ. 8%</td>
-                        <td className="px-3 py-1 text-right font-semibold text-rose-700">LKR {payrollCalculation.epf8.toFixed(2)}</td>
+                        <td className="px-3 py-1 print:py-[1px] font-sans text-slate-700">E.P.F. 8% / ஊ.சே.நி. 8% / සේ.අ.අ. 8%</td>
+                        <td className="px-3 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-rose-700">LKR {payrollCalculation.epf8.toFixed(2)}</td>
                       </tr>
                       <tr>
-                        <td className="px-3 py-1 font-sans text-slate-700">ADVANCE / முற்பணம் / අත්තිකාරම්</td>
-                        <td className="px-3 py-1 text-right font-semibold text-slate-800">{payrollCalculation.advance > 0 ? `LKR ${payrollCalculation.advance.toFixed(2)}` : '—'}</td>
+                        <td className="px-3 py-1 print:py-[1px] font-sans text-slate-700">ADVANCE / முற்பணம் / අත්තිකාරම්</td>
+                        <td className="px-3 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-800">{payrollCalculation.advance > 0 ? `LKR ${payrollCalculation.advance.toFixed(2)}` : '—'}</td>
                       </tr>
                       <tr>
-                        <td className="px-3 py-1 font-sans text-slate-700">TELEPHONE / தொலைபேசி / දුරකථනය</td>
-                        <td className="px-3 py-1 text-right font-semibold text-slate-800">{payrollCalculation.telephone > 0 ? `LKR ${payrollCalculation.telephone.toFixed(2)}` : '—'}</td>
+                        <td className="px-3 py-1 print:py-[1px] font-sans text-slate-700">TELEPHONE / தொலைபேசி / දුරකථනය</td>
+                        <td className="px-3 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-800">{payrollCalculation.telephone > 0 ? `LKR ${payrollCalculation.telephone.toFixed(2)}` : '—'}</td>
                       </tr>
                       <tr>
-                        <td className="px-3 py-1 font-sans text-slate-700">MEAL / உணவு / ආහාරය</td>
-                        <td className="px-3 py-1 text-right font-semibold text-slate-800">{payrollCalculation.meal > 0 ? `LKR ${payrollCalculation.meal.toFixed(2)}` : '—'}</td>
+                        <td className="px-3 py-1 print:py-[1px] font-sans text-slate-700">MEAL / உணவு / ආහාරය</td>
+                        <td className="px-3 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-800">{payrollCalculation.meal > 0 ? `LKR ${payrollCalculation.meal.toFixed(2)}` : '—'}</td>
                       </tr>
                       <tr>
-                        <td className="px-3 py-1 font-sans text-slate-700">LOAN / கடன் / ණය</td>
-                        <td className="px-3 py-1 text-right font-semibold text-slate-800">{payrollCalculation.loan > 0 ? `LKR ${payrollCalculation.loan.toFixed(2)}` : '—'}</td>
+                        <td className="px-3 py-1 print:py-[1px] font-sans text-slate-700">LOAN / கடன் / ණය</td>
+                        <td className="px-3 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-800">{payrollCalculation.loan > 0 ? `LKR ${payrollCalculation.loan.toFixed(2)}` : '—'}</td>
                       </tr>
                       <tr>
-                        <td className="px-3 py-1 font-sans text-slate-700">DEATH DONATION / இறப்பு நன்கொடை / මරණ ආධාර</td>
-                        <td className="px-3 py-1 text-right font-semibold text-slate-800">{payrollCalculation.deathDonation > 0 ? `LKR ${payrollCalculation.deathDonation.toFixed(2)}` : '—'}</td>
+                        <td className="px-3 py-1 print:py-[1px] font-sans text-slate-700">DEATH DONATION / இறப்பு நன்கொடை / මරණ ආධාර</td>
+                        <td className="px-3 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-800">{payrollCalculation.deathDonation > 0 ? `LKR ${payrollCalculation.deathDonation.toFixed(2)}` : '—'}</td>
                       </tr>
                       <tr className="bg-rose-50 font-bold font-sans border-t border-rose-200 print:bg-slate-100">
-                        <td className="px-3 py-1.5 text-rose-950 font-bold">TOTAL DEDUCTION / மொத்த கழிவு</td>
-                        <td className="px-3 py-1.5 text-right text-rose-950 font-mono font-bold">LKR {payrollCalculation.totalDeductions.toLocaleString('en-LK', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-3 py-1.5 print:py-0.5 text-rose-950 font-bold">TOTAL DEDUCTION / மொத்த கழிவு</td>
+                        <td className="px-3 py-1.5 print:py-0.5 text-right whitespace-nowrap text-rose-950 font-mono font-bold">LKR {payrollCalculation.totalDeductions.toLocaleString('en-LK', { minimumFractionDigits: 2 })}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -870,12 +897,12 @@ export default function EmployeeHistoryPage() {
                     <table className="w-full text-left text-xs divide-y divide-slate-100 font-mono print:text-[8.5px]">
                       <tbody className="divide-y divide-slate-100">
                         <tr>
-                          <td className="px-3 py-1 font-sans text-slate-700">E.P.F. 12% (Company) / ஊ.சே.நி. 12%</td>
-                          <td className="px-3 py-1 text-right font-semibold text-slate-800">LKR {payrollCalculation.epf12.toFixed(2)}</td>
+                          <td className="px-3 py-1 print:py-[1px] font-sans text-slate-700">E.P.F. 12% (Company) / ஊ.சே.நி. 12%</td>
+                          <td className="px-3 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-800">LKR {payrollCalculation.epf12.toFixed(2)}</td>
                         </tr>
                         <tr>
-                          <td className="px-3 py-1 font-sans text-slate-700">E.T.F. 3% (Company) / ஊ.பொ.நி. 3%</td>
-                          <td className="px-3 py-1 text-right font-semibold text-slate-800">LKR {payrollCalculation.etf3.toFixed(2)}</td>
+                          <td className="px-3 py-1 print:py-[1px] font-sans text-slate-700">E.T.F. 3% (Company) / ஊ.பொ.நி. 3%</td>
+                          <td className="px-3 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-800">LKR {payrollCalculation.etf3.toFixed(2)}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -891,164 +918,6 @@ export default function EmployeeHistoryPage() {
               </div>
             </div>
           )}
-
-          {/* Plant Movement & Transfer History Card */}
-          {employeeTransfers.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-flat border border-slate-200 overflow-hidden print:rounded print:border-slate-300 print-page-break-avoid">
-              <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between print:py-1">
-                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5 print:text-[9px]">
-                  <ArrowRightLeft size={13} className="text-teal-600" />
-                  Plant Transfer Movements & History ({employeeTransfers.length})
-                </h4>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs print:text-[8.5px]">
-                  <thead className="bg-slate-50 text-slate-600 border-b font-semibold">
-                    <tr>
-                      <th className="px-3 py-1.5">Transfer Date</th>
-                      <th className="px-3 py-1.5">Route (From → To)</th>
-                      <th className="px-3 py-1.5">Duration</th>
-                      <th className="px-3 py-1.5">Status</th>
-                      <th className="px-3 py-1.5">Remarks</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {employeeTransfers.map((t, i) => (
-                      <tr key={i} className="hover:bg-slate-50">
-                        <td className="px-3 py-1 mono-numeric font-medium">{t.transferDate} {t.endDate ? `to ${t.endDate}` : ''}</td>
-                        <td className="px-3 py-1">
-                          <span className="px-1.5 py-0.5 rounded bg-slate-100">{t.fromPlant || 'Base'}</span>
-                          <span className="mx-1 text-teal-600">→</span>
-                          <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-800 font-semibold border border-teal-200">{t.toPlant}</span>
-                        </td>
-                        <td className="px-3 py-1 mono-numeric">{t.daysWorked || 1} days</td>
-                        <td className="px-3 py-1">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold print:text-[8px] ${t.status === 'Active' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                            {t.status || 'Active'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-1 text-slate-500">{t.workDetails || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Attendance History (Scoped & Filtered) */}
-          <div className="bg-white rounded-2xl shadow-flat border border-slate-200 overflow-hidden print:rounded print:border-slate-300 print-page-break-avoid">
-            <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between print:py-1">
-              <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5 print:text-[9px]">
-                <Calendar size={13} className="text-teal-600" />
-                Attendance Log History ({filteredAttendanceList.length}{selectedOption?.id !== 'ALL' ? ` filtered by ${selectedOption.plantName}` : ''})
-              </h4>
-              {selectedOption?.id !== 'ALL' && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedPlantOptionId('ALL')}
-                  className="text-xs text-teal-700 hover:underline font-medium print:hidden"
-                >
-                  Clear Plant Filter (Show All {attendanceList.length})
-                </button>
-              )}
-            </div>
-            {filteredAttendanceList.length === 0 ? (
-              <div className="p-3 text-xs text-slate-500">No attendance logs recorded for this plant/period.</div>
-            ) : (
-              <div className="overflow-x-auto max-h-64 print:max-h-none">
-                <table className="w-full text-left text-xs print:text-[8.5px]">
-                  <thead className="bg-slate-50 text-slate-600 border-b font-semibold sticky top-0">
-                    <tr>
-                      <th className="px-3 py-1.5">Date</th>
-                      <th className="px-3 py-1.5">Shift</th>
-                      <th className="px-3 py-1.5">Time In</th>
-                      <th className="px-3 py-1.5">Time Out</th>
-                      <th className="px-3 py-1.5">Plant</th>
-                      <th className="px-3 py-1.5">Total Hours</th>
-                      <th className="px-3 py-1.5">OT Hours</th>
-                      <th className="px-3 py-1.5">Business Center</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredAttendanceList.slice(0, 30).map((a, i) => (
-                      <tr key={i} className="hover:bg-slate-50">
-                        <td className="px-3 py-1 mono-numeric font-medium">{a.dayIn}</td>
-                        <td className="px-3 py-1">
-                          {(a.nightShift === 'Y' || a.fullNight === 'Y') ? (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">Night</span>
-                          ) : a.secondShift === 'Y' ? (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">2nd</span>
-                          ) : (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">Day</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-1 mono-numeric">{a.timeIn}</td>
-                        <td className="px-3 py-1 mono-numeric">{a.timeOut || '—'}</td>
-                        <td className="px-3 py-1 font-medium text-teal-800">{a.plantCode || employee.plantCode || '—'}</td>
-                        <td className="px-3 py-1 mono-numeric font-semibold">{a.totalWorkingHours || 0} hrs</td>
-                        <td className="px-3 py-1 mono-numeric text-amber-600 font-semibold">{a.totalOt || 0} hrs</td>
-                        <td className="px-3 py-1">{a.businessCenter}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Additions, Deductions, Loans & Leaves Summary Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 print:grid-cols-2 print:gap-2 print-page-break-avoid">
-            {/* Additions History */}
-            <div className="bg-white rounded-2xl shadow-flat border border-slate-200 overflow-hidden print:rounded print:border-slate-300">
-              <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 print:py-1">
-                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider print:text-[9px]">Additions History ({additionsList.length})</h4>
-              </div>
-              {additionsList.length === 0 ? (
-                <div className="p-3 text-xs text-slate-500">No additions recorded.</div>
-              ) : (
-                <table className="w-full text-left text-xs divide-y divide-slate-100 print:text-[8.5px]">
-                  <thead className="bg-slate-50 text-slate-600 font-semibold">
-                    <tr><th className="px-3 py-1">Add Code</th><th className="px-3 py-1">Amount</th><th className="px-3 py-1">Month/Year</th></tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {additionsList.slice(0, 10).map((a, i) => (
-                      <tr key={i}>
-                        <td className="px-3 py-1 font-medium">{a.addCode}</td>
-                        <td className="px-3 py-1 font-semibold text-emerald-600 font-mono">LKR {Number(a.addAmount).toLocaleString()}</td>
-                        <td className="px-3 py-1 mono-numeric">{a.addMonth}/{a.addYear}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            {/* Deductions History */}
-            <div className="bg-white rounded-2xl shadow-flat border border-slate-200 overflow-hidden print:rounded print:border-slate-300">
-              <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 print:py-1">
-                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider print:text-[9px]">Deductions History ({deductionsList.length})</h4>
-              </div>
-              {deductionsList.length === 0 ? (
-                <div className="p-3 text-xs text-slate-500">No deductions recorded.</div>
-              ) : (
-                <table className="w-full text-left text-xs divide-y divide-slate-100 print:text-[8.5px]">
-                  <thead className="bg-slate-50 text-slate-600 font-semibold">
-                    <tr><th className="px-3 py-1">Did Code</th><th className="px-3 py-1">Amount</th><th className="px-3 py-1">Month/Year</th></tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {deductionsList.slice(0, 10).map((d, i) => (
-                      <tr key={i}>
-                        <td className="px-3 py-1 font-medium">{d.didCode}</td>
-                        <td className="px-3 py-1 font-semibold text-rose-600 font-mono">LKR {Number(d.didAmount).toLocaleString()}</td>
-                        <td className="px-3 py-1 mono-numeric">{d.addMonth}/{d.addYear}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
         </div>
       )}
     </div>
