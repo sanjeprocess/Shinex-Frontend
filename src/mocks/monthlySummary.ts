@@ -69,12 +69,12 @@ export type MonthlySummary = {
     poyaDayExtra?: number
     statutoryHolidayCount?: number
     statutoryHolidayAmount?: number
+    statutoryHolidays?: Array<{ date: string; holidayName?: string; status: 'W' | 'N'; source: 'MANUAL' | 'ATTENDANCE'; amount: number }>
   }
 }
 
 import { list as listAttendance } from './attendance'
 import { list as listCustomers } from './customers'
-import { getEmployeeStatutoryEntries } from '../utils/statutoryHolidayManager'
 
 export const getMonthlySummary = async (epfNo: string, year: string, month: string): Promise<MonthlySummary> => {
   const cleanEpf = (epfNo || '').trim().toLowerCase()
@@ -83,16 +83,7 @@ export const getMonthlySummary = async (epfNo: string, year: string, month: stri
 
   try {
     const response = await api.get<MonthlySummary>('/process/monthly-summary', { params: { epfNo, year, month } })
-    if (response.data) {
-      const statMap = getEmployeeStatutoryEntries(cleanYear, cleanMonth)
-      const statEntry = statMap[cleanEpf]
-      if (statEntry && statEntry.holidayValue > 0) {
-        response.data.statutoryHolidayAmount = statEntry.holidayValue
-        if (!response.data.attendance) response.data.attendance = {}
-        response.data.attendance.statutoryHolidayAmount = statEntry.holidayValue
-      }
-      return response.data
-    }
+    if (response.data) return response.data
   } catch (err) {
     // Fall back to local calculation
   }
@@ -141,9 +132,8 @@ export const getMonthlySummary = async (epfNo: string, year: string, month: stri
   const nightRate = 150
   const nightAmount = Math.round(nightDays * nightRate * 100) / 100
 
-  const statMap = getEmployeeStatutoryEntries(cleanYear, cleanMonth)
-  const statEntry = statMap[cleanEpf]
-  const statutoryHolidayAmount = statEntry ? Number(statEntry.holidayValue || 0) : 0
+  // Statutory holiday pay is calculated by the server only
+  const statutoryHolidayAmount = 0
 
   const totalAdditions = dayAllowance + nightAllowance
   const grossSalary = normalAmount + otAmount + poyaAmount + nightAmount + totalAdditions + statutoryHolidayAmount

@@ -10,7 +10,6 @@ import {
   Database, ClipboardList, FileText, BarChart2, ArrowRightLeft,
   Calendar, CreditCard, BookOpen, MinusCircle, PlusCircle, Crown, Ban
 } from 'lucide-react';
-import { getStatutorySettings, saveStatutorySettings, StatutoryHolidaySettings } from '../../utils/statutoryHolidayManager';
 
 type ModKey = keyof AdminPermissions['modules'];
 
@@ -224,15 +223,6 @@ export default function AdminControlPage() {
   const [submitting, setSubmitting] = useState(false);
   const [deletingAdmin, setDeletingAdmin] = useState<AdminUser | null>(null);
   const [activeTab, setActiveTab] = useState<'account' | 'permissions'>('account');
-  const [statSettings, setStatSettings] = useState<StatutoryHolidaySettings>(() => getStatutorySettings());
-  const [statSettingsSaved, setStatSettingsSaved] = useState(false);
-
-  const handleSaveStatSettings = () => {
-    saveStatutorySettings(statSettings);
-    setStatSettingsSaved(true);
-    toast.success('Statutory holiday policy settings saved successfully');
-    setTimeout(() => setStatSettingsSaved(false), 2500);
-  };
 
   const canManageUsers = getCurrentUser().canManageUsers;
   const currentIsSuperAdmin = isSuperAdmin();
@@ -563,108 +553,6 @@ export default function AdminControlPage() {
               })}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      {/* ─── Statutory Holiday Policy & Rates (Admin Settings) ────────────────────────── */}
-      <div className="bg-[#1B2028] border border-slate-700/60 rounded-2xl p-6 shadow-xl space-y-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-700/60 pb-4">
-          <div>
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <Calendar size={18} className="text-[#3F9884]" /> Statutory Holiday Policy Rates (Admin Settings)
-            </h3>
-            <p className="text-xs text-slate-400 mt-1">
-              Configure rates for eligible employees who worked or did not work on statutory holidays. Values can be either a multiplier of the employee's Day Rate or a fixed amount.
-            </p>
-          </div>
-          <button
-            onClick={handleSaveStatSettings}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold shadow-md transition-all ${
-              statSettingsSaved
-                ? 'bg-emerald-600 text-white'
-                : 'bg-[#2F6F5E] hover:bg-[#3F9884] text-white'
-            }`}
-          >
-            {statSettingsSaved ? '✓ Saved!' : 'Save Policy Settings'}
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-          {/* Worked Rate */}
-          <div className="bg-[#14181F] border border-slate-700/50 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-emerald-400 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400"></span> Worked Rate
-              </span>
-              <span className="text-xs text-slate-400">For eligible employees who worked</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Rate Mode</label>
-                <select
-                  value={statSettings.workedRateType}
-                  onChange={e => setStatSettings(prev => ({ ...prev, workedRateType: e.target.value as any }))}
-                  className="w-full bg-[#1B2028] border border-slate-600 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#3F9884]"
-                >
-                  <option value="multiplier">Multiplier (e.g. 2.0x Day Rate)</option>
-                  <option value="fixed">Fixed Amount (LKR)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">
-                  {statSettings.workedRateType === 'multiplier' ? 'Multiplier (e.g. 2.0)' : 'Amount (LKR)'}
-                </label>
-                <input
-                  type="number"
-                  step={statSettings.workedRateType === 'multiplier' ? '0.1' : '1'}
-                  value={statSettings.workedRateValue}
-                  onChange={e => setStatSettings(prev => ({ ...prev, workedRateValue: Number(e.target.value) || 0 }))}
-                  className="w-full bg-[#1B2028] border border-slate-600 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#3F9884] font-mono"
-                />
-              </div>
-            </div>
-            <p className="text-[11px] text-slate-400 italic">
-              Example: If Day Value is LKR 2,000 → Holiday Value = {statSettings.workedRateType === 'multiplier' ? `LKR ${(2000 * statSettings.workedRateValue).toLocaleString()} (${statSettings.workedRateValue}x)` : `LKR ${statSettings.workedRateValue.toLocaleString()}`}
-            </p>
-          </div>
-
-          {/* Not Worked Rate */}
-          <div className="bg-[#14181F] border border-slate-700/50 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-amber-400 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-amber-400"></span> Not Worked Rate
-              </span>
-              <span className="text-xs text-slate-400">For eligible employees who did not work</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Rate Mode</label>
-                <select
-                  value={statSettings.notWorkedRateType}
-                  onChange={e => setStatSettings(prev => ({ ...prev, notWorkedRateType: e.target.value as any }))}
-                  className="w-full bg-[#1B2028] border border-slate-600 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#3F9884]"
-                >
-                  <option value="multiplier">Multiplier (e.g. 1.0x Day Rate)</option>
-                  <option value="fixed">Fixed Amount (LKR)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">
-                  {statSettings.notWorkedRateType === 'multiplier' ? 'Multiplier (e.g. 1.0)' : 'Amount (LKR)'}
-                </label>
-                <input
-                  type="number"
-                  step={statSettings.notWorkedRateType === 'multiplier' ? '0.1' : '1'}
-                  value={statSettings.notWorkedRateValue}
-                  onChange={e => setStatSettings(prev => ({ ...prev, notWorkedRateValue: Number(e.target.value) || 0 }))}
-                  className="w-full bg-[#1B2028] border border-slate-600 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#3F9884] font-mono"
-                />
-              </div>
-            </div>
-            <p className="text-[11px] text-slate-400 italic">
-              Example: If Day Value is LKR 200 → Holiday Value = {statSettings.notWorkedRateType === 'multiplier' ? `LKR ${(200 * statSettings.notWorkedRateValue).toLocaleString()} (${statSettings.notWorkedRateValue}x)` : `LKR ${statSettings.notWorkedRateValue.toLocaleString()}`}
-            </p>
-          </div>
         </div>
       </div>
 

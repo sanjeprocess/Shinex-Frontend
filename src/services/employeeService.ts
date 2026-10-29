@@ -20,9 +20,8 @@ export const list = async (businessCenter?: string): Promise<Employee[]> => {
         bankBranchName: e.bankBranchName || e.branchName || '',
         mealType: e.mealType || cached.mealType || 'Standard',
         mealValue: e.mealValue != null ? Number(e.mealValue) : (cached.mealValue != null ? Number(cached.mealValue) : 200),
-        statutoryHolidayEligible: e.statutoryHolidayEligible !== undefined
-          ? Boolean(e.statutoryHolidayEligible)
-          : (cachedStat.eligible !== undefined ? Boolean(cachedStat.eligible) : true),
+        // Stored in TBL_Emp_Master; an empty value means eligible (same as the form default)
+        statutoryHolidayEligible: e.statutoryHolidayEligible != null ? Boolean(e.statutoryHolidayEligible) : true,
         dayRate: e.dayRate != null ? Number(e.dayRate) : (cachedStat.dayRate != null ? Number(cachedStat.dayRate) : (e.basicSalary ? Number(e.basicSalary) : 2000))
       };
     });
@@ -62,7 +61,6 @@ export const create = async (e: Employee): Promise<Employee> => {
 
     const empStatCache = JSON.parse(localStorage.getItem('hsb_employee_statutory_settings') || '{}');
     empStatCache[e.epfNo.trim()] = {
-      eligible: e.statutoryHolidayEligible !== undefined ? Boolean(e.statutoryHolidayEligible) : true,
       dayRate: e.dayRate != null ? Number(e.dayRate) : (e.basicSalary ? Number(e.basicSalary) : 2000)
     };
     localStorage.setItem('hsb_employee_statutory_settings', JSON.stringify(empStatCache));
@@ -92,7 +90,6 @@ export const update = async (epf: string, e: Partial<Employee>): Promise<Employe
     const empStatCache = JSON.parse(localStorage.getItem('hsb_employee_statutory_settings') || '{}');
     empStatCache[epf.trim()] = {
       ...(empStatCache[epf.trim()] || {}),
-      ...(e.statutoryHolidayEligible !== undefined ? { eligible: Boolean(e.statutoryHolidayEligible) } : {}),
       ...(e.dayRate !== undefined ? { dayRate: Number(e.dayRate) } : {})
     };
     localStorage.setItem('hsb_employee_statutory_settings', JSON.stringify(empStatCache));

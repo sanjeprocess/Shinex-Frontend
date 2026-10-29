@@ -27,18 +27,13 @@ import {
 import { computePlantHours, resolvePlantSetting } from '../../utils/shiftHoursCalculator'
 import { logAuditAction } from '../../utils/auditLogger'
 import {
-  getStatutorySettings,
-  saveStatutorySettings,
-  getStatutoryMonthConfig,
-  saveStatutoryMonthConfig,
-  getEmployeeStatutoryEntries,
-  saveEmployeeStatutoryEntries,
-  computeHolidayValue,
-  detectEmployeeWorkedOnHoliday,
-  StatutoryHolidaySettings,
-  StatutoryMonthConfig,
-  EmployeeStatutoryEntry
-} from '../../utils/statutoryHolidayManager'
+  getMonth as getStatutoryMonth,
+  saveHoliday as saveStatutoryHoliday,
+  removeHoliday as removeStatutoryHoliday,
+  setStatus as setStatutoryStatus,
+  StatutoryMonth,
+  StatutoryStatus
+} from '../../services/statutoryHolidayService'
 import { v4 as uuid } from 'uuid'
 import * as XLSX from 'xlsx'
 
@@ -363,21 +358,21 @@ export default function AttendancePage() {
   const [filterEmployee, setFilterEmployee] = useState<string>('ALL')
   const [filterPlant, setFilterPlant] = useState<string>('ALL')
 
-  // View Mode: 'logs' (Daily logs table), 'savedRecords' (Month & Plant wise summary), or 'statutoryHolidays'
-  const [activeTab, setActiveTab] = useState<'logs' | 'savedRecords' | 'statutoryHolidays'>('logs')
+  // View Mode: 'logs' (Daily logs table) or 'savedRecords' (Month & Plant wise summary)
+  const [activeTab, setActiveTab] = useState<'logs' | 'savedRecords'>('logs')
+
+  // Statutory holidays of the selected month (stored on the server and used by the payslip)
   const [statYear, setStatYear] = useState<string>(() => String(new Date().getFullYear()))
   const [statMonth, setStatMonth] = useState<string>(() => String(new Date().getMonth() + 1).padStart(2, '0'))
-  const [statSettings, setStatSettings] = useState<StatutoryHolidaySettings>(() => getStatutorySettings())
-  const [statMonthConfig, setStatMonthConfig] = useState<StatutoryMonthConfig>(() =>
-    getStatutoryMonthConfig(String(new Date().getFullYear()), String(new Date().getMonth() + 1).padStart(2, '0'))
-  )
-  const [statEntries, setStatEntries] = useState<Record<string, EmployeeStatutoryEntry>>({})
-  const [statNewDate, setStatNewDate] = useState<string>('')
-  const [statNewName, setStatNewName] = useState<string>('')
-  const [statSearch, setStatSearch] = useState<string>('')
-  const [statPlantFilter, setStatPlantFilter] = useState<string>('ALL')
-  const [statFilterStatus, setStatFilterStatus] = useState<'ALL' | 'WORKED' | 'NOT_WORKED' | 'ELIGIBLE' | 'NOT_ELIGIBLE'>('ALL')
-  const [isSavingStat, setIsSavingStat] = useState<boolean>(false)
+  const [statData, setStatData] = useState<StatutoryMonth | null>(null)
+  const [statLoading, setStatLoading] = useState(false)
+  const [statHasHoliday, setStatHasHoliday] = useState(false)
+  const [statDrafts, setStatDrafts] = useState<Record<string, { holidayName: string; workingValue: string; notWorkingValue: string }>>({})
+  const [statNew, setStatNew] = useState({ date: '', holidayName: '', workingValue: '', notWorkingValue: '' })
+  const [statSearch, setStatSearch] = useState('')
+  const [statShowIneligible, setStatShowIneligible] = useState(false)
+  const [statBusy, setStatBusy] = useState(false)
+  const [statConfirm, setStatConfirm] = useState<{ title: string; message: string; action: () => Promise<void> } | null>(null)
   const [isSavingDb, setIsSavingDb] = useState(false)
   const [saveSummaries, setSaveSummaries] = useState<string[]>([])
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -1126,237 +1121,131 @@ export default function AttendancePage() {
     toast.info(`Opened logs for Plant ${group.plantCode} (${group.month}/${group.year})`);
   }
 
-  // Synchronize Statutory Holiday data when statYear or statMonth or rows or employeeList change
+  // Keep the statutory holiday period in step with the Year / Month log filters
   useEffect(() => {
-    const config = getStatutoryMonthConfig(statYear, statMonth);
-    setStatMonthConfig(config);
-    const saved = getEmployeeStatutoryEntries(statYear, statMonth);
-    const settings = getStatutorySettings();
-    setStatSettings(settings);
+    if (filterYear !== 'ALL') setStatYear(filterYear)
+    if (filterMonth !== 'ALL') setStatMonth(filterMonth)
+  }, [filterYear, filterMonth])
 
-    const updated: Record<string, EmployeeStatutoryEntry> = { ...saved };
-    employeeList.forEach(emp => {
-      const epf = (emp.epfNo || '').trim();
-      if (!epf) return;
-      const prev = updated[epf];
-      const eligible = prev ? prev.eligible : (emp.statutoryHolidayEligible !== false);
-      const worked = config?.hasHoliday && Array.isArray(config?.holidayDates) && config.holidayDates.length > 0
-        ? detectEmployeeWorkedOnHoliday(epf, config.holidayDates, rows)
-        : (prev ? prev.workedOnHoliday : false);
-      const dayValue = prev && prev.dayValue !== undefined
-        ? prev.dayValue
-        : (emp.dayRate || emp.basicSalary || 2000);
-      const holidayValue = config?.hasHoliday
-        ? computeHolidayValue(dayValue, eligible, worked, settings)
-        : 0;
-
-      updated[epf] = {
-        epfNo: epf,
-        employeeName: `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || epf,
-        plantCode: emp.plantCode || '',
-        sectionCode: emp.sectionCode || '',
-        eligible,
-        workedOnHoliday: worked,
-        dayValue,
-        holidayValue
-      };
-    });
-    setStatEntries(updated);
-  }, [statYear, statMonth, employeeList, rows]);
-
-  // Toggle Statutory Holiday in this month (Yes/No)
-  function handleToggleStatHoliday(hasHoliday: boolean) {
-    const newConfig = {
-      ...statMonthConfig,
-      year: statYear,
-      month: statMonth,
-      hasHoliday
-    };
-    setStatMonthConfig(newConfig);
-    saveStatutoryMonthConfig(newConfig);
-
-    setStatEntries(prev => {
-      const next: Record<string, EmployeeStatutoryEntry> = {};
-      Object.entries(prev).forEach(([epf, entry]) => {
-        const holidayVal = hasHoliday
-          ? computeHolidayValue(entry.dayValue, entry.eligible, entry.workedOnHoliday, statSettings)
-          : 0;
-        next[epf] = { ...entry, holidayValue: holidayVal };
-      });
-      return next;
-    });
-    toast.info(hasHoliday ? 'Statutory holiday enabled for this month. Please add holiday dates.' : 'Statutory holiday disabled for this month.');
-  }
-
-  // Add holiday date
-  function handleAddStatDate() {
-    if (!statNewDate) {
-      toast.error('Please select a holiday date');
-      return;
-    }
-    const cleanDate = statNewDate.trim();
-    if (statMonthConfig.holidayDates.includes(cleanDate)) {
-      toast.error('This date is already added');
-      return;
-    }
-    const newDates = [...statMonthConfig.holidayDates, cleanDate].sort();
-    const newConfig = {
-      ...statMonthConfig,
-      year: statYear,
-      month: statMonth,
-      hasHoliday: true,
-      holidayDates: newDates,
-      holidayName: statNewName ? statNewName.trim() : statMonthConfig.holidayName
-    };
-    setStatMonthConfig(newConfig);
-    saveStatutoryMonthConfig(newConfig);
-    setStatNewDate('');
-
-    // Re-detect workedOnHoliday for all employees
-    setStatEntries(prev => {
-      const next: Record<string, EmployeeStatutoryEntry> = {};
-      Object.entries(prev).forEach(([epf, entry]) => {
-        const worked = detectEmployeeWorkedOnHoliday(epf, newDates, rows);
-        const holidayVal = computeHolidayValue(entry.dayValue, entry.eligible, worked, statSettings);
-        next[epf] = { ...entry, workedOnHoliday: worked, holidayValue: holidayVal };
-      });
-      return next;
-    });
-    toast.success(`Holiday date ${cleanDate} added! Attendance records checked.`);
-  }
-
-  // Remove holiday date
-  function handleRemoveStatDate(dateToRemove: string) {
-    const newDates = statMonthConfig.holidayDates.filter(d => d !== dateToRemove);
-    const newConfig = {
-      ...statMonthConfig,
-      holidayDates: newDates
-    };
-    setStatMonthConfig(newConfig);
-    saveStatutoryMonthConfig(newConfig);
-
-    setStatEntries(prev => {
-      const next: Record<string, EmployeeStatutoryEntry> = {};
-      Object.entries(prev).forEach(([epf, entry]) => {
-        const worked = detectEmployeeWorkedOnHoliday(epf, newDates, rows);
-        const holidayVal = computeHolidayValue(entry.dayValue, entry.eligible, worked, statSettings);
-        next[epf] = { ...entry, workedOnHoliday: worked, holidayValue: holidayVal };
-      });
-      return next;
-    });
-    toast.info(`Removed holiday date ${dateToRemove}`);
-  }
-
-  // Edit employee Day Value in the table
-  function handleStatDayValueChange(epfNo: string, newDayVal: number) {
-    setStatEntries(prev => {
-      const entry = prev[epfNo];
-      if (!entry) return prev;
-      const holidayVal = statMonthConfig.hasHoliday
-        ? computeHolidayValue(newDayVal, entry.eligible, entry.workedOnHoliday, statSettings)
-        : 0;
-      return {
-        ...prev,
-        [epfNo]: { ...entry, dayValue: newDayVal, holidayValue: holidayVal }
-      };
-    });
-  }
-
-  // Toggle employee eligibility in the table
-  function handleStatEligibilityToggle(epfNo: string) {
-    setStatEntries(prev => {
-      const entry = prev[epfNo];
-      if (!entry) return prev;
-      const newEligible = !entry.eligible;
-      const holidayVal = statMonthConfig.hasHoliday
-        ? computeHolidayValue(entry.dayValue, newEligible, entry.workedOnHoliday, statSettings)
-        : 0;
-      return {
-        ...prev,
-        [epfNo]: { ...entry, eligible: newEligible, holidayValue: holidayVal }
-      };
-    });
-  }
-
-  // Toggle worked on holiday override in the table
-  function handleStatWorkedToggle(epfNo: string) {
-    setStatEntries(prev => {
-      const entry = prev[epfNo];
-      if (!entry) return prev;
-      const newWorked = !entry.workedOnHoliday;
-      const holidayVal = statMonthConfig.hasHoliday
-        ? computeHolidayValue(entry.dayValue, entry.eligible, newWorked, statSettings)
-        : 0;
-      return {
-        ...prev,
-        [epfNo]: { ...entry, workedOnHoliday: newWorked, holidayValue: holidayVal }
-      };
-    });
-  }
-
-  // Update policy rate inline
-  function handleUpdateStatSetting<K extends keyof StatutoryHolidaySettings>(field: K, val: StatutoryHolidaySettings[K]) {
-    const nextSettings = { ...statSettings, [field]: val };
-    setStatSettings(nextSettings);
-    saveStatutorySettings(nextSettings);
-
-    setStatEntries(prev => {
-      const next: Record<string, EmployeeStatutoryEntry> = {};
-      Object.entries(prev).forEach(([epf, entry]) => {
-        const holidayVal = statMonthConfig.hasHoliday
-          ? computeHolidayValue(entry.dayValue, entry.eligible, entry.workedOnHoliday, nextSettings)
-          : 0;
-        next[epf] = { ...entry, holidayValue: holidayVal };
-      });
-      return next;
-    });
-  }
-
-  // Save Statutory Holidays (Click Save -> values go to the payslip)
-  function handleSaveStatutoryHolidays() {
-    setIsSavingStat(true);
+  async function loadStatutory() {
+    setStatLoading(true)
     try {
-      saveStatutoryMonthConfig(statMonthConfig);
-      saveStatutorySettings(statSettings);
-      saveEmployeeStatutoryEntries(statYear, statMonth, statEntries);
-
-      window.dispatchEvent(new CustomEvent('hsb_statutory_holiday_saved', {
-        detail: { year: statYear, month: statMonth, entries: statEntries }
-      }));
-
-      toast.success(`Statutory holiday values saved and applied to payslips for ${statMonth}/${statYear}!`);
-    } catch {
-      toast.error('Failed to save statutory holiday entries');
+      const data = await getStatutoryMonth(statYear, statMonth, localStorage.getItem('hsb_active_bc') || '')
+      setStatData(data)
+      setStatHasHoliday(prev => data.holidays.length > 0 || (prev && statData?.year === data.year && statData?.month === data.month))
+      setStatDrafts(Object.fromEntries(data.holidays.map(h => [h.holidayDate, {
+        holidayName: h.holidayName || '',
+        workingValue: String(Number(h.workingValue) || 0),
+        notWorkingValue: String(Number(h.notWorkingValue) || 0)
+      }])))
+    } catch (err) {
+      console.error('Failed to load statutory holidays', err)
+      setStatData(null)
+      toast.error('Could not load statutory holidays from the server')
     } finally {
-      setIsSavingStat(false);
+      setStatLoading(false)
     }
   }
 
-  // Export to Excel
-  function exportStatutoryExcel() {
-    const list = Object.values(statEntries);
-    if (list.length === 0) {
-      toast.error('No employee records to export');
-      return;
-    }
-    const exportData = list.map(e => ({
-      'EPF No': e.epfNo,
-      'Employee Name': e.employeeName,
-      'Plant': e.plantCode || '—',
-      'Section': e.sectionCode || '—',
-      'Statutory Holiday Eligible': e.eligible ? 'Yes' : 'No',
-      'Worked on Holiday?': e.workedOnHoliday ? 'Worked' : 'Not worked',
-      'Day Value (LKR)': e.dayValue,
-      'Holiday Value (LKR)': e.holidayValue
-    }));
+  // Reload when the period changes or attendance is re-fetched (Working status is read from attendance)
+  useEffect(() => {
+    loadStatutory()
+  }, [statYear, statMonth, rows])
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, `Statutory ${statMonth}-${statYear}`);
-    XLSX.writeFile(wb, `statutory-holidays-${statYear}-${statMonth}.xlsx`);
-    toast.success('Statutory holiday spreadsheet exported!');
+  function parseStatValue(label: string, raw: string): number | null {
+    const value = raw.trim() === '' ? 0 : Number(raw)
+    if (!Number.isFinite(value) || value < 0) {
+      toast.error(`${label} must be a positive number`)
+      return null
+    }
+    return Math.round(value * 100) / 100
   }
 
+  async function runStat(action: () => Promise<void>, failMessage: string) {
+    setStatBusy(true)
+    try {
+      await action()
+      await loadStatutory()
+    } catch (err: any) {
+      console.error(failMessage, err)
+      const detail = typeof err?.response?.data === 'string' ? `: ${err.response.data}` : ''
+      toast.error(`${failMessage}${detail}`)
+    } finally {
+      setStatBusy(false)
+    }
+  }
+
+  // "Statutory holiday in this month?" Yes / No
+  function handleStatToggle(hasHoliday: boolean) {
+    const existing = statData?.holidays || []
+    if (hasHoliday || existing.length === 0) {
+      setStatHasHoliday(hasHoliday)
+      return
+    }
+    setStatConfirm({
+      title: 'Remove Statutory Holidays',
+      message: `Remove all ${existing.length} statutory holiday date(s) for ${statMonth}/${statYear}? Statutory holiday pay for this month will be Rs. 0.`,
+      action: () => runStat(async () => {
+        for (const h of existing) await removeStatutoryHoliday(h.holidayDate)
+        setStatHasHoliday(false)
+        toast.success(`Statutory holidays removed for ${statMonth}/${statYear}`)
+      }, 'Failed to remove statutory holidays')
+    })
+  }
+
+  function handleAddStatHoliday() {
+    const date = statNew.date
+    if (!date) {
+      toast.error('Please select the holiday date')
+      return
+    }
+    if (!date.startsWith(`${statYear}-${statMonth}-`)) {
+      toast.error(`The holiday date must be in ${statMonth}/${statYear}`)
+      return
+    }
+    if (statData?.holidays.some(h => h.holidayDate === date)) {
+      toast.error('This date is already a statutory holiday')
+      return
+    }
+    const notWorkingValue = parseStatValue('Not Working Value', statNew.notWorkingValue)
+    const workingValue = parseStatValue('Working Value', statNew.workingValue)
+    if (notWorkingValue === null || workingValue === null) return
+
+    runStat(async () => {
+      await saveStatutoryHoliday({ holidayDate: date, holidayName: statNew.holidayName, workingValue, notWorkingValue })
+      // Keep the values for the next holiday; most months use the same amounts
+      setStatNew(prev => ({ ...prev, date: '', holidayName: '' }))
+      toast.success(`Statutory holiday ${date} added`)
+    }, 'Failed to add statutory holiday')
+  }
+
+  function handleSaveStatHoliday(date: string) {
+    const draft = statDrafts[date]
+    if (!draft) return
+    const notWorkingValue = parseStatValue('Not Working Value', draft.notWorkingValue)
+    const workingValue = parseStatValue('Working Value', draft.workingValue)
+    if (notWorkingValue === null || workingValue === null) return
+
+    runStat(async () => {
+      await saveStatutoryHoliday({ holidayDate: date, holidayName: draft.holidayName, workingValue, notWorkingValue })
+      toast.success(`Statutory holiday ${date} updated`)
+    }, 'Failed to update statutory holiday')
+  }
+
+  function handleRemoveStatHoliday(date: string) {
+    setStatConfirm({
+      title: 'Remove Statutory Holiday',
+      message: `Remove the statutory holiday on ${date}? Working / Not Working selections for that day will also be removed.`,
+      action: () => runStat(async () => {
+        await removeStatutoryHoliday(date)
+        toast.success(`Statutory holiday ${date} removed`)
+      }, 'Failed to remove statutory holiday')
+    })
+  }
+
+  function handleStatStatusChange(date: string, epfNo: string, status: StatutoryStatus | 'AUTO') {
+    runStat(() => setStatutoryStatus(date, epfNo, status), 'Failed to update Working / Not Working')
+  }
   // Custom Form Select Handlers
   function handleNumericInput(field: 'workingDays' | 'noOfStaff' | 'dasForAttAllowance' | 'basicSalary' | 'dayAllowance' | 'nightAllowance' | 'sundayPoyaExtra' | 'noOfMeal' | 'totalMealValue', label: string, value: string) {
     if (value === '') {
@@ -1577,6 +1466,31 @@ export default function AttendancePage() {
       dayTypeNode = <span className="tag-pill bg-rose-50 text-rose-700 border border-rose-200">Special</span>
     }
 
+    // Statutory holiday label (+ Working / Not Working and value for eligible employees)
+    const rowDate = String(r.dayIn || '').slice(0, 10)
+    const statHoliday = statHolidayMap.get(rowDate)
+    if (statHoliday) {
+      const statEmp = statEmployeeMap.get((r.epfNo || '').trim().toLowerCase())
+      const statLine = statEmp?.lines.find(l => l.date === rowDate)
+      dayTypeNode = (
+        <div className="flex flex-col items-start gap-0.5">
+          {dayTypeNode}
+          <span className="tag-pill bg-amber-50 text-amber-800 border border-amber-200" title={statHoliday.holidayName || 'Statutory Holiday'}>
+            Statutory Holiday
+          </span>
+          {statEmp && (
+            statEmp.eligible && statLine ? (
+              <span className="text-[10px] text-slate-500">
+                {statLine.status === 'W' ? 'Working' : 'Not Working'} · Rs. {Number(statLine.amount).toLocaleString()}
+              </span>
+            ) : (
+              <span className="text-[10px] text-slate-400">Not eligible</span>
+            )
+          )}
+        </div>
+      )
+    }
+
     // OT Node
     const otVal = Number(r.totalOt) || 0
     const otNode = otVal > 0 ? (
@@ -1610,41 +1524,34 @@ export default function AttendancePage() {
     }
   })
 
-  // Filtered and calculated statutory holiday rows
-  const statList = useMemo(() => {
-    return Object.values(statEntries).filter(e => {
-      if (statPlantFilter !== 'ALL' && e.plantCode !== statPlantFilter) {
-        return false
-      }
-      if (statFilterStatus === 'ELIGIBLE' && !e.eligible) return false
-      if (statFilterStatus === 'NOT_ELIGIBLE' && e.eligible) return false
-      if (statFilterStatus === 'WORKED' && !e.workedOnHoliday) return false
-      if (statFilterStatus === 'NOT_WORKED' && e.workedOnHoliday) return false
-      if (statSearch.trim()) {
-        const query = statSearch.toLowerCase()
-        const match = (e.epfNo || '').toLowerCase().includes(query) || (e.employeeName || '').toLowerCase().includes(query)
-        if (!match) return false
-      }
-      return true
+  // Statutory holiday lookups for the logs table and the panel
+  const statHolidayMap = useMemo(() => {
+    return new Map((statData?.holidays || []).map(h => [h.holidayDate, h]))
+  }, [statData])
+
+  const statEmployeeMap = useMemo(() => {
+    return new Map((statData?.employees || []).map(e => [(e.epfNo || '').trim().toLowerCase(), e]))
+  }, [statData])
+
+  const statEmployeeRows = useMemo(() => {
+    const query = statSearch.trim().toLowerCase()
+    return (statData?.employees || []).filter(e => {
+      if (!statShowIneligible && !e.eligible) return false
+      if (!query) return true
+      return (e.epfNo || '').toLowerCase().includes(query) || (e.employeeName || '').toLowerCase().includes(query)
     })
-  }, [statEntries, statPlantFilter, statFilterStatus, statSearch])
+  }, [statData, statSearch, statShowIneligible])
 
-  const statMetrics = useMemo(() => {
-    const all = Object.values(statEntries)
-    const totalEmployees = all.length
-    const eligibleCount = all.filter(e => e.eligible).length
-    const workedCount = all.filter(e => e.eligible && e.workedOnHoliday).length
-    const notWorkedCount = all.filter(e => e.eligible && !e.workedOnHoliday).length
-    const totalAmount = all.reduce((sum, e) => sum + (e.holidayValue || 0), 0)
+  const statTotals = useMemo(() => {
+    const all = statData?.employees || []
+    const eligible = all.filter(e => e.eligible)
     return {
-      totalEmployees,
-      eligibleCount,
-      workedCount,
-      notWorkedCount,
-      totalAmount
+      employees: all.length,
+      eligible: eligible.length,
+      workingDays: eligible.reduce((n, e) => n + e.lines.filter(l => l.status === 'W').length, 0),
+      total: Math.round(eligible.reduce((sum, e) => sum + (Number(e.total) || 0), 0) * 100) / 100
     }
-  }, [statEntries])
-
+  }, [statData])
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1722,7 +1629,7 @@ export default function AttendancePage() {
         </div>
       )}
 
-      {/* Tabs: Daily Logs vs Saved Records vs Statutory Holidays */}
+      {/* Tabs: Daily Logs vs Saved Records */}
       <div className="flex items-center border-b border-slate-200 gap-4">
         <button
           type="button"
@@ -1749,23 +1656,6 @@ export default function AttendancePage() {
           <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 text-slate-600 font-mono">
             {savedRecordsGroups.length}
           </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('statutoryHolidays')}
-          className={`pb-2.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${
-            activeTab === 'statutoryHolidays'
-              ? 'border-[#2F6F5E] text-[#2F6F5E]'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <Calendar size={13} />
-          <span>Statutory Holidays</span>
-          {statMonthConfig?.hasHoliday && Array.isArray(statMonthConfig?.holidayDates) && statMonthConfig.holidayDates.length > 0 && (
-            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-semibold">
-              {statMonthConfig.holidayDates.length} date{statMonthConfig.holidayDates.length !== 1 ? 's' : ''}
-            </span>
-          )}
         </button>
       </div>
 
@@ -1930,542 +1820,250 @@ export default function AttendancePage() {
             </div>
           </div>
         </div>
-      ) : activeTab === 'statutoryHolidays' ? (
+      ) : (
         <div className="space-y-4">
-          {/* Top Control Bar: Month, Year, and Actions */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-flat flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold uppercase tracking-wider">
-                <CalendarDays size={16} className="text-[#2F6F5E]" />
-                <span>Select Period:</span>
+          {/* Statutory Holidays of the selected month */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-flat overflow-hidden">
+            <div className="p-3.5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-start gap-2">
+                <CalendarDays size={16} className="text-[#2F6F5E] mt-0.5" />
+                <div>
+                  <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider">Statutory Holidays</h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Eligible employees get the Working or Not Working value for each holiday. The monthly total is paid as Statutory Holiday Pay.
+                  </p>
+                </div>
               </div>
-
-              {/* Year Select */}
-              <div className="flex items-center gap-1">
-                <label className="text-xs text-slate-600 font-medium">Year:</label>
+              <div className="flex flex-wrap items-center gap-2">
                 <select
                   value={statYear}
                   onChange={e => setStatYear(e.target.value)}
-                  className="form-input text-xs py-1 px-2.5 h-8 font-semibold"
+                  className="form-input text-xs py-1 px-2 h-8"
                 >
                   {['2024', '2025', '2026', '2027', '2028'].map(y => (
                     <option key={y} value={y}>{y}</option>
                   ))}
                 </select>
-              </div>
-
-              {/* Month Select */}
-              <div className="flex items-center gap-1">
-                <label className="text-xs text-slate-600 font-medium">Month:</label>
                 <select
                   value={statMonth}
                   onChange={e => setStatMonth(e.target.value)}
-                  className="form-input text-xs py-1 px-2.5 h-8 font-semibold"
+                  className="form-input text-xs py-1 px-2 h-8"
                 >
                   {[
-                    { val: '01', name: '01 - January' },
-                    { val: '02', name: '02 - February' },
-                    { val: '03', name: '03 - March' },
-                    { val: '04', name: '04 - April' },
-                    { val: '05', name: '05 - May' },
-                    { val: '06', name: '06 - June' },
-                    { val: '07', name: '07 - July' },
-                    { val: '08', name: '08 - August' },
-                    { val: '09', name: '09 - September' },
-                    { val: '10', name: '10 - October' },
-                    { val: '11', name: '11 - November' },
-                    { val: '12', name: '12 - December' },
+                    { val: '01', name: 'Jan' }, { val: '02', name: 'Feb' }, { val: '03', name: 'Mar' },
+                    { val: '04', name: 'Apr' }, { val: '05', name: 'May' }, { val: '06', name: 'Jun' },
+                    { val: '07', name: 'Jul' }, { val: '08', name: 'Aug' }, { val: '09', name: 'Sep' },
+                    { val: '10', name: 'Oct' }, { val: '11', name: 'Nov' }, { val: '12', name: 'Dec' },
                   ].map(m => (
-                    <option key={m.val} value={m.val}>{m.name}</option>
+                    <option key={m.val} value={m.val}>{m.val} - {m.name}</option>
                   ))}
                 </select>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={exportStatutoryExcel}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-colors"
-                title="Export current table to Excel"
-              >
-                <FileSpreadsheet size={14} className="text-emerald-700" />
-                <span>Export Excel</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveStatutoryHolidays}
-                disabled={isSavingStat}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#2F6F5E] hover:bg-[#25584a] text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
-              >
-                <Save size={14} />
-                <span>{isSavingStat ? 'Saving to Payslips...' : 'Save & Apply to Payslip'}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Step 1: Statutory Holiday in this Month? */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-flat space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-              <div>
-                <span className="text-[11px] font-bold text-teal-700 uppercase tracking-wider">Step 1</span>
-                <h3 className="text-sm font-bold text-slate-800">Statutory holiday in this month?</h3>
-                <p className="text-xs text-slate-500">
-                  Specify whether a statutory holiday occurs in {statMonth}/{statYear}.
-                </p>
-              </div>
-
-              {/* Yes / No Toggle buttons */}
-              <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => handleToggleStatHoliday(true)}
-                  className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${
-                    statMonthConfig.hasHoliday
-                      ? 'bg-emerald-700 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  ✓ Yes (Holiday in Month)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleToggleStatHoliday(false)}
-                  className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${
-                    !statMonthConfig.hasHoliday
-                      ? 'bg-slate-700 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  ✕ No (No Holiday)
-                </button>
-              </div>
-            </div>
-
-            {/* If Yes: Add holiday date(s) */}
-            {statMonthConfig.hasHoliday ? (
-              <div className="space-y-3 pt-1">
-                <div className="flex flex-wrap items-end gap-3 bg-emerald-50/50 border border-emerald-100 p-3 rounded-lg">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Holiday Date:
-                    </label>
-                    <input
-                      type="date"
-                      value={statNewDate}
-                      onChange={e => setStatNewDate(e.target.value)}
-                      className="form-input text-xs py-1 px-2.5 h-8 bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Holiday Name / Description (Optional):
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Full Moon Poya Day / Deepavali"
-                      value={statNewName}
-                      onChange={e => setStatNewName(e.target.value)}
-                      className="form-input text-xs py-1 px-2.5 h-8 bg-white min-w-[240px]"
-                    />
-                  </div>
+                <span className="text-xs text-slate-600 font-medium ml-1">Statutory holiday in this month?</span>
+                <div className="flex rounded-lg bg-slate-100 p-0.5 border">
                   <button
                     type="button"
-                    onClick={handleAddStatDate}
-                    className="flex items-center gap-1 bg-[#2F6F5E] hover:bg-[#25584a] text-white px-3.5 py-1.5 rounded-md text-xs font-semibold shadow-xs h-8"
+                    disabled={statBusy}
+                    onClick={() => handleStatToggle(true)}
+                    className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${statHasHoliday ? 'bg-[#2F6F5E] text-white shadow' : 'text-slate-600 hover:text-slate-900'}`}
                   >
-                    + Add Date
+                    Yes
+                  </button>
+                  <button
+                    type="button"
+                    disabled={statBusy}
+                    onClick={() => handleStatToggle(false)}
+                    className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${!statHasHoliday ? 'bg-white shadow text-slate-900' : 'text-slate-600 hover:text-slate-900'}`}
+                  >
+                    No
                   </button>
                 </div>
+              </div>
+            </div>
 
-                {/* Display added dates */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-600">Configured Holiday Date(s):</span>
-                  {(!Array.isArray(statMonthConfig?.holidayDates) || statMonthConfig.holidayDates.length === 0) ? (
-                    <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                      ⚠️ No dates added yet. Please add a date above to check attendance automatically.
-                    </span>
-                  ) : (
-                    (statMonthConfig.holidayDates || []).map(date => (
-                      <span
-                        key={date}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-900 border border-emerald-200"
-                      >
-                        <Calendar size={12} className="text-emerald-700" />
-                        <span className="font-semibold">{date}</span>
-                        {statMonthConfig.holidayName && (
-                          <span className="text-[11px] text-emerald-800">({statMonthConfig.holidayName})</span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveStatDate(date)}
-                          className="hover:bg-emerald-200 rounded-full p-0.5 text-emerald-700 hover:text-emerald-950 transition-colors"
-                          title="Remove date"
-                        >
-                          <X size={12} />
-                        </button>
-                      </span>
-                    ))
-                  )}
-                </div>
+            {statLoading && !statData ? (
+              <div className="px-4 py-3 text-xs text-slate-500">Loading statutory holidays...</div>
+            ) : !statHasHoliday ? (
+              <div className="px-4 py-3 text-xs text-slate-500">
+                No statutory holiday in {statMonth}/{statYear}. Statutory holiday pay for this month is <strong>Rs. 0</strong>.
               </div>
             ) : (
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600 flex items-center gap-2">
-                <Info size={15} className="text-slate-400 shrink-0" />
-                <span>
-                  No statutory holiday for this month. All employees will have a statutory holiday value of <strong>Rs. 0</strong>.
-                </span>
+              <div className="p-3.5 space-y-4">
+                {/* Holiday dates with their values */}
+                <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-50 text-slate-600 font-semibold border-b">
+                      <tr>
+                        <th className="p-2.5">Holiday Date</th>
+                        <th className="p-2.5">Holiday Name</th>
+                        <th className="p-2.5">Not Working Value (LKR)</th>
+                        <th className="p-2.5">Working Value (LKR)</th>
+                        <th className="p-2.5 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(statData?.holidays || []).map(h => {
+                        const draft = statDrafts[h.holidayDate] || { holidayName: '', workingValue: '0', notWorkingValue: '0' }
+                        const changed = draft.holidayName !== (h.holidayName || '') ||
+                          Number(draft.workingValue) !== Number(h.workingValue) ||
+                          Number(draft.notWorkingValue) !== Number(h.notWorkingValue)
+                        const setDraft = (patch: Partial<typeof draft>) =>
+                          setStatDrafts(prev => ({ ...prev, [h.holidayDate]: { ...draft, ...patch } }))
+                        return (
+                          <tr key={h.holidayDate}>
+                            <td className="p-2.5 font-mono font-semibold text-slate-800">{h.holidayDate}</td>
+                            <td className="p-2.5">
+                              <input value={draft.holidayName} onChange={e => setDraft({ holidayName: e.target.value })} placeholder="e.g. Deepavali" className="form-input text-xs py-1 px-2 h-8 w-full min-w-[140px]" />
+                            </td>
+                            <td className="p-2.5">
+                              <input type="number" min={0} step="0.01" value={draft.notWorkingValue} onChange={e => setDraft({ notWorkingValue: e.target.value })} className="form-input text-xs py-1 px-2 h-8 w-28 mono-numeric" />
+                            </td>
+                            <td className="p-2.5">
+                              <input type="number" min={0} step="0.01" value={draft.workingValue} onChange={e => setDraft({ workingValue: e.target.value })} className="form-input text-xs py-1 px-2 h-8 w-28 mono-numeric" />
+                            </td>
+                            <td className="p-2.5 text-right whitespace-nowrap">
+                              <button
+                                type="button"
+                                disabled={statBusy || !changed}
+                                onClick={() => handleSaveStatHoliday(h.holidayDate)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 mr-1.5 bg-[#2F6F5E] hover:bg-[#25584a] text-white rounded text-xs font-semibold disabled:opacity-40"
+                              >
+                                <Save size={12} />
+                                <span>Save</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={statBusy}
+                                onClick={() => handleRemoveStatHoliday(h.holidayDate)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 border border-rose-200 text-rose-700 hover:bg-rose-50 rounded text-xs font-semibold disabled:opacity-40"
+                              >
+                                <Trash2 size={12} />
+                                <span>Remove</span>
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                      <tr className="bg-emerald-50/40">
+                        <td className="p-2.5">
+                          <input
+                            type="date"
+                            value={statNew.date}
+                            min={`${statYear}-${statMonth}-01`}
+                            max={`${statYear}-${statMonth}-${String(new Date(Number(statYear), Number(statMonth), 0).getDate()).padStart(2, '0')}`}
+                            onChange={e => setStatNew(prev => ({ ...prev, date: e.target.value }))}
+                            className="form-input text-xs py-1 px-2 h-8"
+                          />
+                        </td>
+                        <td className="p-2.5">
+                          <input value={statNew.holidayName} onChange={e => setStatNew(prev => ({ ...prev, holidayName: e.target.value }))} placeholder="Holiday name (optional)" className="form-input text-xs py-1 px-2 h-8 w-full min-w-[140px]" />
+                        </td>
+                        <td className="p-2.5">
+                          <input type="number" min={0} step="0.01" value={statNew.notWorkingValue} onChange={e => setStatNew(prev => ({ ...prev, notWorkingValue: e.target.value }))} placeholder="1000" className="form-input text-xs py-1 px-2 h-8 w-28 mono-numeric" />
+                        </td>
+                        <td className="p-2.5">
+                          <input type="number" min={0} step="0.01" value={statNew.workingValue} onChange={e => setStatNew(prev => ({ ...prev, workingValue: e.target.value }))} placeholder="2000" className="form-input text-xs py-1 px-2 h-8 w-28 mono-numeric" />
+                        </td>
+                        <td className="p-2.5 text-right">
+                          <button
+                            type="button"
+                            disabled={statBusy}
+                            onClick={handleAddStatHoliday}
+                            className="inline-flex items-center gap-1 px-3 py-1 bg-[#2F6F5E] hover:bg-[#25584a] text-white rounded text-xs font-semibold disabled:opacity-40"
+                          >
+                            + Add Holiday
+                          </button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Employee Working / Not Working per holiday */}
+                {(statData?.holidays.length || 0) > 0 && (
+                  <div className="border border-slate-200 rounded-lg overflow-hidden">
+                    <div className="p-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                        <span className="px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-700">Eligible: <strong>{statTotals.eligible}</strong> of {statTotals.employees}</span>
+                        <span className="px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-700">Working days: <strong>{statTotals.workingDays}</strong></span>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800">Total pay: <strong>Rs. {statTotals.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-1 text-[11px] text-slate-600 cursor-pointer">
+                          <input type="checkbox" checked={statShowIneligible} onChange={e => setStatShowIneligible(e.target.checked)} />
+                          <span>Show not eligible</span>
+                        </label>
+                        <input value={statSearch} onChange={e => setStatSearch(e.target.value)} placeholder="Search employee or EPF..." className="form-input text-xs py-1 px-2 h-8 w-48" />
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-white text-slate-600 font-semibold border-b sticky top-0">
+                          <tr>
+                            <th className="p-2.5">Employee</th>
+                            {(statData?.holidays || []).map(h => (
+                              <th key={h.holidayDate} className="p-2.5">
+                                <div className="font-mono">{h.holidayDate}</div>
+                                {h.holidayName && <div className="text-[10px] font-normal text-slate-400">{h.holidayName}</div>}
+                              </th>
+                            ))}
+                            <th className="p-2.5 text-right">Statutory Holiday Pay</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {statEmployeeRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={(statData?.holidays.length || 0) + 2} className="p-6 text-center text-slate-400">
+                                No eligible employees found. Tick "Statutory Holiday Eligible" on the employee profile.
+                              </td>
+                            </tr>
+                          ) : statEmployeeRows.map(emp => (
+                            <tr key={emp.epfNo} className={emp.eligible ? '' : 'bg-slate-50/70 text-slate-400'}>
+                              <td className="p-2.5">
+                                <div className="font-semibold text-slate-800">{emp.employeeName || emp.epfNo}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">
+                                  EPF: {emp.epfNo}{emp.plantCode ? ` · ${emp.plantCode}` : ''}
+                                  {!emp.eligible && <span className="ml-1.5 px-1 rounded bg-slate-200 text-slate-600 font-sans">Not eligible</span>}
+                                </div>
+                              </td>
+                              {emp.lines.map(line => (
+                                <td key={line.date} className="p-2.5">
+                                  {emp.eligible ? (
+                                    <div className="space-y-0.5">
+                                      <select
+                                        value={line.source === 'MANUAL' ? line.status : 'AUTO'}
+                                        disabled={statBusy}
+                                        onChange={e => handleStatStatusChange(line.date, emp.epfNo, e.target.value as StatutoryStatus | 'AUTO')}
+                                        className="form-input text-xs py-0.5 px-1.5 h-7"
+                                      >
+                                        <option value="AUTO">From attendance</option>
+                                        <option value="W">Working</option>
+                                        <option value="N">Not Working</option>
+                                      </select>
+                                      <div className="text-[10px]">
+                                        <span className={`font-semibold ${line.status === 'W' ? 'text-teal-700' : 'text-amber-700'}`}>
+                                          {line.status === 'W' ? 'Working' : 'Not Working'}
+                                        </span>
+                                        <span className="text-slate-500"> · Rs. {Number(line.amount).toLocaleString()}</span>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <span>—</span>
+                                  )}
+                                </td>
+                              ))}
+                              <td className="p-2.5 text-right font-mono font-semibold text-slate-900">
+                                Rs. {Number(emp.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
-
-          {/* Step 2: Admin Rates Policy Overview */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-flat space-y-2">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
-              <div>
-                <span className="text-[11px] font-bold text-teal-700 uppercase tracking-wider">Step 2</span>
-                <h3 className="text-sm font-bold text-slate-800">Statutory Holiday Pay Policy Rates</h3>
-                <p className="text-xs text-slate-500">
-                  Configured in Admin Settings. You can also adjust rates directly below for live recalculation.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-              {/* Worked Rate Card */}
-              <div className="p-3 bg-emerald-50/40 rounded-lg border border-emerald-100 flex flex-col justify-between gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-emerald-900">Worked Rate (Eligible & Worked)</span>
-                  <span className="text-[11px] text-emerald-700 font-medium">
-                    {statSettings.workedRateType === 'multiplier'
-                      ? `${statSettings.workedRateValue}x Day Rate`
-                      : `Fixed Rs. ${statSettings.workedRateValue.toLocaleString()}`}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={statSettings.workedRateType}
-                    onChange={e => handleUpdateStatSetting('workedRateType', e.target.value as 'fixed' | 'multiplier')}
-                    className="form-input text-xs py-1 px-2 h-7 bg-white"
-                  >
-                    <option value="multiplier">Multiplier of Day Rate</option>
-                    <option value="fixed">Fixed Amount (LKR)</option>
-                  </select>
-                  <NumericInput
-                    value={statSettings.workedRateValue}
-                    onChange={e => handleUpdateStatSetting('workedRateValue', Number(e.target.value) || 0)}
-                    className="form-input text-xs py-1 px-2 h-7 w-24 bg-white font-mono"
-                  />
-                  <span className="text-xs text-slate-500">
-                    {statSettings.workedRateType === 'multiplier' ? 'x' : 'LKR'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Not Worked Rate Card */}
-              <div className="p-3 bg-amber-50/40 rounded-lg border border-amber-100 flex flex-col justify-between gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-amber-900">Not Worked Rate (Eligible & Not Worked)</span>
-                  <span className="text-[11px] text-amber-700 font-medium">
-                    {statSettings.notWorkedRateType === 'multiplier'
-                      ? `${statSettings.notWorkedRateValue}x Day Rate`
-                      : `Fixed Rs. ${statSettings.notWorkedRateValue.toLocaleString()}`}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={statSettings.notWorkedRateType}
-                    onChange={e => handleUpdateStatSetting('notWorkedRateType', e.target.value as 'fixed' | 'multiplier')}
-                    className="form-input text-xs py-1 px-2 h-7 bg-white"
-                  >
-                    <option value="multiplier">Multiplier of Day Rate</option>
-                    <option value="fixed">Fixed Amount (LKR)</option>
-                  </select>
-                  <NumericInput
-                    value={statSettings.notWorkedRateValue}
-                    onChange={e => handleUpdateStatSetting('notWorkedRateValue', Number(e.target.value) || 0)}
-                    className="form-input text-xs py-1 px-2 h-7 w-24 bg-white font-mono"
-                  />
-                  <span className="text-xs text-slate-500">
-                    {statSettings.notWorkedRateType === 'multiplier' ? 'x' : 'LKR'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Step 3: Employee Table */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-flat overflow-hidden">
-            <div className="p-4 border-b border-slate-100 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <span className="text-[11px] font-bold text-teal-700 uppercase tracking-wider">Step 3</span>
-                  <h3 className="text-sm font-bold text-slate-800">
-                    Employee Statutory Holiday Table ({statList.length} of {statMetrics.totalEmployees})
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    "Worked on holiday?" is auto-filled from attendance. Admin can edit Day Value and eligibility.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleSaveStatutoryHolidays}
-                    disabled={isSavingStat}
-                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#2F6F5E] hover:bg-[#25584a] text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
-                  >
-                    <Save size={14} />
-                    <span>{isSavingStat ? 'Saving...' : 'Save to Payslip'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* KPI Badges */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-                <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
-                  <div className="text-[11px] text-slate-500">Total Employees</div>
-                  <div className="text-base font-bold text-slate-800 font-mono">{statMetrics.totalEmployees}</div>
-                </div>
-                <div className="p-2.5 bg-emerald-50/60 rounded-lg border border-emerald-200">
-                  <div className="text-[11px] text-emerald-700">Eligible Employees</div>
-                  <div className="text-base font-bold text-emerald-800 font-mono">{statMetrics.eligibleCount}</div>
-                </div>
-                <div className="p-2.5 bg-teal-50/60 rounded-lg border border-teal-200">
-                  <div className="text-[11px] text-teal-700">Worked on Holiday</div>
-                  <div className="text-base font-bold text-teal-800 font-mono">{statMetrics.workedCount}</div>
-                </div>
-                <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
-                  <div className="text-[11px] text-slate-500">Total Payout</div>
-                  <div className="text-base font-bold text-[#2F6F5E] font-mono">
-                    Rs. {statMetrics.totalAmount.toLocaleString()}
-                  </div>
-                </div>
-              </div>
-
-              {/* Search & Filter row */}
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <SearchInput
-                  value={statSearch}
-                  onChange={setStatSearch}
-                  placeholder="Search employee or EPF..."
-                />
-
-                <select
-                  value={statPlantFilter}
-                  onChange={e => setStatPlantFilter(e.target.value)}
-                  className="form-input text-xs py-1 px-2.5 h-8 max-w-[160px]"
-                >
-                  <option value="ALL">All Plants</option>
-                  {customerList.map(c => (
-                    <option key={c.code} value={c.code}>{c.code} - {c.name}</option>
-                  ))}
-                </select>
-
-                {/* Filter chips */}
-                <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setStatFilterStatus('ALL')}
-                    className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors ${
-                      statFilterStatus === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStatFilterStatus('WORKED')}
-                    className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors ${
-                      statFilterStatus === 'WORKED' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Worked
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStatFilterStatus('NOT_WORKED')}
-                    className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors ${
-                      statFilterStatus === 'NOT_WORKED' ? 'bg-white text-amber-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Not Worked
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStatFilterStatus('ELIGIBLE')}
-                    className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors ${
-                      statFilterStatus === 'ELIGIBLE' ? 'bg-white text-teal-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Eligible
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStatFilterStatus('NOT_ELIGIBLE')}
-                    className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors ${
-                      statFilterStatus === 'NOT_ELIGIBLE' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Ineligible
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[11px]">
-                  <tr>
-                    <th className="py-2.5 px-3">Employee</th>
-                    <th className="py-2.5 px-3 text-center">Eligible (tick)</th>
-                    <th className="py-2.5 px-3 text-center">Worked on holiday?</th>
-                    <th className="py-2.5 px-3 text-right">Day Value (LKR)</th>
-                    <th className="py-2.5 px-3 text-right">Holiday Value (LKR)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {statList.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="py-8 text-center text-slate-400">
-                        No employees found matching filter criteria.
-                      </td>
-                    </tr>
-                  ) : (
-                    statList.map(entry => (
-                      <tr key={entry.epfNo} className="hover:bg-slate-50/70 transition-colors">
-                        {/* Employee */}
-                        <td className="py-2 px-3">
-                          <div className="font-semibold text-slate-800">
-                            {entry.employeeName}
-                          </div>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="font-mono text-[11px] text-slate-500">
-                              EPF: {entry.epfNo}
-                            </span>
-                            {entry.plantCode && (
-                              <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-100 text-slate-700 font-medium">
-                                {entry.plantCode}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Eligible tick */}
-                        <td className="py-2 px-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleStatEligibilityToggle(entry.epfNo)}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
-                              entry.eligible
-                                ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                            }`}
-                            title="Click to toggle eligibility"
-                          >
-                            {entry.eligible ? (
-                              <>
-                                <CheckSquare size={13} className="text-emerald-700" />
-                                <span>Yes</span>
-                              </>
-                            ) : (
-                              <>
-                                <Square size={13} className="text-slate-400" />
-                                <span>No</span>
-                              </>
-                            )}
-                          </button>
-                        </td>
-
-                        {/* Worked on holiday? */}
-                        <td className="py-2 px-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleStatWorkedToggle(entry.epfNo)}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
-                              entry.workedOnHoliday
-                                ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                                : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
-                            }`}
-                            title="Auto-filled from attendance logs. Click to override."
-                          >
-                            {entry.workedOnHoliday ? (
-                              <>
-                                <Check size={13} className="text-emerald-700" />
-                                <span>Worked</span>
-                              </>
-                            ) : (
-                              <>
-                                <span className="font-bold">—</span>
-                                <span>Not worked</span>
-                              </>
-                            )}
-                          </button>
-                        </td>
-
-                        {/* Day Value (editable) */}
-                        <td className="py-2 px-3 text-right">
-                          <NumericInput
-                            value={entry.dayValue}
-                            onChange={e => handleStatDayValueChange(entry.epfNo, Number(e.target.value) || 0)}
-                            className="form-input text-xs py-1 px-2 w-28 text-right font-mono bg-white border-slate-300 focus:border-[#2F6F5E]"
-                          />
-                        </td>
-
-                        {/* Holiday Value */}
-                        <td className="py-2 px-3 text-right">
-                          <div className={`font-mono font-bold text-sm ${
-                            !entry.eligible || entry.holidayValue === 0
-                              ? 'text-slate-400'
-                              : 'text-[#2F6F5E]'
-                          }`}>
-                            {entry.holidayValue.toLocaleString()}
-                          </div>
-                          <div className="text-[10px] text-slate-400">
-                            {!entry.eligible
-                              ? 'Ineligible (0)'
-                              : entry.workedOnHoliday
-                              ? 'Worked Rate'
-                              : 'Not Worked Rate'}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Bottom Bar inside Step 3 */}
-            <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <span className="text-slate-600">
-                Showing {statList.length} of {statMetrics.totalEmployees} employees.
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={exportStatutoryExcel}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs"
-                >
-                  <FileSpreadsheet size={14} className="text-emerald-700" />
-                  <span>Export Excel</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveStatutoryHolidays}
-                  disabled={isSavingStat}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#2F6F5E] hover:bg-[#25584a] text-white text-xs font-semibold shadow-xs disabled:opacity-50"
-                >
-                  <Save size={14} />
-                  <span>{isSavingStat ? 'Saving...' : 'Save & Apply to Payslip'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-4">
           {/* Filter Strip (Year, Month, Employee, Plant) */}
           <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-flat flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1.5 text-xs text-slate-500 font-semibold uppercase tracking-wider">
@@ -2818,10 +2416,6 @@ export default function AttendancePage() {
               <div className="flex items-center justify-between p-1 bg-white border rounded">
                 <span className="text-slate-600 font-medium">Poya / Saturday Normal</span>
                 <Toggle checked={form.poyaSaturdayNormal === 'Y'} onChange={v => setForm({ ...form, poyaSaturdayNormal: v ? 'Y' : 'N' })} />
-              </div>
-              <div className="flex items-center justify-between p-1 bg-white border rounded">
-                <span className="text-slate-600 font-medium">Statutory Holidays</span>
-                <Toggle checked={form.statutoryHolidays === 1} onChange={v => setForm({ ...form, statutoryHolidays: v ? 1 : 0 })} />
               </div>
               <div className="col-span-2">
                 <label className="block text-slate-600 mb-1">Sunday Poya Extra Payment</label>
@@ -3303,6 +2897,13 @@ export default function AttendancePage() {
         </div>
       )}
 
+      <ConfirmDialog
+        open={!!statConfirm}
+        title={statConfirm?.title || ''}
+        message={statConfirm?.message || ''}
+        onConfirm={() => { const action = statConfirm?.action; setStatConfirm(null); action?.() }}
+        onCancel={() => setStatConfirm(null)}
+      />
       <ConfirmDialog open={!!confirm} title="Delete Entry" message="Are you sure you want to delete this attendance log?" onConfirm={handleDeleteConfirm} onCancel={() => setConfirm(null)} />
 
       {/* Sync Monthly Summary Modal */}
