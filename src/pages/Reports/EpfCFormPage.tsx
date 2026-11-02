@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import A4Report, { A4ReportColumn } from '../../components/reports/A4Report'
 import { list as listBC } from '../../mocks/businessCenters'
+import { defaultReportCenter } from '../../components/reports/ReportFilters'
 import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
 import { Settings, X, Save } from 'lucide-react'
@@ -34,7 +35,7 @@ const EMPTY_SETTINGS: EpfCompanySettings = {
 export default function EpfCFormPage() {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
   const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
-  const [businessCenter, setBusinessCenter] = useState<string>('ALL')
+  const [businessCenter, setBusinessCenter] = useState<string>(defaultReportCenter)
 
   const [settings, setSettings] = useState<EpfCompanySettings>(EMPTY_SETTINGS)
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false)

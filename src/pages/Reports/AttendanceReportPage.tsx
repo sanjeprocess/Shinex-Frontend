@@ -5,6 +5,7 @@ import { Attendance } from '../../mocks/attendance'
 import { list as listEmployees } from '../../mocks/employees'
 import { list as listCustomers, Customer } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
+import { defaultReportCenter } from '../../components/reports/ReportFilters'
 import api from '../../api/axios'
 import { formatDateDdMmmYyyy, formatTimeAmPm, decimalToHmm, formatCurrency } from '../../utils/reportHelpers'
 
@@ -23,7 +24,7 @@ const hoursDotMinutes = (hours: number) => decimalToHmm(hours).replace(':', '.')
 export default function AttendanceReportPage() {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
   const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
-  const [businessCenter, setBusinessCenter] = useState<string>('ALL')
+  const [businessCenter, setBusinessCenter] = useState<string>(defaultReportCenter)
   const [selectedPlant, setSelectedPlant] = useState<string>('')
 
   const [businessCenters, setBusinessCenters] = useState<any[]>([])

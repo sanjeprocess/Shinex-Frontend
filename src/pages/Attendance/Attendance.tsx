@@ -193,10 +193,11 @@ function excelTime(value: unknown): string {
 function resolvePlantRef(ref: string | undefined, customerList: any[]): string {
   const text = (ref || '').trim()
   if (!text) return ''
-  const key = text.split(/\s|\//)[0].toUpperCase()
+  // Whole code first, so plants whose codes start alike ("BA POL", "BA RID") stay separate
+  const key = text.split('/')[0].trim().toUpperCase()
   const match = customerList.find(c => (c.code || '').trim().toUpperCase() === key)
     || customerList.find(c => (c.name || '').trim().toUpperCase() === text.toUpperCase())
-  return match ? match.code : text.split(/\s\/\s/)[0].trim()
+  return match ? match.code : text.split('/')[0].trim()
 }
 
 function parseAttendanceRows(

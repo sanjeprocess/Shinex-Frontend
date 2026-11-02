@@ -10,6 +10,7 @@ export default function Layout() {
   const [centers, setCenters] = useState<any[]>([])
   const [profileOpen, setProfileOpen] = useState(false)
   const [bcOpen, setBcOpen] = useState(false)
+  const canSwitchCenter = ['SUPERADMIN', 'SUPER_ADMIN'].includes((localStorage.getItem('hsb_user_role') || '').toUpperCase())
   const navigate = useNavigate()
   useEffect(() => {
     listBC().then(list => {
@@ -54,12 +55,12 @@ export default function Layout() {
 
           <div className="flex items-center gap-4">
             <div className="relative z-50">
-              <button onClick={()=>setBcOpen(!bcOpen)} className="inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border">
+              <button onClick={()=>{ if (canSwitchCenter) setBcOpen(!bcOpen) }} className={`inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border ${canSwitchCenter ? '' : 'cursor-default'}`}>
                 <span className="w-2 h-2 rounded-full bg-[#3F9884]" />
                 <strong className="text-sm">{bc === 'ALL' ? 'All Business Centers' : (centers.find(c=>c.code===bc)?.name || bc)}</strong>
-                <svg className="ml-2" width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                {canSwitchCenter && <svg className="ml-2" width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
               </button>
-              {bcOpen && (
+              {canSwitchCenter && bcOpen && (
                 <div className="absolute top-full right-0 mt-2 z-[9999] w-80 overflow-hidden rounded-md border border-gray-200 bg-white shadow-xl">
                   <ul>
                     <li>

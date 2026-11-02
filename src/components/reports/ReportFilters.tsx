@@ -5,8 +5,8 @@ import { list as listEmployees, Employee } from '../../mocks/employees'
 
 const selectClass = 'border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500'
 
-/** "P01", "p01 " or "P01 / Plant Name" to the bare upper-case code */
-export const plantKey = (value?: string | null) => (value || '').split(/\s|\//)[0].trim().toUpperCase()
+/** "P01", "p01 " or "P01 / Plant Name" to the upper-case code; codes may contain spaces ("BA POL") */
+export const plantKey = (value?: string | null) => (value || '').split('/')[0].trim().toUpperCase()
 
 export const cleanBusinessCenter = (businessCenter: string) =>
   businessCenter && businessCenter !== 'ALL' ? businessCenter.split(' / ')[0].trim() : 'ALL'
@@ -14,14 +14,14 @@ export const cleanBusinessCenter = (businessCenter: string) =>
 export const employeeFullName = (employee?: Employee | null) =>
   employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : ''
 
+/** The current business center: the login's own, or the one a super admin switched to. */
+export const defaultReportCenter = () => (localStorage.getItem('hsb_active_bc') || '').split(' / ')[0].trim() || 'ALL'
+
 /** Year, month, business center and plant state shared by the printed reports. */
 export function useReportFilters(defaultToFirstPlant = false) {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
   const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
-  const [businessCenter, setBusinessCenter] = useState<string>(() => {
-    const active = (localStorage.getItem('hsb_active_bc') || '').split(' / ')[0].trim()
-    return active || 'ALL'
-  })
+  const [businessCenter, setBusinessCenter] = useState<string>(defaultReportCenter)
   const [plant, setPlant] = useState<string>('')
   const [businessCenters, setBusinessCenters] = useState<any[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])

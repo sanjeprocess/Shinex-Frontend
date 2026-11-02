@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import A4Report from '../../components/reports/A4Report'
 import { list as listBC } from '../../mocks/businessCenters'
+import { defaultReportCenter } from '../../components/reports/ReportFilters'
 import api from '../../api/axios'
 
 type TotalRow = {
@@ -18,7 +19,7 @@ const fmt = (n: number, digits = 2) => n.toLocaleString('en-US', { minimumFracti
 export default function AttendanceTotalPage() {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
   const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
-  const [businessCenter, setBusinessCenter] = useState<string>('ALL')
+  const [businessCenter, setBusinessCenter] = useState<string>(defaultReportCenter)
 
   const [businessCenters, setBusinessCenters] = useState<any[]>([])
   const [loading, setLoading] = useState<boolean>(false)

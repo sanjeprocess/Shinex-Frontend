@@ -70,8 +70,7 @@ export const list = async (businessCenter?: string): Promise<Customer[]> => {
       maxHoursCap: c.maxHoursCap != null ? Number(c.maxHoursCap) : (cached.maxHoursCap != null ? cached.maxHoursCap : undefined),
       mealValue: c.mealValue != null ? Number(c.mealValue) : (cached.mealValue != null ? cached.mealValue : 200)
     };
-  }).filter((customer: Customer) => !cleanBc || cleanBc === 'ALL'
-    || customer.businessCenter?.trim().toUpperCase() === cleanBc);
+  });
 };
 
 export const create = async (r: Customer): Promise<Customer> => {

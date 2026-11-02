@@ -6,12 +6,12 @@ import { list as listBC } from '../../mocks/businessCenters'
 import { computeDeductionMetrics } from '../../mocks/deductionTransactions'
 import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
-import { plantKey } from '../../components/reports/ReportFilters'
+import { defaultReportCenter, plantKey } from '../../components/reports/ReportFilters'
 
 export default function LoanReportPage() {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
   const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
-  const [businessCenter, setBusinessCenter] = useState<string>('ALL')
+  const [businessCenter, setBusinessCenter] = useState<string>(defaultReportCenter)
   const [selectedClient, setSelectedClient] = useState<string>('')
 
   const [businessCenters, setBusinessCenters] = useState<any[]>([])

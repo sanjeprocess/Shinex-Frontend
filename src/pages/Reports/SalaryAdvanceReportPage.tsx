@@ -4,6 +4,7 @@ import { list as listEmployees, Employee } from '../../mocks/employees'
 import { list as listCustomers, Customer } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
 import { list as listDeductionTypes } from '../../mocks/deductions'
+import { defaultReportCenter } from '../../components/reports/ReportFilters'
 import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
 
@@ -18,7 +19,7 @@ async function loadAdvanceCodes(): Promise<Set<string>> {
 export default function SalaryAdvanceReportPage() {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
   const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
-  const [businessCenter, setBusinessCenter] = useState<string>('ALL')
+  const [businessCenter, setBusinessCenter] = useState<string>(defaultReportCenter)
   const [selectedClient, setSelectedClient] = useState<string>('')
 
   const [businessCenters, setBusinessCenters] = useState<any[]>([])

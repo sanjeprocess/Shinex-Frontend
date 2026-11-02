@@ -76,6 +76,9 @@ export default function Login() {
         ? assignedBc
         : (selectedBc || assignedBc || 'ALL')
 
+      // Rows staged by the previous user of this browser must not carry over
+      localStorage.removeItem('hsb_attendance_staged_upload')
+
       localStorage.setItem('hsb_auth_token', response.data.token)
       localStorage.setItem('hsb_test_user', response.data.loginName || loginName)
       localStorage.setItem('hsb_user_profile', JSON.stringify({
@@ -206,11 +209,11 @@ export default function Login() {
                 </select>
               ) : (
                 <div className="mt-1 w-full border border-slate-600 rounded-md px-3 py-2 text-slate-400 text-sm bg-transparent">
-                  No business centers found — proceeding without selection
+                  Business centers could not be loaded. Only the super admin can sign in.
                 </div>
               )}
               <p className="mt-1 text-[10px] text-slate-500">
-                Your account must be authorized for the selected business center.
+                Select your own business center. Other business centers are refused.
               </p>
             </div>
             {errorMessage && (
