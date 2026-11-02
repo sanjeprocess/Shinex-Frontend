@@ -444,26 +444,6 @@ export default function CustomersPage() {
                 <span className="text-[10px] text-slate-500 mt-0.5 block">OT starts after these hours on Saturdays</span>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700">Max Hours Cap</label>
-                <NumericInput
-                  className="mt-1 w-full form-input mono-numeric text-xs"
-                  placeholder="e.g. 9 or blank (uncapped)"
-                  value={form.maxHoursCap ?? ''}
-                  onChange={e => setForm({ ...form, maxHoursCap: e.target.value === '' ? '' : Number(e.target.value) })}
-                />
-                <span className="text-[10px] text-slate-500 mt-0.5 block">e.g. 9 for Plant B cap</span>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700">Standard Meal Value (Rs.)</label>
-                <NumericInput
-                  className="mt-1 w-full form-input mono-numeric text-xs"
-                  value={form.mealValue ?? 200}
-                  onChange={e => setForm({ ...form, mealValue: e.target.value === '' ? '' : Number(e.target.value) })}
-                />
-                <span className="text-[10px] text-slate-500 mt-0.5 block">Cost per meal unit</span>
-              </div>
             </div>
 
             <div className="flex items-center gap-2 pt-1">

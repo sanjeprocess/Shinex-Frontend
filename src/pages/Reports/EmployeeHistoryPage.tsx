@@ -233,6 +233,18 @@ export default function EmployeeHistoryPage() {
     return options
   }, [employee, plants, employeeTransfers, attendanceList])
 
+  // Months this employee has saved attendance, newest first
+  const attendanceMonths = useMemo(() => {
+    const counts = new Map<string, number>()
+    attendanceList.forEach(a => {
+      const period = String(a.dayIn || '').slice(0, 7)
+      if (period) counts.set(period, (counts.get(period) || 0) + ((a.halfDay === 1 || a.halfDay === 0.5) ? 0.5 : 1))
+    })
+    return Array.from(counts.entries()).sort(([a], [b]) => b.localeCompare(a))
+  }, [attendanceList])
+  const selectedPeriod = `${year}-${month.padStart(2, '0')}`
+  const noAttendanceInPeriod = !loading && !!employee && !attendanceMonths.some(([period]) => period === selectedPeriod)
+
   const selectedOption = plantAssignmentOptions.find(o => o.id === selectedPlantOptionId) || plantAssignmentOptions[0]
 
   const filteredAttendanceList = useMemo(() => {
@@ -643,6 +655,29 @@ export default function EmployeeHistoryPage() {
           </div>
         )}
       </div>
+
+      {noAttendanceInPeriod && (
+        <div data-no-attendance className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900 print:hidden space-y-2">
+          <p className="font-semibold">No attendance is saved for {employee?.epfNo} in {selectedPeriod}, so this pay sheet is 0.</p>
+          {attendanceMonths.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span>Open a month with attendance:</span>
+              {attendanceMonths.slice(0, 12).map(([period, days]) => (
+                <button
+                  key={period}
+                  type="button"
+                  onClick={() => { setYear(period.slice(0, 4)); setMonth(period.slice(5, 7)) }}
+                  className="px-2.5 py-1 bg-white border border-amber-300 rounded-lg font-semibold hover:bg-amber-100"
+                >
+                  {period} ({days} day{days === 1 ? '' : 's'})
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs">Rows in the Excel upload preview are not counted until they are saved. Click Save on the Attendance page first.</p>
+          )}
+        </div>
+      )}
 
       {/* History Profile Section */}
       {loading ? (

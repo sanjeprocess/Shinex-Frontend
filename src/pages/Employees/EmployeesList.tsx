@@ -685,14 +685,6 @@ export default function EmployeesList() {
                   className="mt-1 w-full form-input mono-numeric"
                 />
               </div>
-              <div>
-                <label className="block text-xs text-slate-600">Day Rate / Normal Rate (Rs.)</label>
-                <NumericInput
-                  value={form.dayRate ?? (form.basicSalary || 2000)}
-                  onChange={e => setForm({ ...form, dayRate: e.target.value === '' ? undefined : Number(e.target.value) })}
-                  className="mt-1 w-full form-input mono-numeric"
-                />
-              </div>
               <div className="flex items-center gap-2 pt-5">
                 <input
                   type="checkbox"

@@ -452,6 +452,146 @@ function PlantTimeBar({ employees, onApply }: {
   )
 }
 
+type StagedRowEdits = {
+  update: (patch: Partial<Attendance>) => void
+  setEmployee: (epf: string) => void
+  setPlant: (plantCode: string) => void
+  setTimeIn: (time: string) => void
+  setTimeOut: (time: string) => void
+  setDayIn: (date: string) => void
+  setMinWorkHours: (hours: number | undefined) => void
+  setMeals: (count: number, mealRate: number) => void
+  setHalfDay: (half: boolean) => void
+  setDayType: (type: 'Normal' | 'Poya' | 'Special') => void
+  setShift: (shift: string) => void
+}
+
+// The clicked Excel row, laid out like the Attendance Transaction form. Everything edits the same row as the table
+function StagedRowDetails({ row, edits, employees, plants, sections, plantObj, employee, monthTotal, isStatutory, onClose }: {
+  row: Attendance
+  edits: StagedRowEdits
+  employees: any[]
+  plants: any[]
+  sections: Section[]
+  plantObj: any
+  employee: any
+  monthTotal?: { ot: number; days: number }
+  isStatutory: boolean
+  onClose: () => void
+}) {
+  const dayIn = excelDate(row.dayIn)
+  const isHalf = row.workingDays === 0.5 || row.halfDay === 1 || row.halfDay === 0.5
+  const isPoya = row.saturdayPoya === 'Y'
+  const dayType = isPoya ? 'Poya' : row.specialDay === 'Y' ? 'Special' : 'Normal'
+  const shift = row.secondShift === 'Y' ? '2nd' : (row.nightShift === 'Y' || row.fullNight === 'Y') ? 'Night' : 'Day'
+  const mealRate = employee?.mealValue != null ? Number(employee.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200)
+  const homePlant = employee ? resolvePlantRef(employee.plantCode, plants) : ''
+  const fieldClass = 'flex items-center gap-1.5 whitespace-nowrap'
+
+  return (
+    <div data-staged-details className="border-b border-slate-200 text-xs text-slate-800">
+      <div className="bg-[#e7d3b1] px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <label className={fieldClass}>Employee ID
+          <EmployeeCellSearch employees={employees} value={row.epfNo} onChange={edits.setEmployee} className="w-32 text-xs h-7" />
+        </label>
+        <label className={fieldClass}>Name
+          <input aria-label="Employee name" value={row.employeeName || ''} onChange={e => edits.update({ employeeName: e.target.value })} className="form-input w-52 text-xs h-7" />
+        </label>
+        <span className={fieldClass}>Age <strong className="text-red-700 text-sm">{ageFrom(employee?.dateOfBirth) ?? '—'}</strong></span>
+        <label className={fieldClass}>Basic Salary
+          <NumericInput aria-label="Basic salary" value={row.basicSalary ?? 0} onChange={e => edits.update({ basicSalary: Number(e.target.value || 0) })} className="form-input w-20 text-xs h-7 text-right" />
+        </label>
+        <label className={fieldClass}>Day Allowance
+          <NumericInput value={row.dayAllowance ?? 0} onChange={e => edits.update({ dayAllowance: Number(e.target.value || 0) })} className="form-input w-20 text-xs h-7 text-right" />
+        </label>
+        <label className={fieldClass}>Night Allowance
+          <NumericInput value={row.nightAllowance ?? 0} onChange={e => edits.update({ nightAllowance: Number(e.target.value || 0) })} className="form-input w-20 text-xs h-7 text-right" />
+        </label>
+        <span className={fieldClass} title="This employee in this month: saved days plus this upload">Total OT <strong className="text-red-700 text-sm">{monthTotal ? monthTotal.ot.toFixed(2) : 0}</strong></span>
+        <span className={fieldClass} title="This employee in this month: saved days plus this upload">Total Days <strong className="text-red-700 text-sm">{monthTotal ? monthTotal.days : 0}</strong></span>
+        <button type="button" onClick={onClose} className="ml-auto px-2 py-0.5 border border-slate-400 rounded bg-white hover:bg-slate-50">Close</button>
+      </div>
+
+      <div className="bg-yellow-50 px-3 py-2 space-y-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <label className={fieldClass}>Attended Plant
+            <select aria-label="Row plant" value={row.plantCode || ''} onChange={e => edits.setPlant(e.target.value)} className="form-input w-52 text-xs !py-0.5 h-7">
+              <option value="">Select Plant</option>
+              {plants.map(c => <option key={c.code} value={c.code}>{c.code} - {c.name}</option>)}
+            </select>
+          </label>
+          {homePlant && homePlant !== row.plantCode && <span className="text-amber-800">Home plant: <strong>{homePlant}</strong></span>}
+          <label className={fieldClass}>Section
+            <select value={row.sectionCode || ''} onChange={e => edits.update({ sectionCode: e.target.value })} className="form-input w-40 text-xs !py-0.5 h-7">
+              <option value="">Select</option>
+              {sections.map(sec => <option key={sec.code} value={sec.code}>{sec.code} - {sec.name}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <label className={fieldClass}>Day In
+            <input type="date" value={dayIn} onChange={e => edits.setDayIn(e.target.value)} className="form-input w-32 text-xs h-7" />
+          </label>
+          <label className={fieldClass}>Day Out
+            <input type="date" value={excelDate(row.dayOut) || dayIn} onChange={e => edits.update({ dayOut: e.target.value })} className="form-input w-32 text-xs h-7" />
+          </label>
+          <label className={fieldClass}>Time In
+            <EasyTimeInput column="details-in" value={row.timeIn} onCommit={edits.setTimeIn} className="w-20 text-xs h-7" />
+          </label>
+          <label className={fieldClass}>Time Out
+            <EasyTimeInput column="details-out" value={row.timeOut} onCommit={edits.setTimeOut} className="w-20 text-xs h-7" />
+          </label>
+          <label className={`${fieldClass} px-2 py-1 rounded bg-orange-400 text-white font-semibold cursor-pointer`}>
+            <input type="checkbox" checked={isHalf} onChange={e => edits.setHalfDay(e.target.checked)} /> Half Day Yes
+          </label>
+          <label className={fieldClass}>Total Work Hours
+            <NumericInput value={row.totalWorkingHours ?? ''} onChange={e => edits.update({ totalWorkingHours: Number(e.target.value || 0) })} className="form-input w-16 text-xs h-7 text-right" />
+          </label>
+          <label className={fieldClass}>Min Work Hours
+            <NumericInput value={row.minWorkHours ?? minWorkHoursFor(plantObj, row.plantCode, row.dayIn)} onChange={e => edits.setMinWorkHours(Number(e.target.value) || undefined)} className="form-input w-14 text-xs h-7 text-right bg-rose-200" />
+          </label>
+          <label className={fieldClass}>Total OT Hours
+            <NumericInput value={row.totalOt ?? ''} onChange={e => edits.update({ totalOt: Number(e.target.value || 0) })} className="form-input w-16 text-xs h-7 text-right" />
+          </label>
+          <label className={fieldClass}>Number Of Meal
+            <NumericInput integer value={row.noOfMeal ?? 1} onChange={e => edits.setMeals(Number(e.target.value || 0), mealRate)} className="form-input w-14 text-xs h-7 text-right" />
+          </label>
+          <label className={fieldClass}>Total Meal Value
+            <NumericInput value={row.totalMealValue ?? 0} onChange={e => edits.update({ totalMealValue: Number(e.target.value || 0) })} className="form-input w-20 text-xs h-7 text-right" />
+          </label>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3 px-3 py-1.5 rounded border border-slate-400 bg-slate-300">
+            {([['Normal', 'Normal Day'], ['Poya', 'Sunday Poya'], ['Special', 'Other Special Day']] as const).map(([value, label]) => (
+              <label key={value} className="flex items-center gap-1 cursor-pointer">
+                <input type="radio" name={`day-type-${row.id}`} checked={dayType === value} onChange={() => edits.setDayType(value)} /> {label}
+              </label>
+            ))}
+            {isPoya && (
+              <label className={fieldClass}>Extra Payment
+                <NumericInput value={row.sundayPoyaExtra ?? 0} onChange={e => edits.update({ sundayPoyaExtra: Number(e.target.value || 0) })} className="form-input w-20 text-xs h-7 text-right" />
+              </label>
+            )}
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input type="checkbox" checked={row.lateAllowNo === 'Y'} onChange={e => edits.update({ lateAllowNo: e.target.checked ? 'Y' : 'N' })} /> Not Allow Late
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 px-3 py-1.5 rounded border border-dashed border-rose-700 bg-rose-200">
+            {([['Day', 'Day Shift'], ['2nd', '2nd Shift'], ['Night', 'Night Shift']] as const).map(([value, label]) => (
+              <label key={value} className="flex items-center gap-1 cursor-pointer">
+                <input type="radio" name={`shift-${row.id}`} checked={shift === value} onChange={() => edits.setShift(value)} /> {label}
+              </label>
+            ))}
+          </div>
+          <label className={`${fieldClass} px-2 py-1 rounded bg-slate-700 text-white`} title="Set automatically from the Statutory Holidays calendar">
+            <input type="checkbox" checked={isStatutory} disabled readOnly /> Statutory holidays
+          </label>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function validateUploadRow(
   row: Attendance,
   allUploadRows: Attendance[],
@@ -639,6 +779,7 @@ export default function AttendancePage() {
   const [uploadDefaultPlant, setUploadDefaultPlant] = useState<string>('')
   const [uploadDefaultSection, setUploadDefaultSection] = useState<string>('')
   const [collapsedPlants, setCollapsedPlants] = useState<Set<string>>(new Set())
+  const [selectedStagedId, setSelectedStagedId] = useState<string | null>(null)
   // Statutory holiday dates for every month present in the staged Excel rows
   const [stagedHolidayDates, setStagedHolidayDates] = useState<Set<string>>(new Set())
 
@@ -799,9 +940,11 @@ export default function AttendancePage() {
     }
   }
 
-  function handleAddNewUploadRow() {
-    const today = new Date().toISOString().split('T')[0];
-    const defaultPlant = uploadDefaultPlant;
+  // From a plant card the row belongs to that plant and its dates; otherwise it follows the employee chosen
+  function handleAddNewUploadRow(plantCode?: string) {
+    const cardDate = plantCode === undefined ? '' : excelDate(uploadRows.find(r => (r.plantCode || '') === plantCode)?.dayIn);
+    const today = cardDate || new Date().toISOString().split('T')[0];
+    const defaultPlant = plantCode ?? uploadDefaultPlant;
     const defaultSection = uploadDefaultSection;
     const plantObj = customerList.find(c => c.code === defaultPlant || c.name === defaultPlant);
     const { timeIn: defaultTimeIn, timeOut: defaultTimeOut } = shiftDefaultTimes('Day', plantObj, defaultPlant, today);
@@ -839,6 +982,8 @@ export default function AttendancePage() {
       specialDay: 'N'
     };
     setUploadRows(prev => [newRow, ...prev]);
+    setSelectedStagedId(newRow.id);
+    showPlantCard(defaultPlant);
     toast.success('Added a new attendance entry row for editing.');
   }
 
@@ -882,14 +1027,68 @@ export default function AttendancePage() {
     }))
   }
 
-  function movePlantRows(fromPlant: string, toPlant: string) {
+  // A row in another plant takes that plant's master values, and hours and OT recalculate
+  function rowInPlant(row: Attendance, toPlant: string): Attendance {
     const target = customerList.find(c => c.code === toPlant)
-    setUploadRows(previous => previous.map(row => {
-      if ((row.plantCode || '') !== fromPlant) return row
-      const computed = computePlantHours(row.timeIn || '08:00', row.timeOut || '16:00', target, toPlant, undefined, row.dayIn)
-      const master = plantMasterValues(target, plantStaffCount(target, employeeList, customerList))
-      return { ...row, ...master, plantCode: toPlant, customerCode: toPlant, minWorkHours: computed.minWorkHours, totalWorkingHours: computed.hours, totalOt: otFromHours(master.otCalAuto ?? row.otCalAuto, computed.ot, row.totalOt) }
-    }))
+    const computed = computePlantHours(row.timeIn || '08:00', row.timeOut || '16:00', target, toPlant, undefined, row.dayIn)
+    const master = plantMasterValues(target, plantStaffCount(target, employeeList, customerList))
+    return { ...row, ...master, plantCode: toPlant, customerCode: toPlant, minWorkHours: computed.minWorkHours, totalWorkingHours: computed.hours, totalOt: otFromHours(master.otCalAuto ?? row.otCalAuto, computed.ot, row.totalOt) }
+  }
+
+  function movePlantRows(fromPlant: string, toPlant: string) {
+    setUploadRows(previous => previous.map(row => (row.plantCode || '') === fromPlant ? rowInPlant(row, toPlant) : row))
+  }
+
+  function showPlantCard(plantCode: string) {
+    setCollapsedPlants(previous => {
+      if (!previous.has(plantCode)) return previous
+      const next = new Set(previous)
+      next.delete(plantCode)
+      return next
+    })
+  }
+
+  function moveStagedRow(index: number, toPlant: string) {
+    setUploadRows(previous => previous.map((row, rowIndex) => rowIndex === index ? rowInPlant(row, toPlant) : row))
+    showPlantCard(toPlant)
+  }
+
+  // Row edits shared by the review table and the details panel
+  function stagedRowEdits(index: number, row: Attendance, plantObj: any): StagedRowEdits {
+    const recompute = (timeIn: string, timeOut: string, minWorkHours = row.minWorkHours) => computePlantHours(timeIn, timeOut, plantObj, row.plantCode, minWorkHours, row.dayIn)
+    return {
+      update: patch => updateUploadRow(index, patch),
+      setEmployee: epf => handleStagedEmployeeChange(index, row, epf),
+      setPlant: plantCode => moveStagedRow(index, plantCode),
+      setTimeIn: timeIn => {
+        const computed = recompute(timeIn, row.timeOut || '')
+        updateUploadRow(index, { timeIn, totalWorkingHours: computed.hours, totalOt: otFromHours(row.otCalAuto, computed.ot, row.totalOt) })
+      },
+      setTimeOut: timeOut => {
+        const computed = recompute(row.timeIn || '', timeOut)
+        updateUploadRow(index, { timeOut, totalWorkingHours: computed.hours, totalOt: otFromHours(row.otCalAuto, computed.ot, row.totalOt) })
+      },
+      setDayIn: date => updateUploadRow(index, {
+        // Saturdays and other days have different Min Work Hours
+        minWorkHours: minWorkHoursFor(plantObj, row.plantCode, date),
+        totalOt: otFromHours(row.otCalAuto, computePlantHours(row.timeIn || '', row.timeOut || '', plantObj, row.plantCode, undefined, date).ot, row.totalOt),
+        dayIn: date,
+        dayOut: row.dayOut || date,
+        atttYear: date.slice(0, 4),
+        attMonth: date.slice(5, 7)
+      }),
+      setMinWorkHours: minWorkHours => updateUploadRow(index, { minWorkHours, totalOt: otFromHours(row.otCalAuto, recompute(row.timeIn || '', row.timeOut || '', minWorkHours).ot, row.totalOt) }),
+      setMeals: (count, mealRate) => updateUploadRow(index, { noOfMeal: count, totalMealValue: count * mealRate }),
+      setHalfDay: half => updateUploadRow(index, half ? { workingDays: 0.5, halfDay: 0.5 } : { workingDays: 1, halfDay: 0 }),
+      setDayType: type => {
+        if (type === 'Poya') {
+          handleStagedSundayPoya(index, row, true)
+          return
+        }
+        updateUploadRow(index, { saturdayPoya: 'N', sundayPoyaExtra: 0, normalDay: type === 'Normal' ? 'Y' : 'N', specialDay: type === 'Special' ? 'Y' : 'N' })
+      },
+      setShift: shift => handleStagedShiftChange(index, row, shift)
+    }
   }
 
   // Employee picked on a staged row: Excel-only values are replaced by the Employee master
@@ -900,12 +1099,17 @@ export default function AttendancePage() {
       updateUploadRow(index, { epfNo: newEpf })
       return
     }
-    const plantCode = row.plantCode || resolvePlantRef(matched.plantCode, customerList) || uploadDefaultPlant
+    const activeTransfer = transfers.find(t => (t.epfNo || '').trim().toLowerCase() === clean
+      && t.transferDate && excelDate(row.dayIn) >= t.transferDate && (!t.endDate || excelDate(row.dayIn) <= t.endDate))
+    const plantCode = row.plantCode || resolvePlantRef(activeTransfer?.toPlant, customerList) || resolvePlantRef(matched.plantCode, customerList) || uploadDefaultPlant
     const plantObj = customerList.find(c => c.code === plantCode || c.name === plantCode)
+    const plantValues = row.plantCode ? {} : plantMasterValues(plantObj, plantStaffCount(plantObj, employeeList, customerList))
+    if (!row.plantCode) showPlantCard(plantCode)
     const mealRate = matched.mealValue != null ? Number(matched.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200)
     const isNight = row.nightShift === 'Y' || row.fullNight === 'Y'
     const computed = computePlantHours(row.timeIn || '08:00', row.timeOut || '16:00', plantObj, plantCode, row.minWorkHours)
     updateUploadRow(index, {
+      ...plantValues,
       epfNo: matched.epfNo,
       employeeName: `${matched.firstName} ${matched.lastName || ''}`.trim(),
       plantCode,
@@ -1201,20 +1405,42 @@ export default function AttendancePage() {
   }
 
   // Saved attendance of the chosen month and plant; the file can be edited and imported again
+  const exportHomePlants = useMemo(() => {
+    const homes = new Map<string, string>()
+    employeeList.forEach(emp => homes.set((emp.epfNo || '').trim().toLowerCase(), resolvePlantRef(emp.plantCode, customerList)))
+    return homes
+  }, [employeeList, customerList])
+  const inExportPlant = (row: Attendance) => exportChoice.plant === 'ALL'
+    || resolvePlantRef(row.plantCode, customerList) === exportChoice.plant
+    || exportHomePlants.get((row.epfNo || '').trim().toLowerCase()) === exportChoice.plant
+  const inExportPeriod = (row: Attendance) => {
+    const date = excelDate(row.dayIn)
+    if (exportChoice.year !== 'ALL' && (row.atttYear || date.slice(0, 4)) !== exportChoice.year) return false
+    return exportChoice.month === 'ALL' || (row.attMonth || date.slice(5, 7)) === exportChoice.month
+  }
+
+  // Months that do have saved rows for the plant, shown when the chosen month has none
+  const exportOtherMonths = useMemo(() => {
+    if (!exportOpen) return []
+    const counts = new Map<string, number>()
+    rows.filter(inExportPlant).forEach(row => {
+      const month = excelDate(row.dayIn).slice(0, 7)
+      if (month) counts.set(month, (counts.get(month) || 0) + 1)
+    })
+    return Array.from(counts.entries()).sort(([a], [b]) => b.localeCompare(a))
+  }, [exportOpen, exportChoice, rows, exportHomePlants])
+
+  const exportUnsaved = exportOpen ? uploadRows.filter(row => inExportPlant(row) && inExportPeriod(row)).length : 0
+
   const exportMatches = useMemo(() => {
     if (!exportOpen) return []
     return rows
-      .filter(row => {
-        const date = excelDate(row.dayIn)
-        if (exportChoice.year !== 'ALL' && (row.atttYear || date.slice(0, 4)) !== exportChoice.year) return false
-        if (exportChoice.month !== 'ALL' && (row.attMonth || date.slice(5, 7)) !== exportChoice.month) return false
-        return exportChoice.plant === 'ALL' || resolvePlantRef(row.plantCode, customerList) === exportChoice.plant
-      })
+      .filter(row => inExportPlant(row) && inExportPeriod(row))
       .sort((a, b) =>
         (a.plantCode || '').localeCompare(b.plantCode || '') ||
         (a.epfNo || '').localeCompare(b.epfNo || '', undefined, { numeric: true }) ||
         excelDate(a.dayIn).localeCompare(excelDate(b.dayIn)))
-  }, [exportOpen, exportChoice, rows, customerList])
+  }, [exportOpen, exportChoice, rows, customerList, exportHomePlants])
 
   function exportSavedRows() {
     if (!exportMatches.length) {
@@ -3071,7 +3297,7 @@ export default function AttendancePage() {
 
               <button
                 type="button"
-                onClick={handleAddNewUploadRow}
+                onClick={() => handleAddNewUploadRow()}
                 className="px-2.5 py-1 text-xs bg-emerald-700 hover:bg-emerald-800 text-white rounded font-medium flex items-center gap-1 shadow-2xs"
               >
                 + Add Entry
@@ -3143,6 +3369,7 @@ export default function AttendancePage() {
                         <select
                           value={group.plantCode}
                           onChange={e => movePlantRows(group.plantCode, e.target.value)}
+                          title="Moves every row of this card. To move one row, use the Plant column of that row."
                           className={`form-input text-xs font-medium !py-0.5 !px-2 h-8 w-64 ${group.plantCode ? '' : 'border-red-400 bg-red-50'}`}
                         >
                           <option value="">Select Plant</option>
@@ -3161,6 +3388,13 @@ export default function AttendancePage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleAddNewUploadRow(group.plantCode)}
+                          className="px-2.5 py-1 text-xs bg-emerald-700 hover:bg-emerald-800 text-white rounded font-medium"
+                        >
+                          + Add Row
+                        </button>
                         <button
                           type="button"
                           disabled={!plantObj}
@@ -3216,9 +3450,27 @@ export default function AttendancePage() {
                     />
                   </div>
 
+                  {!collapsed && (() => {
+                    const selected = group.items.find(item => item.row.id === selectedStagedId)
+                    if (!selected) return <div className="px-3 py-1.5 text-[11px] text-slate-500 border-b border-slate-100">Click a row to see and edit its details here.</div>
+                    return (
+                      <StagedRowDetails
+                        row={selected.row}
+                        edits={stagedRowEdits(selected.index, selected.row, plantObj)}
+                        employees={employeeList}
+                        plants={customerList}
+                        sections={sectionList}
+                        plantObj={plantObj}
+                        employee={employeeList.find(e => (e.epfNo || '').trim().toLowerCase() === (selected.row.epfNo || '').trim().toLowerCase())}
+                        monthTotal={stagedMonthTotals.get(`${(selected.row.epfNo || '').trim().toLowerCase()}|${excelDate(selected.row.dayIn).slice(0, 7)}`)}
+                        isStatutory={stagedHolidayDates.has(excelDate(selected.row.dayIn))}
+                        onClose={() => setSelectedStagedId(null)}
+                      />
+                    )
+                  })()}
                   {!collapsed && (
                     <div className="overflow-x-auto max-h-[420px]">
-                      <table className="min-w-[2460px] w-full text-xs">
+                      <table className="min-w-[2600px] w-full text-xs">
                         <thead className="bg-slate-50 text-left text-slate-600 sticky top-0 z-10 border-b">
                           <tr>
                             <th className="px-2 py-2">Status</th>
@@ -3226,6 +3478,7 @@ export default function AttendancePage() {
                             <th className="px-2 py-2">Employee Name</th>
                             <th className="px-2 py-2">Age</th>
                             <th className="px-2 py-2">Section</th>
+                            <th className="px-2 py-2" title="The plant this day was worked at. Changing it moves only this row.">Plant</th>
                             <th className="px-2 py-2 bg-amber-50/60">Basic Salary</th>
                             <th className="px-2 py-2 bg-amber-50/60">Day Allowance</th>
                             <th className="px-2 py-2 bg-amber-50/60">Night Allowance</th>
@@ -3262,12 +3515,18 @@ export default function AttendancePage() {
                             const rowSundayPoya = row.saturdayPoya === 'Y'
                             const dayType = row.specialDay === 'Y' ? 'Special' : 'Normal'
                             const isStatutory = stagedHolidayDates.has(dayInValue)
-                            const recompute = (timeIn: string, timeOut: string, minWorkHours = row.minWorkHours) => computePlantHours(timeIn, timeOut, plantObj, row.plantCode, minWorkHours, row.dayIn)
+                            const edits = stagedRowEdits(index, row, plantObj)
+                            const isSelected = row.id === selectedStagedId
                             const monthTotal = stagedMonthTotals.get(`${(row.epfNo || '').trim().toLowerCase()}|${dayInValue.slice(0, 7)}`)
                             const rowsBelow = group.items.slice(group.items.findIndex(i => i.index === index) + 1).map(i => i.index)
 
                             return (
-                              <tr key={row.id || index} className={val.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/40 hover:bg-rose-50/60'}>
+                              <tr
+                                key={row.id || index}
+                                onClick={() => setSelectedStagedId(row.id)}
+                                onFocusCapture={() => setSelectedStagedId(row.id)}
+                                className={`cursor-pointer ${isSelected ? 'bg-emerald-50 outline outline-2 -outline-offset-2 outline-emerald-500' : val.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/40 hover:bg-rose-50/60'}`}
+                              >
                                 <td className="px-2 py-1.5">
                                   {val.isValid ? (
                                     val.updatesSaved ? (
@@ -3287,7 +3546,7 @@ export default function AttendancePage() {
                                   <EmployeeCellSearch
                                     employees={employeeList}
                                     value={row.epfNo}
-                                    onChange={epf => handleStagedEmployeeChange(index, row, epf)}
+                                    onChange={edits.setEmployee}
                                     invalid={val.errors.some(er => er.includes('EPF'))}
                                     className="w-32 text-xs"
                                   />
@@ -3309,6 +3568,12 @@ export default function AttendancePage() {
                                     ))}
                                   </select>
                                 </td>
+                                <td className="px-2 py-1.5">
+                                  <select aria-label="Plant of this row" value={row.plantCode || ''} onChange={e => edits.setPlant(e.target.value)} className="form-input w-32 text-xs">
+                                    <option value="">Select Plant</option>
+                                    {customerList.map(c => <option key={c.code} value={c.code}>{c.code} - {c.name}</option>)}
+                                  </select>
+                                </td>
                                 <td className="px-2 py-1.5 bg-amber-50/30">
                                   <NumericInput value={row.basicSalary ?? 0} onChange={e => updateUploadRow(index, { basicSalary: Number(e.target.value || 0) })} className="form-input w-20 text-xs text-right mono-numeric" />
                                 </td>
@@ -3324,15 +3589,7 @@ export default function AttendancePage() {
                                   <input
                                     type="date"
                                     value={dayInValue || ''}
-                                    onChange={e => updateUploadRow(index, {
-                                      // Saturdays and other days have different Min Work Hours
-                                      minWorkHours: minWorkHoursFor(plantObj, row.plantCode, e.target.value),
-                                      totalOt: otFromHours(row.otCalAuto, computePlantHours(row.timeIn || '', row.timeOut || '', plantObj, row.plantCode, undefined, e.target.value).ot, row.totalOt),
-                                      dayIn: e.target.value,
-                                      dayOut: row.dayOut || e.target.value,
-                                      atttYear: e.target.value.slice(0, 4),
-                                      attMonth: e.target.value.slice(5, 7)
-                                    })}
+                                    onChange={e => edits.setDayIn(e.target.value)}
                                     className={`form-input w-32 text-xs ${val.errors.some(er => er.includes('Date')) ? 'border-red-400 bg-red-50' : ''}`}
                                   />
                                 </td>
@@ -3343,10 +3600,7 @@ export default function AttendancePage() {
                                   <EasyTimeInput
                                     column="in"
                                     value={row.timeIn}
-                                    onCommit={timeIn => {
-                                      const computed = recompute(timeIn, row.timeOut || '')
-                                      updateUploadRow(index, { timeIn, totalWorkingHours: computed.hours, totalOt: otFromHours(row.otCalAuto, computed.ot, row.totalOt) })
-                                    }}
+                                    onCommit={edits.setTimeIn}
                                     className="w-20 text-xs"
                                   />
                                 </td>
@@ -3354,10 +3608,7 @@ export default function AttendancePage() {
                                   <EasyTimeInput
                                     column="out"
                                     value={row.timeOut}
-                                    onCommit={timeOut => {
-                                      const computed = recompute(row.timeIn || '', timeOut)
-                                      updateUploadRow(index, { timeOut, totalWorkingHours: computed.hours, totalOt: otFromHours(row.otCalAuto, computed.ot, row.totalOt) })
-                                    }}
+                                    onCommit={edits.setTimeOut}
                                     className="w-20 text-xs"
                                   />
                                   <button
@@ -3374,7 +3625,7 @@ export default function AttendancePage() {
                                 <td className="px-2 py-1.5 text-center">
                                   <select
                                     value={isHalfDay ? 'half' : 'full'}
-                                    onChange={e => updateUploadRow(index, e.target.value === 'half' ? { workingDays: 0.5, halfDay: 0.5 } : { workingDays: 1, halfDay: 0 })}
+                                    onChange={e => edits.setHalfDay(e.target.value === 'half')}
                                     className="form-input w-24 text-xs"
                                   >
                                     <option value="full">Full Day</option>
@@ -3387,10 +3638,7 @@ export default function AttendancePage() {
                                 <td className="px-2 py-1.5 whitespace-nowrap">
                                   <NumericInput
                                     value={row.minWorkHours ?? minWorkHoursFor(plantObj, row.plantCode, row.dayIn)}
-                                    onChange={e => {
-                                      const minWorkHours = Number(e.target.value) || undefined
-                                      updateUploadRow(index, { minWorkHours, totalOt: otFromHours(row.otCalAuto, recompute(row.timeIn || '', row.timeOut || '', minWorkHours).ot, row.totalOt) })
-                                    }}
+                                    onChange={e => edits.setMinWorkHours(Number(e.target.value) || undefined)}
                                     className="form-input w-14 text-xs text-right"
                                   />
                                   {setting.maxHoursCap ? <span className="text-[10px] text-slate-400"> (cap {setting.maxHoursCap})</span> : null}
@@ -3436,10 +3684,7 @@ export default function AttendancePage() {
                                   <NumericInput
                                     integer
                                     value={row.noOfMeal ?? 1}
-                                    onChange={e => {
-                                      const count = Number(e.target.value || 0)
-                                      updateUploadRow(index, { noOfMeal: count, totalMealValue: count * mealRate })
-                                    }}
+                                    onChange={e => edits.setMeals(Number(e.target.value || 0), mealRate)}
                                     className="form-input w-14 text-xs text-right"
                                   />
                                 </td>
@@ -3518,6 +3763,28 @@ export default function AttendancePage() {
                 </select>
               </label>
             </div>
+            {exportUnsaved > 0 && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
+                {exportUnsaved} row{exportUnsaved === 1 ? ' is' : 's are'} in the upload preview and not saved yet, so {exportUnsaved === 1 ? 'it is' : 'they are'} not in this export. Click Save first.
+              </p>
+            )}
+            {exportMatches.length === 0 && (
+              <div className="text-xs text-slate-600 space-y-1.5">
+                <p>{exportOtherMonths.length ? 'Saved attendance for this plant is in:' : 'No attendance is saved for this plant yet.'}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {exportOtherMonths.slice(0, 12).map(([period, count]) => (
+                    <button
+                      key={period}
+                      type="button"
+                      onClick={() => setExportChoice({ ...exportChoice, year: period.slice(0, 4), month: period.slice(5, 7) })}
+                      className="px-2 py-1 border rounded font-medium hover:bg-slate-50"
+                    >
+                      {period} ({count})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs text-slate-600">{exportMatches.length} attendance row{exportMatches.length === 1 ? '' : 's'}, {new Set(exportMatches.map(r => r.epfNo)).size} employee{new Set(exportMatches.map(r => r.epfNo)).size === 1 ? '' : 's'}</span>
               <div className="flex gap-2">
