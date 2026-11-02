@@ -8,6 +8,10 @@ import SlideOver from '../../components/SlideOver'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Toggle from '../../components/Toggle'
 import SearchableEmployeeSelect from '../../components/shared/SearchableEmployeeSelect'
+import EmployeeCellSearch from '../../components/shared/EmployeeCellSearch'
+import EasyTimeInput from '../../components/shared/EasyTimeInput'
+import { reportYears } from '../../components/reports/ReportFilters'
+import { displayTime, parseEasyTime } from '../../utils/easyTime'
 import { list as listEmployees } from '../../services/employeeService'
 import { list as listCustomers } from '../../mocks/customers'
 import { list as listSections, Section } from '../../mocks/sections'
@@ -190,12 +194,32 @@ function excelDate(value: unknown): string {
 }
 
 function excelTime(value: unknown): string {
-  if (typeof value === 'number') {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`
+  }
+  // Below 1 is an Excel time cell; 7.30 or 1630 is a time typed as a plain number
+  if (typeof value === 'number' && value < 1) {
     const totalSeconds = Math.round(value * 86400)
     return `${String(Math.floor(totalSeconds / 3600) % 24).padStart(2, '0')}:${String(Math.floor(totalSeconds / 60) % 60).padStart(2, '0')}:${String(totalSeconds % 60).padStart(2, '0')}`
   }
   const text = String(value ?? '').trim()
-  return /^\d{1,2}:\d{2}(:\d{2})?$/.test(text) ? (text.length === 5 ? `${text}:00` : text) : text
+  const parsed = parseEasyTime(text)
+  if (!parsed) return text
+  return parsed.length === 5 ? `${parsed}:00` : parsed
+}
+
+const normalizeName = (name: unknown) => String(name ?? '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim()
+
+// Employees a name from Excel can mean: the exact full name, otherwise every word of it ("DAMMIKA JAYALATH")
+function findEmployeesByName(name: unknown, employeeList: any[]): any[] {
+  const target = normalizeName(name)
+  if (!/[A-Z]/.test(target)) return []
+  const fullNames = employeeList.map(emp => ({ emp, full: normalizeName(`${emp.firstName || ''} ${emp.lastName || ''}`) }))
+  const exact = fullNames.filter(item => item.full === target)
+  if (exact.length) return exact.map(item => item.emp)
+  const words = target.split(' ')
+  return fullNames.filter(item => words.every(word => item.full.split(' ').includes(word))).map(item => item.emp)
 }
 
 // Plant reference from Excel or the employee master ("P01", "p01 ", "P01 / Name" or the plant name) to its code
@@ -216,7 +240,8 @@ function parseAttendanceRows(
   defaultSection?: string,
   employeeList: any[] = [],
   customerList: any[] = [],
-  transfers: any[] = []
+  transfers: any[] = [],
+  nameNotes: { matched: number; unclear: number } = { matched: 0, unclear: 0 }
 ): Attendance[] {
   if (!data.length) return []
   // "Day_In (yyyy-MM-dd)" -> "dayin": hints in brackets are ignored
@@ -283,8 +308,26 @@ function parseAttendanceRows(
     const yearFromDate = dayInVal.includes('-') ? dayInVal.split('-')[0] : ''
     const monthFromDate = dayInVal.includes('-') ? dayInVal.split('-')[1] : ''
 
-    const cleanEpf = (record.epfNo || '').trim().toLowerCase()
-    const matchedEmployee = cleanEpf ? employeeList.find(e => (e.epfNo || '').trim().toLowerCase() === cleanEpf) : undefined
+    let cleanEpf = (record.epfNo || '').trim().toLowerCase()
+    let matchedEmployee = cleanEpf ? employeeList.find(e => (e.epfNo || '').trim().toLowerCase() === cleanEpf) : undefined
+    // No such EPF: the Employee ID cell or the name column can still find the employee
+    if (!matchedEmployee && (cleanEpf || record.employeeName)) {
+      const idMatches = findEmployeesByName(record.epfNo, employeeList)
+      const matches = idMatches.length ? idMatches : findEmployeesByName(record.employeeName, employeeList)
+      if (matches.length === 1) {
+        matchedEmployee = matches[0]
+        record.epfNo = matches[0].epfNo
+        record.employeeName = `${matches[0].firstName} ${matches[0].lastName || ''}`.trim()
+        cleanEpf = (record.epfNo || '').trim().toLowerCase()
+        nameNotes.matched++
+      } else if (matches.length > 1) {
+        // Never guess between two people: the row waits for the user to pick one
+        if (idMatches.length) record.employeeName = record.epfNo
+        record.epfNo = ''
+        cleanEpf = ''
+        nameNotes.unclear++
+      }
+    }
     // A transfer active on that date overrides the employee's home plant
     const activeTransfer = transfers.find(t => (t.epfNo || '').trim().toLowerCase() === cleanEpf
       && t.transferDate && dayInVal >= t.transferDate && (!t.endDate || dayInVal <= t.endDate))
@@ -357,6 +400,56 @@ function parseAttendanceRows(
       businessCenter: record.businessCenter || businessCenter
     } as Attendance
   })
+}
+
+function ageFrom(dateOfBirth?: string): number | null {
+  const birth = dateOfBirth ? new Date(dateOfBirth) : null
+  if (!birth || Number.isNaN(birth.getTime())) return null
+  const today = new Date()
+  const hadBirthday = today.getMonth() > birth.getMonth() || (today.getMonth() === birth.getMonth() && today.getDate() >= birth.getDate())
+  return today.getFullYear() - birth.getFullYear() - (hadBirthday ? 0 : 1)
+}
+
+// Plant card bar: one Time In / Time Out for all rows of the plant, or for one employee
+function PlantTimeBar({ employees, onApply }: {
+  employees: [string, string][]
+  onApply: (timeIn: string, timeOut: string, epf: string) => void
+}) {
+  const [timeIn, setTimeIn] = useState('')
+  const [timeOut, setTimeOut] = useState('')
+  const [epf, setEpf] = useState('')
+
+  const apply = () => {
+    const parsedIn = parseEasyTime(timeIn)
+    const parsedOut = parseEasyTime(timeOut)
+    if (parsedIn === null || parsedOut === null) {
+      toast.error('Type the time like 7.30, 16.45 or 4.30pm.')
+      return
+    }
+    if (!parsedIn && !parsedOut) {
+      toast.error('Type a Time In or a Time Out first.')
+      return
+    }
+    onApply(parsedIn, parsedOut, epf)
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-700">
+      <span className="font-semibold">Set times:</span>
+      <label className="flex items-center gap-1">Time In
+        <input aria-label="Set Time In" value={timeIn} onChange={e => setTimeIn(e.target.value)} placeholder="7.30" className="form-input w-20 text-xs h-7 font-mono" />
+      </label>
+      <label className="flex items-center gap-1">Time Out
+        <input aria-label="Set Time Out" value={timeOut} onChange={e => setTimeOut(e.target.value)} placeholder="16.30" className="form-input w-20 text-xs h-7 font-mono" />
+      </label>
+      <select aria-label="Apply times to" value={epf} onChange={e => setEpf(e.target.value)} className="form-input text-xs !py-0.5 h-7 w-52">
+        <option value="">All employees in this plant</option>
+        {employees.map(([code, name]) => <option key={code} value={code}>{code}{name ? ` - ${name}` : ''}</option>)}
+      </select>
+      <button type="button" onClick={apply} className="px-2.5 py-1 text-xs bg-white border rounded font-medium hover:bg-slate-50">Apply</button>
+      <span className="text-[11px] text-slate-500">Leave one blank to keep it. Hours and OT recalculate.</span>
+    </div>
+  )
 }
 
 function validateUploadRow(
@@ -510,6 +603,8 @@ export default function AttendancePage() {
   }, [employeeList, customerList])
 
   // Filters for Year, Month, Employee, Plant
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportChoice, setExportChoice] = useState({ year: 'ALL', month: 'ALL', plant: 'ALL' })
   const [filterYear, setFilterYear] = useState<string>('ALL')
   const [filterMonth, setFilterMonth] = useState<string>('ALL')
   const [filterEmployee, setFilterEmployee] = useState<string>('ALL')
@@ -679,6 +774,7 @@ export default function AttendancePage() {
     try {
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true })
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const nameNotes = { matched: 0, unclear: 0 }
       const parsed = parseAttendanceRows(
         XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true }),
         localStorage.getItem('hsb_active_bc') || defaultForm.businessCenter,
@@ -686,7 +782,8 @@ export default function AttendancePage() {
         uploadDefaultSection,
         employeeList,
         customerList,
-        transfers
+        transfers,
+        nameNotes
       )
       if (!parsed.length) {
         toast.error('The selected file contains no attendance rows.')
@@ -694,6 +791,8 @@ export default function AttendancePage() {
       }
       setUploadRows(parsed)
       toast.success(`${parsed.length} attendance rows loaded for review`)
+      if (nameNotes.matched) toast.info(`${nameNotes.matched} rows found the employee by name. Please check them before saving.`)
+      if (nameNotes.unclear) toast.error(`${nameNotes.unclear} rows have a name that fits more than one employee. Please choose the employee.`)
     } catch (error) {
       console.error('Attendance Excel import failed', error)
       toast.error('Unable to read the selected Excel file.')
@@ -759,6 +858,18 @@ export default function AttendancePage() {
       const master = plantMasterValues(plant, plantStaffCount(plant, employeeList, customerList))
       return { ...row, ...master, minWorkHours: computed.minWorkHours, totalWorkingHours: computed.hours, totalOt: otFromHours(master.otCalAuto, computed.ot, row.totalOt) }
     }))
+  }
+
+  // New times on many rows; each row recalculates hours and OT for its own date. A blank time stays as it is
+  function applyStagedTimes(plant: any, indexes: Set<number>, timeIn: string, timeOut: string) {
+    setUploadRows(previous => previous.map((row, rowIndex) => {
+      if (!indexes.has(rowIndex)) return row
+      const nextIn = timeIn || row.timeIn || ''
+      const nextOut = timeOut || row.timeOut || ''
+      const computed = computePlantHours(nextIn, nextOut, plant, row.plantCode, row.minWorkHours, row.dayIn)
+      return { ...row, timeIn: nextIn, timeOut: nextOut, totalWorkingHours: computed.hours, totalOt: otFromHours(row.otCalAuto, computed.ot, row.totalOt) }
+    }))
+    toast.success(`Times applied to ${indexes.size} row${indexes.size === 1 ? '' : 's'}`)
   }
 
   // Ticking OT Calculate Auto recalculates the plant's rows; unticking keeps the values for manual editing
@@ -835,6 +946,27 @@ export default function AttendancePage() {
     () => uploadRows.map(r => validateUploadRow(r, uploadRows, rows, employeeList)),
     [uploadRows, rows, employeeList]
   )
+
+  const stagedMonthTotals = useMemo(() => {
+    const keyOf = (row: Attendance) => `${(row.epfNo || '').trim().toLowerCase()}|${excelDate(row.dayIn).slice(0, 7)}`
+    const stagedDays = new Set(uploadRows.map(row => `${(row.epfNo || '').trim().toLowerCase()}|${excelDate(row.dayIn)}`))
+    const wanted = new Set(uploadRows.map(keyOf))
+    const totals = new Map<string, { ot: number; days: number }>()
+    const add = (row: Attendance) => {
+      const key = keyOf(row)
+      if (!wanted.has(key)) return
+      const total = totals.get(key) || { ot: 0, days: 0 }
+      const isHalf = row.workingDays === 0.5 || row.halfDay === 1 || row.halfDay === 0.5
+      total.ot += Number(row.totalOt) || 0
+      total.days += isHalf ? 0.5 : 1
+      totals.set(key, total)
+    }
+    rows.forEach(row => {
+      if (!stagedDays.has(`${(row.epfNo || '').trim().toLowerCase()}|${excelDate(row.dayIn)}`)) add(row)
+    })
+    uploadRows.forEach(add)
+    return totals
+  }, [uploadRows, rows])
 
   const stagedByPlant = useMemo(() => {
     const groups = new Map<string, Array<{ row: Attendance; index: number }>>()
@@ -1063,14 +1195,35 @@ export default function AttendancePage() {
     exportAttendanceRows(uploadRows, 'attendance-updated.xlsx', true)
   }
 
-  // Saved logs with the current filters; the file can be edited and imported again
+  function openExportDialog() {
+    setExportChoice({ year: filterYear, month: filterMonth, plant: filterPlant })
+    setExportOpen(true)
+  }
+
+  // Saved attendance of the chosen month and plant; the file can be edited and imported again
+  const exportMatches = useMemo(() => {
+    if (!exportOpen) return []
+    return rows
+      .filter(row => {
+        const date = excelDate(row.dayIn)
+        if (exportChoice.year !== 'ALL' && (row.atttYear || date.slice(0, 4)) !== exportChoice.year) return false
+        if (exportChoice.month !== 'ALL' && (row.attMonth || date.slice(5, 7)) !== exportChoice.month) return false
+        return exportChoice.plant === 'ALL' || resolvePlantRef(row.plantCode, customerList) === exportChoice.plant
+      })
+      .sort((a, b) =>
+        (a.plantCode || '').localeCompare(b.plantCode || '') ||
+        (a.epfNo || '').localeCompare(b.epfNo || '', undefined, { numeric: true }) ||
+        excelDate(a.dayIn).localeCompare(excelDate(b.dayIn)))
+  }, [exportOpen, exportChoice, rows, customerList])
+
   function exportSavedRows() {
-    if (!filtered.length) {
-      toast.error('There are no attendance rows to export for these filters.')
+    if (!exportMatches.length) {
+      toast.error('There are no attendance rows to export for this month and plant.')
       return
     }
-    const period = [filterYear, filterMonth, filterPlant].filter(v => v !== 'ALL').join('-')
-    exportAttendanceRows(filtered, `attendance${period ? `-${period}` : ''}.xlsx`, false)
+    const period = [exportChoice.year, exportChoice.month, exportChoice.plant].filter(v => v !== 'ALL').join('-')
+    exportAttendanceRows(exportMatches, `attendance${period ? `-${period}` : ''}.xlsx`, false)
+    setExportOpen(false)
   }
 
   function exportAttendanceRows(list: Attendance[], fileName: string, staged: boolean) {
@@ -1096,9 +1249,9 @@ export default function AttendancePage() {
         Workday: workdayText,
         Working_Days: record.workingDays ?? (isHalf ? 0.5 : 1),
         Day_in: record.dayIn,
-        Time_IN: record.timeIn,
+        Time_IN: displayTime(record.timeIn),
         Day_out: String(record.dayOut || '').slice(0, 10),
-        Time_Out: record.timeOut,
+        Time_Out: displayTime(record.timeOut),
         Half_Day: isHalf ? 0.5 : 0,
         Total_Working_Hours: record.totalWorkingHours,
         Min_Work_Hours: record.minWorkHours,
@@ -1123,6 +1276,13 @@ export default function AttendancePage() {
     })
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportRows), 'Attendance')
+    // Second sheet to look up an Employee ID by name; import reads only the first sheet
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(employeeList.map(emp => ({
+      EPF_No: emp.epfNo,
+      Employee_Name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
+      Plant_Code: emp.plantCode || '',
+      Section_Code: emp.sectionCode || ''
+    }))), 'Employees')
     XLSX.writeFile(workbook, fileName)
     toast.success(`Exported ${list.length} attendance rows to ${fileName}`)
   }
@@ -1884,8 +2044,8 @@ export default function AttendancePage() {
           <button
             type="button"
             className="flex items-center gap-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-md text-xs font-medium btn-press shadow-xs"
-            onClick={exportSavedRows}
-            title="Export the attendance rows shown below to Excel"
+            onClick={openExportDialog}
+            title="Export attendance to Excel by month and plant"
           >
             <FileSpreadsheet size={14} className="text-emerald-700" />
             <span>Export Excel</span>
@@ -3050,20 +3210,27 @@ export default function AttendancePage() {
                         {variesHint('dasForAttAllowance')}
                       </span>
                     </div>
+                    <PlantTimeBar
+                      employees={Array.from(new Map(plantRows.filter(r => r.epfNo).map(r => [r.epfNo, r.employeeName || ''])).entries())}
+                      onApply={(timeIn, timeOut, epf) => applyStagedTimes(plantObj, new Set(group.items.filter(i => !epf || i.row.epfNo === epf).map(i => i.index)), timeIn, timeOut)}
+                    />
                   </div>
 
                   {!collapsed && (
                     <div className="overflow-x-auto max-h-[420px]">
-                      <table className="min-w-[2300px] w-full text-xs">
+                      <table className="min-w-[2460px] w-full text-xs">
                         <thead className="bg-slate-50 text-left text-slate-600 sticky top-0 z-10 border-b">
                           <tr>
                             <th className="px-2 py-2">Status</th>
                             <th className="px-2 py-2">Employee ID *</th>
                             <th className="px-2 py-2">Employee Name</th>
+                            <th className="px-2 py-2">Age</th>
                             <th className="px-2 py-2">Section</th>
                             <th className="px-2 py-2 bg-amber-50/60">Basic Salary</th>
                             <th className="px-2 py-2 bg-amber-50/60">Day Allowance</th>
                             <th className="px-2 py-2 bg-amber-50/60">Night Allowance</th>
+                            <th className="px-2 py-2 bg-amber-50/60" title="This employee's OT hours in the row's month: saved days plus this upload">Month Total OT</th>
+                            <th className="px-2 py-2 bg-amber-50/60" title="This employee's days in the row's month: saved days plus this upload">Month Total Days</th>
                             <th className="px-2 py-2">Day In</th>
                             <th className="px-2 py-2">Day Out</th>
                             <th className="px-2 py-2">Time In</th>
@@ -3096,6 +3263,8 @@ export default function AttendancePage() {
                             const dayType = row.specialDay === 'Y' ? 'Special' : 'Normal'
                             const isStatutory = stagedHolidayDates.has(dayInValue)
                             const recompute = (timeIn: string, timeOut: string, minWorkHours = row.minWorkHours) => computePlantHours(timeIn, timeOut, plantObj, row.plantCode, minWorkHours, row.dayIn)
+                            const monthTotal = stagedMonthTotals.get(`${(row.epfNo || '').trim().toLowerCase()}|${dayInValue.slice(0, 7)}`)
+                            const rowsBelow = group.items.slice(group.items.findIndex(i => i.index === index) + 1).map(i => i.index)
 
                             return (
                               <tr key={row.id || index} className={val.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/40 hover:bg-rose-50/60'}>
@@ -3115,21 +3284,23 @@ export default function AttendancePage() {
                                   )}
                                 </td>
                                 <td className="px-2 py-1.5">
-                                  <select
-                                    value={row.epfNo || ''}
-                                    onChange={e => handleStagedEmployeeChange(index, row, e.target.value)}
-                                    className={`form-input w-36 text-xs font-mono ${val.errors.some(er => er.includes('EPF')) ? 'border-red-400 bg-red-50 ring-1 ring-red-200' : ''}`}
-                                  >
-                                    <option value="">Select Employee...</option>
-                                    {row.epfNo && !matchedEmp && <option value={row.epfNo}>{row.epfNo} (unknown)</option>}
-                                    {employeeList.map(emp => (
-                                      <option key={emp.epfNo} value={emp.epfNo}>{emp.epfNo} - {emp.firstName} {emp.lastName || ''}</option>
-                                    ))}
-                                  </select>
+                                  <EmployeeCellSearch
+                                    employees={employeeList}
+                                    value={row.epfNo}
+                                    onChange={epf => handleStagedEmployeeChange(index, row, epf)}
+                                    invalid={val.errors.some(er => er.includes('EPF'))}
+                                    className="w-32 text-xs"
+                                  />
                                 </td>
                                 <td className="px-2 py-1.5">
-                                  <span className="text-slate-700 truncate block max-w-[130px]" title={empDisplayName}>{empDisplayName}</span>
+                                  <input
+                                    value={row.employeeName || ''}
+                                    placeholder={empDisplayName}
+                                    onChange={e => updateUploadRow(index, { employeeName: e.target.value })}
+                                    className="form-input w-40 text-xs"
+                                  />
                                 </td>
+                                <td className="px-2 py-1.5 text-center text-slate-700">{ageFrom(matchedEmp?.dateOfBirth) ?? '—'}</td>
                                 <td className="px-2 py-1.5">
                                   <select value={row.sectionCode || ''} onChange={e => updateUploadRow(index, { sectionCode: e.target.value })} className="form-input w-28 text-xs">
                                     <option value="">Select</option>
@@ -3147,6 +3318,8 @@ export default function AttendancePage() {
                                 <td className="px-2 py-1.5 bg-amber-50/30">
                                   <NumericInput value={row.nightAllowance ?? 0} onChange={e => updateUploadRow(index, { nightAllowance: Number(e.target.value || 0) })} className="form-input w-20 text-xs text-right mono-numeric" />
                                 </td>
+                                <td className="px-2 py-1.5 bg-amber-50/30 text-right font-mono text-slate-700">{monthTotal ? monthTotal.ot.toFixed(2) : '—'}</td>
+                                <td className="px-2 py-1.5 bg-amber-50/30 text-right font-mono text-slate-700">{monthTotal ? monthTotal.days : '—'}</td>
                                 <td className="px-2 py-1.5">
                                   <input
                                     type="date"
@@ -3167,28 +3340,36 @@ export default function AttendancePage() {
                                   <input type="date" value={excelDate(row.dayOut) || dayInValue || ''} onChange={e => updateUploadRow(index, { dayOut: e.target.value })} className="form-input w-32 text-xs" />
                                 </td>
                                 <td className="px-2 py-1.5">
-                                  <input
-                                    type="time"
-                                    step="1"
-                                    value={row.timeIn || ''}
-                                    onChange={e => {
-                                      const computed = recompute(e.target.value, row.timeOut || '')
-                                      updateUploadRow(index, { timeIn: e.target.value, totalWorkingHours: computed.hours, totalOt: otFromHours(row.otCalAuto, computed.ot, row.totalOt) })
+                                  <EasyTimeInput
+                                    column="in"
+                                    value={row.timeIn}
+                                    onCommit={timeIn => {
+                                      const computed = recompute(timeIn, row.timeOut || '')
+                                      updateUploadRow(index, { timeIn, totalWorkingHours: computed.hours, totalOt: otFromHours(row.otCalAuto, computed.ot, row.totalOt) })
                                     }}
-                                    className="form-input w-36 text-xs"
+                                    className="w-20 text-xs"
                                   />
                                 </td>
-                                <td className="px-2 py-1.5">
-                                  <input
-                                    type="time"
-                                    step="1"
-                                    value={(row.timeOut || '').slice(0, 8)}
-                                    onChange={e => {
-                                      const computed = recompute(row.timeIn || '', e.target.value)
-                                      updateUploadRow(index, { timeOut: e.target.value, totalWorkingHours: computed.hours, totalOt: otFromHours(row.otCalAuto, computed.ot, row.totalOt) })
+                                <td className="px-2 py-1.5 whitespace-nowrap">
+                                  <EasyTimeInput
+                                    column="out"
+                                    value={row.timeOut}
+                                    onCommit={timeOut => {
+                                      const computed = recompute(row.timeIn || '', timeOut)
+                                      updateUploadRow(index, { timeOut, totalWorkingHours: computed.hours, totalOt: otFromHours(row.otCalAuto, computed.ot, row.totalOt) })
                                     }}
-                                    className="form-input w-36 text-xs"
+                                    className="w-20 text-xs"
                                   />
+                                  <button
+                                    type="button"
+                                    disabled={rowsBelow.length === 0}
+                                    onClick={() => applyStagedTimes(plantObj, new Set(rowsBelow), row.timeIn || '', row.timeOut || '')}
+                                    title="Copy this row's Time In and Time Out to all rows below in this plant"
+                                    aria-label="Copy times to rows below"
+                                    className="ml-1 px-1.5 py-1 border rounded text-xs text-slate-600 hover:bg-slate-100 disabled:opacity-30"
+                                  >
+                                    ↓
+                                  </button>
                                 </td>
                                 <td className="px-2 py-1.5 text-center">
                                   <select
@@ -3306,6 +3487,47 @@ export default function AttendancePage() {
         onCancel={() => setStatConfirm(null)}
       />
       <ConfirmDialog open={!!confirm} title="Delete Entry" message="Are you sure you want to delete this attendance log?" onConfirm={handleDeleteConfirm} onCancel={() => setConfirm(null)} />
+
+      {exportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-5 space-y-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Export Attendance to Excel</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Edit the file and use Import Excel to update these days.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-xs font-semibold text-slate-700">
+              <label className="block">
+                Year
+                <select aria-label="Export year" value={exportChoice.year} onChange={e => setExportChoice({ ...exportChoice, year: e.target.value })} className="mt-1 w-full form-input text-xs">
+                  <option value="ALL">All years</option>
+                  {reportYears.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                Month
+                <select aria-label="Export month" value={exportChoice.month} onChange={e => setExportChoice({ ...exportChoice, month: e.target.value })} className="mt-1 w-full form-input text-xs">
+                  <option value="ALL">All months</option>
+                  {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0')).map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </label>
+              <label className="block col-span-2">
+                Plant
+                <select aria-label="Export plant" value={exportChoice.plant} onChange={e => setExportChoice({ ...exportChoice, plant: e.target.value })} className="mt-1 w-full form-input text-xs">
+                  <option value="ALL">All plants</option>
+                  {customerList.map(c => <option key={c.code} value={c.code}>{c.code} - {c.name}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-slate-600">{exportMatches.length} attendance row{exportMatches.length === 1 ? '' : 's'}, {new Set(exportMatches.map(r => r.epfNo)).size} employee{new Set(exportMatches.map(r => r.epfNo)).size === 1 ? '' : 's'}</span>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setExportOpen(false)} className="px-3 py-1.5 text-xs border rounded font-medium hover:bg-slate-50">Cancel</button>
+                <button type="button" onClick={exportSavedRows} disabled={!exportMatches.length} className="px-3 py-1.5 text-xs bg-[#2F6F5E] text-white rounded font-semibold hover:bg-[#26594b] disabled:opacity-50">Export Excel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sync Monthly Summary Modal */}
       <SlideOver open={syncModalOpen} onClose={() => setSyncModalOpen(false)} title="Sync Monthly Summary">
