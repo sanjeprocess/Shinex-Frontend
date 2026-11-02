@@ -106,7 +106,7 @@ export default function AttendanceReportPage() {
   const cleanPlant = selectedPlant.trim().toUpperCase()
   const filtered = attendanceList.filter(a => {
     if (!cleanPlant) return true
-    return (a.plantCode || '').trim().toUpperCase() === cleanPlant || (a.customerCode || '').trim().toUpperCase() === cleanPlant
+    return (a.plantCode || a.customerCode || '').trim().toUpperCase() === cleanPlant
   })
 
   // Group by employee (numeric-aware EPF order), then by date

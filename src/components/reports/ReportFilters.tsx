@@ -18,7 +18,10 @@ export const employeeFullName = (employee?: Employee | null) =>
 export function useReportFilters(defaultToFirstPlant = false) {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
   const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
-  const [businessCenter, setBusinessCenter] = useState<string>('ALL')
+  const [businessCenter, setBusinessCenter] = useState<string>(() => {
+    const active = (localStorage.getItem('hsb_active_bc') || '').split(' / ')[0].trim()
+    return active || 'ALL'
+  })
   const [plant, setPlant] = useState<string>('')
   const [businessCenters, setBusinessCenters] = useState<any[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])

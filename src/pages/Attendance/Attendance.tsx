@@ -189,13 +189,24 @@ function excelTime(value: unknown): string {
   return /^\d{1,2}:\d{2}(:\d{2})?$/.test(text) ? (text.length === 5 ? `${text}:00` : text) : text
 }
 
+// Plant reference from Excel or the employee master ("P01", "p01 ", "P01 / Name" or the plant name) to its code
+function resolvePlantRef(ref: string | undefined, customerList: any[]): string {
+  const text = (ref || '').trim()
+  if (!text) return ''
+  const key = text.split(/\s|\//)[0].toUpperCase()
+  const match = customerList.find(c => (c.code || '').trim().toUpperCase() === key)
+    || customerList.find(c => (c.name || '').trim().toUpperCase() === text.toUpperCase())
+  return match ? match.code : text.split(/\s\/\s/)[0].trim()
+}
+
 function parseAttendanceRows(
   data: unknown[][],
   businessCenter: string,
   defaultPlant?: string,
   defaultSection?: string,
   employeeList: any[] = [],
-  customerList: any[] = []
+  customerList: any[] = [],
+  transfers: any[] = []
 ): Attendance[] {
   if (!data.length) return []
   // "Day_In (yyyy-MM-dd)" -> "dayin": hints in brackets are ignored
@@ -203,7 +214,7 @@ function parseAttendanceRows(
   return data.slice(1).filter(row => row.some(Boolean)).map((row, index) => {
     const record: Partial<Attendance> = {
       id: uuid(), atttYear: '', attMonth: '', epfNo: '',
-      plantCode: defaultPlant || '', customerCode: defaultPlant || '', sectionCode: defaultSection || '',
+      plantCode: '', customerCode: '', sectionCode: '',
       dayIn: '', timeIn: '', businessCenter,
       workingDays: 1, halfDay: 0, noOfMeal: 1
     }
@@ -264,7 +275,13 @@ function parseAttendanceRows(
 
     const cleanEpf = (record.epfNo || '').trim().toLowerCase()
     const matchedEmployee = cleanEpf ? employeeList.find(e => (e.epfNo || '').trim().toLowerCase() === cleanEpf) : undefined
-    const autoPlant = record.plantCode || (matchedEmployee?.plantCode ? matchedEmployee.plantCode.split(' ')[0].trim() : '') || defaultPlant || ''
+    // A transfer active on that date overrides the employee's home plant
+    const activeTransfer = transfers.find(t => (t.epfNo || '').trim().toLowerCase() === cleanEpf
+      && t.transferDate && dayInVal >= t.transferDate && (!t.endDate || dayInVal <= t.endDate))
+    const autoPlant = resolvePlantRef(record.plantCode || record.customerCode, customerList)
+      || resolvePlantRef(activeTransfer?.toPlant, customerList)
+      || resolvePlantRef(matchedEmployee?.plantCode, customerList)
+      || defaultPlant || ''
     const autoSection = record.sectionCode || matchedEmployee?.sectionCode || defaultSection || ''
     const autoName = record.employeeName || (matchedEmployee ? `${matchedEmployee.firstName} ${matchedEmployee.lastName || ''}`.trim() : '')
     const autoSalary = (record.basicSalary != null && record.basicSalary > 0) ? record.basicSalary : (matchedEmployee?.basicSalary || 0)
@@ -299,7 +316,7 @@ function parseAttendanceRows(
       atttYear: record.atttYear || yearFromDate,
       attMonth: record.attMonth || monthFromDate,
       plantCode: autoPlant,
-      customerCode: record.customerCode || autoPlant,
+      customerCode: autoPlant,
       sectionCode: autoSection,
       basicSalary: autoSalary,
       dayAllowance: record.dayAllowance ?? matchedEmployee?.dayAllowance ?? 0,
@@ -340,8 +357,10 @@ function validateUploadRow(
 ): {
   isValid: boolean;
   errors: string[];
+  updatesSaved: boolean;
 } {
   const errs: string[] = []
+  let updatesSaved = false
   const cleanEpf = (row.epfNo || '').trim().toLowerCase()
 
   // 1. Unknown EPF check
@@ -362,17 +381,21 @@ function validateUploadRow(
   // 3. Duplicate check for same employee and date
   if (cleanEpf && row.dayIn) {
     const dupCount = allUploadRows.filter(r => (r.epfNo || '').trim().toLowerCase() === cleanEpf && r.dayIn === row.dayIn).length
-    const dupSaved = savedRows.some(r => (r.epfNo || '').trim().toLowerCase() === cleanEpf && r.dayIn === row.dayIn)
+    updatesSaved = savedRows.some(r => (r.epfNo || '').trim().toLowerCase() === cleanEpf && r.dayIn === row.dayIn)
     if (dupCount > 1) {
       errs.push('Duplicate row in Excel')
-    } else if (dupSaved) {
-      errs.push('Duplicate in saved logs')
     }
+  }
+
+  // 4. Plant check
+  if (!(row.plantCode || '').trim()) {
+    errs.push('Missing Plant')
   }
 
   return {
     isValid: errs.length === 0,
-    errors: errs
+    errors: errs,
+    updatesSaved
   }
 }
 
@@ -630,15 +653,14 @@ export default function AttendancePage() {
     try {
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true })
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
-      const defaultPlant = uploadDefaultPlant || (customerList[0]?.code || '')
-      const defaultSection = uploadDefaultSection || (sectionList[0]?.code || '')
       const parsed = parseAttendanceRows(
         XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true }),
         localStorage.getItem('hsb_active_bc') || defaultForm.businessCenter,
-        defaultPlant,
-        defaultSection,
+        uploadDefaultPlant,
+        uploadDefaultSection,
         employeeList,
-        customerList
+        customerList,
+        transfers
       )
       if (!parsed.length) {
         toast.error('The selected file contains no attendance rows.')
@@ -654,8 +676,8 @@ export default function AttendancePage() {
 
   function handleAddNewUploadRow() {
     const today = new Date().toISOString().split('T')[0];
-    const defaultPlant = uploadDefaultPlant || (customerList[0]?.code || '');
-    const defaultSection = uploadDefaultSection || (sectionList[0]?.code || '');
+    const defaultPlant = uploadDefaultPlant;
+    const defaultSection = uploadDefaultSection;
     const plantObj = customerList.find(c => c.code === defaultPlant || c.name === defaultPlant);
     const { timeIn: defaultTimeIn, timeOut: defaultTimeOut } = shiftDefaultTimes('Day', plantObj, defaultPlant, today);
     const computed = computePlantHours(defaultTimeIn, defaultTimeOut, plantObj, defaultPlant, undefined, today);
@@ -741,7 +763,7 @@ export default function AttendancePage() {
       updateUploadRow(index, { epfNo: newEpf })
       return
     }
-    const plantCode = row.plantCode || (matched.plantCode ? matched.plantCode.split(' ')[0].trim() : '') || uploadDefaultPlant || (customerList[0]?.code || '')
+    const plantCode = row.plantCode || resolvePlantRef(matched.plantCode, customerList) || uploadDefaultPlant
     const plantObj = customerList.find(c => c.code === plantCode || c.name === plantCode)
     const mealRate = matched.mealValue != null ? Number(matched.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200)
     const isNight = row.nightShift === 'Y' || row.fullNight === 'Y'
@@ -751,7 +773,7 @@ export default function AttendancePage() {
       employeeName: `${matched.firstName} ${matched.lastName || ''}`.trim(),
       plantCode,
       customerCode: plantCode,
-      sectionCode: matched.sectionCode || row.sectionCode || uploadDefaultSection || (sectionList[0]?.code || ''),
+      sectionCode: matched.sectionCode || row.sectionCode || uploadDefaultSection,
       basicSalary: resolveEmployeeBasicSalary(matched, sectionList),
       dayAllowance: matched.dayAllowance ?? 0,
       nightAllowance: isNight ? (matched.nightAllowance ?? 0) : 0,
@@ -839,8 +861,8 @@ export default function AttendancePage() {
       const cleanDayOut = excelDate(r.dayOut) || cleanDayIn
       const yr = r.atttYear || (cleanDayIn.includes('-') ? cleanDayIn.split('-')[0] : '')
       const mo = r.attMonth || (cleanDayIn.includes('-') ? cleanDayIn.split('-')[1] : '')
-      const autoPlant = r.plantCode || (emp?.plantCode ? emp.plantCode.split(' ')[0].trim() : '') || uploadDefaultPlant || (customerList[0]?.code || '')
-      const autoSection = r.sectionCode || emp?.sectionCode || uploadDefaultSection || (sectionList[0]?.code || '')
+      const autoPlant = r.plantCode
+      const autoSection = r.sectionCode || emp?.sectionCode || uploadDefaultSection
 
       return {
         ...r,
@@ -850,7 +872,7 @@ export default function AttendancePage() {
         atttYear: yr,
         attMonth: mo,
         plantCode: autoPlant,
-        customerCode: r.customerCode || autoPlant,
+        customerCode: autoPlant,
         sectionCode: autoSection,
         // Ticked from the statutory holiday calendar (payroll itself reads the calendar)
         statutoryHolidays: stagedHolidayDates.has(cleanDayIn) ? 1 : 0
@@ -1012,7 +1034,21 @@ export default function AttendancePage() {
       toast.error('There are no uploaded rows to export.')
       return
     }
-    const exportRows = uploadRows.map(row => {
+    exportAttendanceRows(uploadRows, 'attendance-updated.xlsx', true)
+  }
+
+  // Saved logs with the current filters; the file can be edited and imported again
+  function exportSavedRows() {
+    if (!filtered.length) {
+      toast.error('There are no attendance rows to export for these filters.')
+      return
+    }
+    const period = [filterYear, filterMonth, filterPlant].filter(v => v !== 'ALL').join('-')
+    exportAttendanceRows(filtered, `attendance${period ? `-${period}` : ''}.xlsx`, false)
+  }
+
+  function exportAttendanceRows(list: Attendance[], fileName: string, staged: boolean) {
+    const exportRows = list.map(row => {
       const { id, ...record } = row
       const isHalf = record.workingDays === 0.5 || record.halfDay === 1 || record.halfDay === 0.5
       const workdayText = isHalf ? '0.5 - Half Day' : '1 - Full Day'
@@ -1020,8 +1056,12 @@ export default function AttendancePage() {
         Attt_Year: record.atttYear,
         Att_Month: record.attMonth,
         EPF_No: record.epfNo,
-        Employee_Name: record.employeeName,
+        Employee_Name: record.employeeName || (() => {
+          const emp = employeeList.find(e => (e.epfNo || '').trim() === (record.epfNo || '').trim())
+          return emp ? `${emp.firstName} ${emp.lastName || ''}`.trim() : ''
+        })(),
         Plant_Code: record.plantCode,
+        Plant_Name: customerList.find(c => c.code === record.plantCode)?.name || '',
         Section_Code: record.sectionCode,
         OT_Cal_Auto: record.otCalAuto || 'N',
         No_Of_Staff: record.noOfStaff ?? 0,
@@ -1031,7 +1071,7 @@ export default function AttendancePage() {
         Working_Days: record.workingDays ?? (isHalf ? 0.5 : 1),
         Day_in: record.dayIn,
         Time_IN: record.timeIn,
-        Day_out: record.dayOut,
+        Day_out: String(record.dayOut || '').slice(0, 10),
         Time_Out: record.timeOut,
         Half_Day: isHalf ? 0.5 : 0,
         Total_Working_Hours: record.totalWorkingHours,
@@ -1050,15 +1090,15 @@ export default function AttendancePage() {
         Saturday_Poya: record.saturdayPoya,
         Special_Day: record.specialDay,
         Late_Allow_No: record.lateAllowNo || 'N',
-        Statutory_holidays: stagedHolidayDates.has(excelDate(record.dayIn)) ? 1 : 0,
+        Statutory_holidays: staged ? (stagedHolidayDates.has(excelDate(record.dayIn)) ? 1 : 0) : (record.statutoryHolidays ?? 0),
         Sunday_Poya_Extra: record.sundayPoyaExtra,
         Business_Center: record.businessCenter
       }
     })
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportRows), 'Attendance')
-    XLSX.writeFile(workbook, 'attendance-updated.xlsx')
-    toast.success(`Exported ${uploadRows.length} attendance rows to attendance-updated.xlsx`)
+    XLSX.writeFile(workbook, fileName)
+    toast.success(`Exported ${list.length} attendance rows to ${fileName}`)
   }
 
   // Add flow
@@ -1814,6 +1854,15 @@ export default function AttendancePage() {
           >
             <FileSpreadsheet size={14} />
             <span>Import Excel</span>
+          </button>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-md text-xs font-medium btn-press shadow-xs"
+            onClick={exportSavedRows}
+            title="Export the attendance rows shown below to Excel"
+          >
+            <FileSpreadsheet size={14} className="text-emerald-700" />
+            <span>Export Excel</span>
           </button>
           <button
             type="button"
@@ -3010,7 +3059,7 @@ export default function AttendancePage() {
                         </thead>
                         <tbody className="divide-y">
                           {group.items.map(({ row, index }) => {
-                            const val = stagedValidation[index] || { isValid: true, errors: [] }
+                            const val = stagedValidation[index] || { isValid: true, errors: [], updatesSaved: false }
                             const matchedEmp = employeeList.find(e => (e.epfNo || '').trim().toLowerCase() === (row.epfNo || '').trim().toLowerCase())
                             const empDisplayName = row.employeeName || (matchedEmp ? `${matchedEmp.firstName} ${matchedEmp.lastName || ''}`.trim() : '-')
                             const mealRate = matchedEmp?.mealValue != null ? Number(matchedEmp.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200)
@@ -3026,7 +3075,11 @@ export default function AttendancePage() {
                               <tr key={row.id || index} className={val.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/40 hover:bg-rose-50/60'}>
                                 <td className="px-2 py-1.5">
                                   {val.isValid ? (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">Valid</span>
+                                    val.updatesSaved ? (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-sky-50 text-sky-700 border border-sky-200" title="This employee and date is already saved; saving replaces it">Will update</span>
+                                    ) : (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">Valid</span>
+                                    )
                                   ) : (
                                     <div className="flex flex-col gap-0.5">
                                       {val.errors.map((e, ei) => (
