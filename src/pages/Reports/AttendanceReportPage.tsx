@@ -8,6 +8,18 @@ import { list as listBC } from '../../mocks/businessCenters'
 import api from '../../api/axios'
 import { formatDateDdMmmYyyy, formatTimeAmPm, decimalToHmm, formatCurrency } from '../../utils/reportHelpers'
 
+// Actual time between In and Off, as printed on the sheet (7:16 am - 6:30 pm = 11.23)
+function clockHours(a: Attendance): number {
+  if (!a.timeIn || !a.timeOut) return 0
+  const minutes = (time: string) => { const [h, m] = time.split(':').map(Number); return h * 60 + m }
+  let diff = minutes(a.timeOut) - minutes(a.timeIn)
+  if (diff < 0) diff += 24 * 60
+  return diff / 60
+}
+
+// 11.25 hours prints as 11.15 (hours.minutes)
+const hoursDotMinutes = (hours: number) => decimalToHmm(hours).replace(':', '.')
+
 export default function AttendanceReportPage() {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
   const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
@@ -106,31 +118,31 @@ export default function AttendanceReportPage() {
   const displayRows: any[][] = filtered.map(a => {
     const emp = employees.find(e => (e.epfNo || '').trim() === (a.epfNo || '').trim())
     const empFullName = emp ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim() : (a.employeeName || '').trim()
-    const totalHours = a.totalWorkingHours || 0
+    const totalHours = clockHours(a)
     const otHours = a.totalOt || 0
     const hasOut = !!a.timeOut
 
     return [
-      empFullName || a.epfNo,
+      `${empFullName || a.epfNo}-${(a.epfNo || '').trim()}`,
       a.epfNo,
       formatDateDdMmmYyyy(a.dayIn),
       formatTimeAmPm(a.timeIn),
       hasOut ? formatDateDdMmmYyyy(a.dayOut || a.dayIn) : '—',
       hasOut ? formatTimeAmPm(a.timeOut) : '—',
       totalHours.toFixed(2),
-      decimalToHmm(totalHours),
+      hoursDotMinutes(totalHours),
       otHours.toFixed(2),
-      decimalToHmm(otHours),
+      hoursDotMinutes(otHours),
       (a.noOfMeal || 0).toFixed(2),
       formatCurrency(a.totalMealValue || 0),
-      String(Math.round(otHours * 60)),
-      formatCurrency(a.basicSalary || 0),
+      '0.00',
+      formatCurrency(a.dayAllowance || 0),
       a.dayShift || '',
       a.normalDay || '',
     ]
   })
 
-  const totalHours = filtered.reduce((sum, a) => sum + (a.totalWorkingHours || 0), 0)
+  const totalHours = filtered.reduce((sum, a) => sum + clockHours(a), 0)
   const totalOt = filtered.reduce((sum, a) => sum + (a.totalOt || 0), 0)
   const totalMeals = filtered.reduce((sum, a) => sum + (a.noOfMeal || 0), 0)
   const totalMealValue = filtered.reduce((sum, a) => sum + (a.totalMealValue || 0), 0)
@@ -144,12 +156,12 @@ export default function AttendanceReportPage() {
     '',
     '',
     totalHours.toFixed(2),
-    decimalToHmm(totalHours),
+    hoursDotMinutes(totalHours),
     totalOt.toFixed(2),
-    decimalToHmm(totalOt),
+    hoursDotMinutes(totalOt),
     totalMeals.toFixed(2),
     formatCurrency(totalMealValue),
-    String(Math.round(totalOt * 60)),
+    '',
     '',
     '',
     '',

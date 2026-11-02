@@ -128,7 +128,7 @@ export default function SalaryAdvanceReportPage() {
     </div>
   )
 
-  const columns = ['Emp_ID', 'Name', 'Bank Account No', 'Bank / Branch', 'D_Value']
+  const columns = ['Emp_ID', 'Name', 'Bank Account No', 'Bank_Code', 'D_Value']
 
   const displayRows = rows.map(([empId, name, , acc, code, , cutVal]) => [
     empId,

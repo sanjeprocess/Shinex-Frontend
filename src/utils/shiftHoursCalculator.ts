@@ -1,11 +1,13 @@
 // Hours before OT starts when the plant master has no value
 export const DEFAULT_MIN_WORK_HOURS = 9;
+export const DEFAULT_SATURDAY_MIN_WORK_HOURS = 5.75;
 
 export interface PlantShiftSetting {
   countFromShiftStart?: boolean;
   shiftStart?: string; // e.g. "07:30"
   shiftEnd?: string; // e.g. "16:30"
   minWorkHours?: number; // OT = hours above this
+  saturdayMinWorkHours?: number; // same, for Saturdays
   maxHoursCap?: number | null; // e.g. 9
   mealValue?: number | null;
   code?: string;
@@ -51,11 +53,30 @@ export function resolvePlantSetting(plant?: any, plantCode?: string): PlantShift
     shiftStart,
     shiftEnd: hasShiftEnd ? plant.shiftEnd : minutesToTime(parseTimeToMinutes(shiftStart) + minWorkHours * 60),
     minWorkHours,
+    saturdayMinWorkHours: Number(plant?.saturdayMinWorkHours) > 0 ? Number(plant.saturdayMinWorkHours) : DEFAULT_SATURDAY_MIN_WORK_HOURS,
     maxHoursCap: hasCap ? (Number(plant.maxHoursCap) || null) : (isPlantB ? 9 : null),
     mealValue: plant?.mealValue != null ? Number(plant.mealValue) : 200,
     code: plant?.code || plantCode,
     name: plant?.name
   };
+}
+
+function isSaturday(dayIn?: string): boolean {
+  const date = String(dayIn || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && new Date(`${date}T00:00:00`).getDay() === 6;
+}
+
+/** Min Work Hours of the plant for that date: Saturdays have their own value. */
+export function minWorkHoursFor(plant?: any, plantCode?: string, dayIn?: string): number {
+  const setting = resolvePlantSetting(plant, plantCode);
+  return (isSaturday(dayIn) ? setting.saturdayMinWorkHours : setting.minWorkHours) as number;
+}
+
+/** Default Time Out of the plant for that date. */
+export function shiftEndFor(plant?: any, plantCode?: string, dayIn?: string): string {
+  const setting = resolvePlantSetting(plant, plantCode);
+  if (!isSaturday(dayIn)) return setting.shiftEnd as string;
+  return minutesToTime(parseTimeToMinutes(setting.shiftStart || '07:30') + (setting.saturdayMinWorkHours as number) * 60);
 }
 
 export interface ShiftComputationResult {
@@ -74,11 +95,12 @@ export function computePlantHours(
   timeOutStr: string,
   plant?: any,
   plantCode?: string,
-  minWorkHoursOverride?: number | null
+  minWorkHoursOverride?: number | null,
+  dayIn?: string
 ): ShiftComputationResult {
   const setting = resolvePlantSetting(plant, plantCode);
   // A value entered on the attendance row wins over the plant master
-  const minWorkHours = Number(minWorkHoursOverride) > 0 ? Number(minWorkHoursOverride) : (setting.minWorkHours as number);
+  const minWorkHours = Number(minWorkHoursOverride) > 0 ? Number(minWorkHoursOverride) : minWorkHoursFor(plant, plantCode, dayIn);
 
   if (!timeInStr || !timeOutStr) {
     return {
@@ -122,7 +144,9 @@ export function computePlantHours(
   }
 
   const hours = Math.round(rawHours * 10) / 10;
-  const ot = Math.max(0, Math.round((hours - minWorkHours) * 10) / 10);
+  // OT is paid in completed quarter hours (18:33 after a 16:30 end is 2.00, not 2.05)
+  const otMinutes = Math.round(rawHours * 60) - Math.round(minWorkHours * 60);
+  const ot = Math.max(0, Math.floor(otMinutes / 15) * 0.25);
 
   const startH = Math.floor(startMinutes / 60);
   const startM = startMinutes % 60;

@@ -22,6 +22,7 @@ export type Customer = {
   shiftStart?: string;
   shiftEnd?: string;
   minWorkHours?: number;
+  saturdayMinWorkHours?: number;
   maxHoursCap?: number | null;
   mealValue?: number;
 };
@@ -65,6 +66,7 @@ export const list = async (businessCenter?: string): Promise<Customer[]> => {
       shiftStart: c.shiftStart || cached.shiftStart || undefined,
       shiftEnd: c.shiftEnd || undefined,
       minWorkHours: c.minWorkHours != null ? Number(c.minWorkHours) : undefined,
+      saturdayMinWorkHours: c.saturdayMinWorkHours != null ? Number(c.saturdayMinWorkHours) : undefined,
       maxHoursCap: c.maxHoursCap != null ? Number(c.maxHoursCap) : (cached.maxHoursCap != null ? cached.maxHoursCap : undefined),
       mealValue: c.mealValue != null ? Number(c.mealValue) : (cached.mealValue != null ? cached.mealValue : 200)
     };
@@ -96,6 +98,7 @@ export const create = async (r: Customer): Promise<Customer> => {
     shiftStart: r.shiftStart,
     shiftEnd: r.shiftEnd,
     minWorkHours: numberOrNull(r.minWorkHours),
+    saturdayMinWorkHours: numberOrNull(r.saturdayMinWorkHours),
     maxHoursCap: numberOrNull(r.maxHoursCap),
     mealValue: r.mealValue
   };
@@ -139,6 +142,7 @@ export const update = async (code: string, patch: Partial<Customer>): Promise<Cu
     shiftStart: patch.shiftStart,
     shiftEnd: patch.shiftEnd,
     minWorkHours: numberOrNull(patch.minWorkHours),
+    saturdayMinWorkHours: numberOrNull(patch.saturdayMinWorkHours),
     maxHoursCap: numberOrNull(patch.maxHoursCap),
     mealValue: patch.mealValue
   };

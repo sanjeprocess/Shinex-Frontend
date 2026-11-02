@@ -63,6 +63,7 @@ export default function CustomersPage() {
       shiftStart: '07:30',
       shiftEnd: '16:30',
       minWorkHours: 9,
+      saturdayMinWorkHours: 5.75,
       maxHoursCap: '',
       mealValue: 200
     })
@@ -79,6 +80,7 @@ export default function CustomersPage() {
       shiftStart: row.shiftStart || '07:30',
       shiftEnd: row.shiftEnd || resolvePlantSetting(row).shiftEnd,
       minWorkHours: row.minWorkHours ?? 9,
+      saturdayMinWorkHours: row.saturdayMinWorkHours ?? 5.75,
       maxHoursCap: row.maxHoursCap !== undefined ? row.maxHoursCap : (isPlantB ? 9 : ''),
       mealValue: row.mealValue !== undefined ? row.mealValue : 200
     })
@@ -430,6 +432,16 @@ export default function CustomersPage() {
                   onChange={e => setForm({ ...form, minWorkHours: e.target.value === '' ? '' : Number(e.target.value) })}
                 />
                 <span className="text-[10px] text-slate-500 mt-0.5 block">OT starts after these hours</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700">Saturday Min Work Hours</label>
+                <NumericInput
+                  className="mt-1 w-full form-input mono-numeric text-xs"
+                  value={form.saturdayMinWorkHours ?? 5.75}
+                  onChange={e => setForm({ ...form, saturdayMinWorkHours: e.target.value === '' ? '' : Number(e.target.value) })}
+                />
+                <span className="text-[10px] text-slate-500 mt-0.5 block">OT starts after these hours on Saturdays</span>
               </div>
 
               <div>

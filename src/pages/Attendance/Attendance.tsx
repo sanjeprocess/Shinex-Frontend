@@ -24,7 +24,7 @@ import {
   remove as removeAttendance,
   Attendance
 } from '../../mocks/attendance'
-import { computePlantHours, resolvePlantSetting } from '../../utils/shiftHoursCalculator'
+import { computePlantHours, minWorkHoursFor, resolvePlantSetting, shiftEndFor } from '../../utils/shiftHoursCalculator'
 import { logAuditAction } from '../../utils/auditLogger'
 import {
   getMonth as getStatutoryMonth,
@@ -45,8 +45,8 @@ const SHIFT_ICONS: Record<string, any> = {
 }
 
 // Helper to compute total hours and OT hours dynamically considering Plant shift rules
-function computeHours(timeInStr: string, timeOutStr: string, plant?: any, plantCode?: string, minWorkHours?: number): { hours: number; ot: number } {
-  const result = computePlantHours(timeInStr, timeOutStr, plant, plantCode, minWorkHours);
+function computeHours(timeInStr: string, timeOutStr: string, plant?: any, plantCode?: string, minWorkHours?: number, dayIn?: string): { hours: number; ot: number } {
+  const result = computePlantHours(timeInStr, timeOutStr, plant, plantCode, minWorkHours, dayIn);
   return { hours: result.hours, ot: result.ot };
 }
 
@@ -119,11 +119,11 @@ function defaultSundayPoyaExtra(employee: any, dayRate: number): number {
 }
 
 // Time In / Out for a shift: day shift follows the plant master start and end
-function shiftDefaultTimes(shift: string, plant?: any, plantCode?: string): { timeIn: string; timeOut: string } {
+function shiftDefaultTimes(shift: string, plant?: any, plantCode?: string, dayIn?: string): { timeIn: string; timeOut: string } {
   if (shift === '2nd') return { timeIn: '16:00', timeOut: '00:00' }
   if (shift === 'Night') return { timeIn: '20:00', timeOut: '04:00' }
   const setting = resolvePlantSetting(plant, plantCode)
-  return { timeIn: setting.shiftStart || '07:30', timeOut: setting.shiftEnd || '16:30' }
+  return { timeIn: setting.shiftStart || '07:30', timeOut: shiftEndFor(plant, plantCode, dayIn) }
 }
 
 // Plant level fields of the Attendance Transaction form, taken from the Plant master
@@ -283,10 +283,10 @@ function parseAttendanceRows(
 
     // Compute working hours and OT using Plant shift settings
     // Blank times come from the plant master; values in the Excel file win over calculated ones
-    const defaultTimes = shiftDefaultTimes(shiftName, plantObj, autoPlant)
+    const defaultTimes = shiftDefaultTimes(shiftName, plantObj, autoPlant, dayInVal)
     const timeIn = record.timeIn || defaultTimes.timeIn
     const timeOut = record.timeOut || defaultTimes.timeOut
-    const computed = computePlantHours(timeIn, timeOut, plantObj, autoPlant, record.minWorkHours)
+    const computed = computePlantHours(timeIn, timeOut, plantObj, autoPlant, record.minWorkHours, dayInVal)
     const totalWorkingHours = record.totalWorkingHours ?? computed.hours
     const otCalAuto = record.otCalAuto || plantDefaults.otCalAuto || 'Y'
     const totalOt = record.totalOt ?? otFromHours(otCalAuto, computed.ot)
@@ -657,8 +657,8 @@ export default function AttendancePage() {
     const defaultPlant = uploadDefaultPlant || (customerList[0]?.code || '');
     const defaultSection = uploadDefaultSection || (sectionList[0]?.code || '');
     const plantObj = customerList.find(c => c.code === defaultPlant || c.name === defaultPlant);
-    const { timeIn: defaultTimeIn, timeOut: defaultTimeOut } = shiftDefaultTimes('Day', plantObj, defaultPlant);
-    const computed = computePlantHours(defaultTimeIn, defaultTimeOut, plantObj, defaultPlant);
+    const { timeIn: defaultTimeIn, timeOut: defaultTimeOut } = shiftDefaultTimes('Day', plantObj, defaultPlant, today);
+    const computed = computePlantHours(defaultTimeIn, defaultTimeOut, plantObj, defaultPlant, undefined, today);
     const mealRate = plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200;
 
     const newRow: Attendance = {
@@ -707,7 +707,7 @@ export default function AttendancePage() {
   function resetPlantRowsFromMaster(plantCode: string, plant: any) {
     setUploadRows(previous => previous.map(row => {
       if ((row.plantCode || '') !== plantCode) return row
-      const computed = computePlantHours(row.timeIn || '', row.timeOut || '', plant, plantCode)
+      const computed = computePlantHours(row.timeIn || '', row.timeOut || '', plant, plantCode, undefined, row.dayIn)
       const master = plantMasterValues(plant)
       return { ...row, ...master, minWorkHours: computed.minWorkHours, totalWorkingHours: computed.hours, totalOt: otFromHours(master.otCalAuto, computed.ot, row.totalOt) }
     }))
@@ -727,7 +727,7 @@ export default function AttendancePage() {
     const target = customerList.find(c => c.code === toPlant)
     setUploadRows(previous => previous.map(row => {
       if ((row.plantCode || '') !== fromPlant) return row
-      const computed = computePlantHours(row.timeIn || '08:00', row.timeOut || '16:00', target, toPlant)
+      const computed = computePlantHours(row.timeIn || '08:00', row.timeOut || '16:00', target, toPlant, undefined, row.dayIn)
       const master = plantMasterValues(target)
       return { ...row, ...master, plantCode: toPlant, customerCode: toPlant, minWorkHours: computed.minWorkHours, totalWorkingHours: computed.hours, totalOt: otFromHours(master.otCalAuto ?? row.otCalAuto, computed.ot, row.totalOt) }
     }))
@@ -1153,7 +1153,7 @@ export default function AttendancePage() {
     }
 
     const plantObj = customerList.find(c => c.code === form.plantCode || c.name === form.plantCode);
-    const { hours, ot: computedOt } = computeHours(form.timeIn || '', form.timeOut || '', plantObj, form.plantCode, form.minWorkHours);
+    const { hours, ot: computedOt } = computeHours(form.timeIn || '', form.timeOut || '', plantObj, form.plantCode, form.minWorkHours, form.dayIn);
     const ot = otFromHours(form.otCalAuto, computedOt, form.totalOt);
     let yr = form.atttYear
     let mo = form.attMonth
@@ -1534,8 +1534,8 @@ export default function AttendancePage() {
     const otCalAuto = plant ? (plant.otAuto ? 'Y' : 'N') : current.otCalAuto
     const isDay = current.secondShift !== 'Y' && current.nightShift !== 'Y' && current.fullNight !== 'Y'
     return isDay
-      ? { otCalAuto, minWorkHours: setting.minWorkHours, timeIn: setting.shiftStart, timeOut: setting.shiftEnd }
-      : { otCalAuto, minWorkHours: setting.minWorkHours }
+      ? { otCalAuto, minWorkHours: minWorkHoursFor(plant, plantCode, current.dayIn), timeIn: setting.shiftStart, timeOut: shiftEndFor(plant, plantCode, current.dayIn) }
+      : { otCalAuto, minWorkHours: minWorkHoursFor(plant, plantCode, current.dayIn) }
   }
 
   function handleEmployeeChange(epf: string | null) {
@@ -1602,8 +1602,8 @@ export default function AttendancePage() {
     const empNightAllowance = currentEmp?.nightAllowance || 0;
 
     const currentPlant = customerList.find(c => c.code === form.plantCode || c.name === form.plantCode);
-    const { timeIn: nextTimeIn, timeOut: nextTimeOut } = shiftDefaultTimes(shift, currentPlant, form.plantCode);
-    const { hours, ot: computedOt } = computeHours(nextTimeIn, nextTimeOut, currentPlant, form.plantCode, form.minWorkHours);
+    const { timeIn: nextTimeIn, timeOut: nextTimeOut } = shiftDefaultTimes(shift, currentPlant, form.plantCode, form.dayIn);
+    const { hours, ot: computedOt } = computeHours(nextTimeIn, nextTimeOut, currentPlant, form.plantCode, form.minWorkHours, form.dayIn);
     const ot = otFromHours(form.otCalAuto, computedOt, form.totalOt);
 
     setForm(prev => ({
@@ -1623,8 +1623,8 @@ export default function AttendancePage() {
   // Live computed hours with plant shift timing logic
   const liveComputed = useMemo(() => {
     const currentPlant = customerList.find(c => c.code === form.plantCode || c.name === form.plantCode);
-    return computePlantHours(form.timeIn || '', form.timeOut || '', currentPlant, form.plantCode, form.minWorkHours);
-  }, [form.timeIn, form.timeOut, form.plantCode, form.minWorkHours, customerList]);
+    return computePlantHours(form.timeIn || '', form.timeOut || '', currentPlant, form.plantCode, form.minWorkHours, form.dayIn);
+  }, [form.timeIn, form.timeOut, form.plantCode, form.minWorkHours, form.dayIn, customerList]);
 
   const formPlantSetting = resolvePlantSetting(customerList.find(c => c.code === form.plantCode || c.name === form.plantCode), form.plantCode)
 
@@ -2594,7 +2594,9 @@ export default function AttendancePage() {
                       dayIn: newDate,
                       dayOut: newDate, // automatically assign Day Out (Date) to match Day In (Date)
                       atttYear: yr,
-                      attMonth: mo
+                      attMonth: mo,
+                      // New entries: Saturdays and other days have different Min Work Hours
+                      ...(isEditing ? {} : { minWorkHours: minWorkHoursFor(customerList.find(c => c.code === prev.plantCode), prev.plantCode, newDate) })
                     }));
                     if (errors.dayIn) setErrors(prev => ({ ...prev, dayIn: undefined }));
                   }}
@@ -3018,7 +3020,7 @@ export default function AttendancePage() {
                             const rowSundayPoya = row.saturdayPoya === 'Y'
                             const dayType = row.specialDay === 'Y' ? 'Special' : 'Normal'
                             const isStatutory = stagedHolidayDates.has(dayInValue)
-                            const recompute = (timeIn: string, timeOut: string, minWorkHours = row.minWorkHours) => computePlantHours(timeIn, timeOut, plantObj, row.plantCode, minWorkHours)
+                            const recompute = (timeIn: string, timeOut: string, minWorkHours = row.minWorkHours) => computePlantHours(timeIn, timeOut, plantObj, row.plantCode, minWorkHours, row.dayIn)
 
                             return (
                               <tr key={row.id || index} className={val.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/40 hover:bg-rose-50/60'}>
@@ -3071,6 +3073,9 @@ export default function AttendancePage() {
                                     type="date"
                                     value={dayInValue || ''}
                                     onChange={e => updateUploadRow(index, {
+                                      // Saturdays and other days have different Min Work Hours
+                                      minWorkHours: minWorkHoursFor(plantObj, row.plantCode, e.target.value),
+                                      totalOt: otFromHours(row.otCalAuto, computePlantHours(row.timeIn || '', row.timeOut || '', plantObj, row.plantCode, undefined, e.target.value).ot, row.totalOt),
                                       dayIn: e.target.value,
                                       dayOut: row.dayOut || e.target.value,
                                       atttYear: e.target.value.slice(0, 4),
@@ -3121,7 +3126,7 @@ export default function AttendancePage() {
                                 </td>
                                 <td className="px-2 py-1.5 whitespace-nowrap">
                                   <NumericInput
-                                    value={row.minWorkHours ?? setting.minWorkHours ?? 9}
+                                    value={row.minWorkHours ?? minWorkHoursFor(plantObj, row.plantCode, row.dayIn)}
                                     onChange={e => {
                                       const minWorkHours = Number(e.target.value) || undefined
                                       updateUploadRow(index, { minWorkHours, totalOt: otFromHours(row.otCalAuto, recompute(row.timeIn || '', row.timeOut || '', minWorkHours).ot, row.totalOt) })

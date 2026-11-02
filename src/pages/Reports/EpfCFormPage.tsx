@@ -27,8 +27,8 @@ const EMPTY_SETTINGS: EpfCompanySettings = {
   epfRegNo: '',
   surcharge: '',
   chequeNo: '',
-  bankName: '',
-  branchName: '',
+  bankName: 'Commercial Bank',
+  branchName: 'Kiribathgoda',
 }
 
 export default function EpfCFormPage() {
@@ -149,7 +149,7 @@ export default function EpfCFormPage() {
     return [
       r.name,
       r.nic,
-      r.epfNo,
+      r.epfNo.replace(/^\D+/, ''),
       formatCurrency(r20),
       formatCurrency(r12),
       formatCurrency(r8),
