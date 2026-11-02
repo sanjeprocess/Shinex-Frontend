@@ -5,7 +5,7 @@ import { list as listCustomers, Customer } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
 import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
-import { defaultReportCenter, plantKey } from '../../components/reports/ReportFilters'
+import { defaultReportCenter, plantKey, reportYears } from '../../components/reports/ReportFilters'
 
 export default function TelephoneDeductReportPage() {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
@@ -91,10 +91,7 @@ export default function TelephoneDeductReportPage() {
           onChange={e => setYear(e.target.value)}
           className="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
         >
-          <option value="2026">2026</option>
-          <option value="2025">2025</option>
-          <option value="2024">2024</option>
-          <option value="2023">2023</option>
+          {reportYears.map(y => <option key={y} value={y}>{y}</option>)}
         </select>
       </div>
 

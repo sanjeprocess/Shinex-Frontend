@@ -4,7 +4,7 @@ import { list as listEmployees, Employee } from '../../mocks/employees'
 import { list as listCustomers, Customer } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
 import { list as listDeductionTypes } from '../../mocks/deductions'
-import { defaultReportCenter } from '../../components/reports/ReportFilters'
+import { defaultReportCenter, reportYears } from '../../components/reports/ReportFilters'
 import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
 
@@ -151,10 +151,7 @@ export default function SalaryAdvanceReportPage() {
           onChange={e => setYear(e.target.value)}
           className="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
         >
-          <option value="2026">2026</option>
-          <option value="2025">2025</option>
-          <option value="2024">2024</option>
-          <option value="2023">2023</option>
+          {reportYears.map(y => <option key={y} value={y}>{y}</option>)}
         </select>
       </div>
 

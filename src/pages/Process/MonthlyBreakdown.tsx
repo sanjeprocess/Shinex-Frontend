@@ -6,6 +6,7 @@ import type { Employee } from '../../types/employee'
 import { getMonthlySummary, type MonthlySummary } from '../../mocks/monthlySummary'
 import { calculateSalary } from '../../services/salaryCalculationService'
 import { list as listBusinessCenters } from '../../mocks/businessCenters'
+import { reportYears } from '../../components/reports/ReportFilters'
 
 const money = (value: number | undefined) => `LKR ${Number(value || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
@@ -54,7 +55,7 @@ export default function MonthlyBreakdown() {
     fetchSummary()
   }, [epfNo, year, month])
 
-  const years = Array.from({ length: 5 }, (_, index) => String(new Date().getFullYear() - 2 + index))
+  const years = reportYears
 
   useEffect(() => {
     const handleBc = () => {

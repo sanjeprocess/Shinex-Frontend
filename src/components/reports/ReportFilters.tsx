@@ -17,6 +17,10 @@ export const employeeFullName = (employee?: Employee | null) =>
 /** The current business center: the login's own, or the one a super admin switched to. */
 export const defaultReportCenter = () => (localStorage.getItem('hsb_active_bc') || '').split(' / ')[0].trim() || 'ALL'
 
+/** Years offered by the report filters, newest first */
+const lastReportYear = Math.max(2030, new Date().getFullYear())
+export const reportYears = Array.from({ length: lastReportYear - 2022 }, (_, i) => String(lastReportYear - i))
+
 /** Year, month, business center and plant state shared by the printed reports. */
 export function useReportFilters(defaultToFirstPlant = false) {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
@@ -48,13 +52,12 @@ export function useReportFilters(defaultToFirstPlant = false) {
 type Filters = ReturnType<typeof useReportFilters>
 
 export default function ReportFilters({ filters, showPlant = true, allPlantsOption = true }: { filters: Filters; showPlant?: boolean; allPlantsOption?: boolean }) {
-  const thisYear = new Date().getFullYear()
   return (
     <>
       <div className="flex items-center gap-1.5">
         <label className="text-xs font-semibold text-slate-600">Year:</label>
         <select value={filters.year} onChange={e => filters.setYear(e.target.value)} className={selectClass}>
-          {Array.from({ length: 5 }, (_, i) => String(thisYear + 1 - i)).map(y => <option key={y} value={y}>{y}</option>)}
+          {reportYears.map(y => <option key={y} value={y}>{y}</option>)}
         </select>
       </div>
 

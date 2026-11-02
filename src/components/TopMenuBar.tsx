@@ -53,7 +53,8 @@ const MENU: MenuGroup[] = [
     items: [
       { label: 'General Reports',          to: '/reports',          mod: 'reports'   },
       { label: 'Employee Monthly Summary', to: '/monthly-breakdown',mod: 'process'   },
-      { label: 'Employee History Dossier', to: '/employee-history', mod: 'payAdvice' },
+      { label: 'Employee Pay Sheet',       to: '/employee-history', mod: 'payAdvice' },
+      { label: 'All Employee Pay Sheets',  to: '/reports/employee-pay-sheets', mod: 'payAdvice' },
       { label: 'Attendance Report',        to: '/reports/attendance', mod: 'reports' },
       { label: 'Attendance – Total',       to: '/reports/attendance-total', mod: 'reports' },
       { label: 'Salary Sheet',             to: '/reports/salary-sheet', mod: 'reports' },

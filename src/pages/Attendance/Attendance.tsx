@@ -126,13 +126,22 @@ function shiftDefaultTimes(shift: string, plant?: any, plantCode?: string, dayIn
   return { timeIn: setting.shiftStart || '07:30', timeOut: shiftEndFor(plant, plantCode, dayIn) }
 }
 
+// Employees the Employee master assigns to a plant
+function plantStaffCount(plant: any, employeeList: any[], customerList: any[]): number {
+  if (!plant) return 0
+  return new Set(employeeList
+    .filter(emp => resolvePlantRef(emp.plantCode, customerList) === plant.code)
+    .map(emp => (emp.epfNo || '').trim().toUpperCase())
+    .filter(Boolean)).size
+}
+
 // Plant level fields of the Attendance Transaction form, taken from the Plant master
-function plantMasterValues(plant?: any): Partial<Attendance> {
+function plantMasterValues(plant: any, staffCount: number): Partial<Attendance> {
   if (!plant) return {}
   const allowance = plant.attendanceAllowance
   return {
     otCalAuto: plant.otAuto ? 'Y' : 'N',
-    noOfStaff: plant.minStaffQty != null ? Number(plant.minStaffQty) : 0,
+    noOfStaff: staffCount,
     attAllowance: allowance != null && allowance !== '' && allowance !== 'N' && Number(allowance) !== 0 ? 'Y' : 'N',
     dasForAttAllowance: plant.daysToWorkForAllowance != null ? Number(plant.daysToWorkForAllowance) : 0
   }
@@ -288,7 +297,7 @@ function parseAttendanceRows(
     const autoSalary = (record.basicSalary != null && record.basicSalary > 0) ? record.basicSalary : (matchedEmployee?.basicSalary || 0)
 
     const plantObj = customerList.find(c => c.code === autoPlant || c.name === autoPlant)
-    const plantDefaults = plantMasterValues(plantObj)
+    const plantDefaults = plantMasterValues(plantObj, plantStaffCount(plantObj, employeeList, customerList))
     if (record.fullNight === 'Y') record.nightShift = 'Y'
     const hasShift = [record.dayShift, record.secondShift, record.nightShift].includes('Y')
     const hasDayType = [record.normalDay, record.saturdayPoya, record.specialDay].includes('Y')
@@ -324,7 +333,7 @@ function parseAttendanceRows(
       nightAllowance: record.nightAllowance ?? (isNightShift ? (matchedEmployee?.nightAllowance ?? 0) : 0),
       // Excel value wins; blanks come from the Plant master
       otCalAuto,
-      noOfStaff: record.noOfStaff ?? plantDefaults.noOfStaff ?? 0,
+      noOfStaff: record.noOfStaff || plantDefaults.noOfStaff || 0,
       attAllowance: record.attAllowance || plantDefaults.attAllowance || 'N',
       dasForAttAllowance: record.dasForAttAllowance ?? plantDefaults.dasForAttAllowance ?? 0,
       lateAllowNo: record.lateAllowNo || 'N',
@@ -483,6 +492,22 @@ export default function AttendancePage() {
       }
     } catch {}
   }, [uploadRows])
+
+  // Rows restored from this browser, loaded before the masters, still need their plant's staff count
+  useEffect(() => {
+    setUploadRows(previous => {
+      let changed = false
+      const next = previous.map(row => {
+        if (row.noOfStaff) return row
+        const plant = customerList.find(c => c.code === row.plantCode || c.name === row.plantCode)
+        const noOfStaff = plantStaffCount(plant, employeeList, customerList)
+        if (!noOfStaff) return row
+        changed = true
+        return { ...row, noOfStaff }
+      })
+      return changed ? next : previous
+    })
+  }, [employeeList, customerList])
 
   // Filters for Year, Month, Employee, Plant
   const [filterYear, setFilterYear] = useState<string>('ALL')
@@ -701,8 +726,8 @@ export default function AttendancePage() {
       workingDays: 1,
       halfDay: 0,
       totalWorkingHours: computed.hours,
-      ...plantMasterValues(plantObj),
-      totalOt: otFromHours(plantMasterValues(plantObj).otCalAuto, computed.ot),
+      ...plantMasterValues(plantObj, plantStaffCount(plantObj, employeeList, customerList)),
+      totalOt: otFromHours(plantMasterValues(plantObj, 0).otCalAuto, computed.ot),
       minWorkHours: computed.minWorkHours,
       dayShift: 'Y',
       secondShift: 'N',
@@ -731,7 +756,7 @@ export default function AttendancePage() {
     setUploadRows(previous => previous.map(row => {
       if ((row.plantCode || '') !== plantCode) return row
       const computed = computePlantHours(row.timeIn || '', row.timeOut || '', plant, plantCode, undefined, row.dayIn)
-      const master = plantMasterValues(plant)
+      const master = plantMasterValues(plant, plantStaffCount(plant, employeeList, customerList))
       return { ...row, ...master, minWorkHours: computed.minWorkHours, totalWorkingHours: computed.hours, totalOt: otFromHours(master.otCalAuto, computed.ot, row.totalOt) }
     }))
   }
@@ -751,7 +776,7 @@ export default function AttendancePage() {
     setUploadRows(previous => previous.map(row => {
       if ((row.plantCode || '') !== fromPlant) return row
       const computed = computePlantHours(row.timeIn || '08:00', row.timeOut || '16:00', target, toPlant, undefined, row.dayIn)
-      const master = plantMasterValues(target)
+      const master = plantMasterValues(target, plantStaffCount(target, employeeList, customerList))
       return { ...row, ...master, plantCode: toPlant, customerCode: toPlant, minWorkHours: computed.minWorkHours, totalWorkingHours: computed.hours, totalOt: otFromHours(master.otCalAuto ?? row.otCalAuto, computed.ot, row.totalOt) }
     }))
   }
@@ -3011,7 +3036,7 @@ export default function AttendancePage() {
                         <span className="px-2 py-0.5 rounded bg-white border border-slate-200 font-mono" title="From the Plant master">{plantObj?.workingDays ?? '—'}</span>
                       </span>
                       <span className="flex items-center gap-1.5">
-                        <span>Number Of Staff:</span>
+                        <span title="Employees assigned to this plant in the Employee master">Number Of Staff:</span>
                         <NumericInput integer value={first?.noOfStaff ?? 0} onChange={e => updatePlantRows(group.plantCode, { noOfStaff: Number(e.target.value || 0) })} className="form-input w-16 text-xs text-right h-7" />
                         {variesHint('noOfStaff')}
                       </span>

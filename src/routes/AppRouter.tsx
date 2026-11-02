@@ -20,6 +20,7 @@ import LeavesPage from '../pages/Leave/Leaves'
 import LoansPage from '../pages/Loans/LoansPage'
 import ReportsPage from '../pages/Reports/ReportsPage'
 import EmployeeHistoryPage from '../pages/Reports/EmployeeHistoryPage'
+import EmployeePaySheetsPage from '../pages/Reports/EmployeePaySheetsPage'
 import AttendanceReportPage from '../pages/Reports/AttendanceReportPage'
 import AttendanceTotalPage from '../pages/Reports/AttendanceTotalPage'
 import SalaryAdvanceTotalPage from '../pages/Reports/SalaryAdvanceTotalPage'
@@ -105,6 +106,7 @@ export default function AppRouter() {
         {/* ── Reports ── */}
         <Route path="reports"            element={<ModuleRoute mod="reports">      <ReportsPage />         </ModuleRoute>} />
         <Route path="employee-history"   element={<ModuleRoute mod="payAdvice">    <EmployeeHistoryPage /> </ModuleRoute>} />
+        <Route path="reports/employee-pay-sheets" element={<ModuleRoute mod="payAdvice"><EmployeePaySheetsPage /></ModuleRoute>} />
         <Route path="reports/attendance" element={<ModuleRoute mod="reports">      <AttendanceReportPage /></ModuleRoute>} />
         <Route path="reports/attendance-total" element={<ModuleRoute mod="reports"><AttendanceTotalPage /></ModuleRoute>} />
         <Route path="reports/salary-advance-total" element={<ModuleRoute mod="reports"><SalaryAdvanceTotalPage /></ModuleRoute>} />
