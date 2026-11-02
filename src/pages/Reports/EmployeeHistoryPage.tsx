@@ -18,6 +18,7 @@ import { list as listPlants, Customer } from '../../mocks/customers'
 import { getMonthlySummary, type MonthlySummary } from '../../mocks/monthlySummary'
 import { list as listBusinessCenters } from '../../mocks/businessCenters'
 import { reportYears } from '../../components/reports/ReportFilters'
+import { downloadPaySheetExcel } from '../../utils/paySheetExcel'
 import PaySheetView, { drawPaySheetPage, newPaySheetPdf, payrollFromSummary, renderPaySheetCanvas } from '../../components/reports/PaySheetView'
 
 interface PlantAssignmentOption {
@@ -397,90 +398,32 @@ export default function EmployeeHistoryPage() {
     }
   }, [employee, monthlyData, attendanceList, additionsList, deductionsList, month, year])
 
-  function exportToExcel() {
+  async function exportToExcel() {
     if (!employee || !payrollCalculation) {
       toast.error('Please select an employee first')
       return
     }
-
-    const currentPeriod = `${month.padStart(2, '0')}/${year}`
-    const calc = payrollCalculation
-
-    const lines: string[] = [
-      `${companyName},,,${currentPeriod},`,
-      `,,,,`,
-      `NAME AND EPF NO / பெயர் / නම සහ අංකය,,,${employee.firstName} ${employee.lastName || ''} - ${employee.epfNo},`,
-      `,DAY,HOUR,RATE,AMOUNT`,
-      `NORMAL / பொது / සාමාන්‍ය,${calc.normalDays},,${calc.normalRate},${calc.normalAmount}`,
-      `NIGHT / இரவு / රාත්‍රී,,${calc.nightDays || ''},${calc.nightRate},${calc.nightAmount > 0 ? calc.nightAmount : '-'}`,
-      `POYA / SUNDAY / ஞாயிறு / போயா / ඉරිදා / පෝය,${calc.poyaDays},,${calc.poyaRate},${calc.poyaAmount > 0 ? calc.poyaAmount : '-'}`,
-      `OVERTIME / மேலதிக நேரம் / අතිකාල,,${calc.otHours || ''},${calc.otRate},${calc.otAmount > 0 ? calc.otAmount : '-'}`,
-      `INCENTIVE / ஊக்கத்தொகை / දිරිගැන්වීම් දීමනාව,,,,${calc.incentive > 0 ? calc.incentive : '-'}`,
-      `ATTENDANCE ALLOWANCE / கலந்துகொள்ளல் படி / පැමිණීමේ දීමනාව,,,,`,
-      `ATTENDANCE BONUS / வருகை போனஸ் / පැමිණීමේ බෝනස්,,,,`,
-      `STATUTORY HOLIDAY / சட்டப்பூர்வ விடுமுறை / ව්‍යවස්ථාපිත නිවාඩු,,,,${calc.statutoryHolidayAmount > 0 ? calc.statutoryHolidayAmount : '-'}`,
-      `OTHER / மற்றவை / වෙනත්,,,,${calc.totalAdditions > 0 ? calc.totalAdditions : ''}`,
-      `GROSS SALARY / மொத்த சம்பளம் / දළ වැටුප,,,,${calc.grossSalary}`,
-      `,,,,`,
-      `DEDUCTIONS / கழிவுகள் / අඩු කිරීම්,,,,`,
-      `E.P.F. 8% / ஊ.சே.நி. 8% / සේ.අ.අ. 8%,,,,${calc.epf8}`,
-      `ADVANCE / முற்பணம் / අත්තිකාරම්,,,,${calc.advance > 0 ? calc.advance : ''}`,
-      `TELEPHONE / தொலைபேசி / දුරකථනය,,,,${calc.telephone > 0 ? calc.telephone : '-'}`,
-      `MEAL / உணவு / ආහාරය,,,,${calc.meal > 0 ? calc.meal : ''}`,
-      `ABSENT / வராதிருத்தல் / නොපැමිණීම,,,,${calc.absent > 0 ? calc.absent : ''}`,
-      `LOAN / கடன் / ණය,,,,${calc.loan > 0 ? calc.loan : ''}`,
-      `DEATH DONATION / இறப்பு நன்கொடை / මරණ ආධාර,,,,${calc.deathDonation > 0 ? calc.deathDonation : ''}`,
-      `TOTAL DEDUCTION / மொத்த கழிவு / මුළු අඩුකිරීම,,,,${calc.totalDeductions}`,
-      `NET SALARY / நிகர சம்பளம் / ශුද්ධ වැටුප,,,,${calc.netSalary}`,
-      `COMPANY CONTRIBUTION / நிறுவன பங்களிப்பு / සමාගම් දායකත්වය,,,,`,
-      `E.P.F. 12% / ஊ.சே.நி. 12% / සේ.අ.අ. 12%,,,,${calc.epf12}`,
-      `E.T.F. 3% / ஊ.பொ.நி. 3% / සේ.අ.අ.අ. 3%,,,,${calc.etf3}`,
-      '',
-      '========================================================================',
-      `EMPLOYEE PAY SHEET - ${employee.epfNo}`,
-      `Full Name,${employee.firstName} ${employee.lastName || ''}`,
-      `NIC No,${employee.nicNo || 'N/A'}`,
-      `Business Center,${employee.businessCenter || activeBc}`,
-      `Current Plant,${employee.plantCode || 'N/A'}`,
-      `Plant Filter Applied,${selectedOption?.label || 'All Plants'}`,
-      `Basic Salary,LKR ${employee.basicSalary || 0}`,
-      `Hired Date,${employee.hiredDate || 'N/A'}`,
-      '',
-      '--- ATTENDANCE HISTORY ---',
-      'Date,Time In,Time Out,Total Hours,OT Hours,Plant Code,Business Center',
-      ...filteredAttendanceList.map(a => `"${a.dayIn}","${a.timeIn}","${a.timeOut || ''}","${a.totalWorkingHours || 0}","${a.totalOt || 0}","${a.plantCode || ''}","${a.businessCenter || ''}"`),
-      '',
-      '--- PLANT TRANSFER MOVEMENTS ---',
-      'Transfer Date,From Plant,To Plant,Duration Days,Status,Work Details',
-      ...employeeTransfers.map(t => `"${t.transferDate}","${t.fromPlant || ''}","${t.toPlant || ''}","${t.daysWorked || 1}","${t.status || 'Active'}","${(t.workDetails || '').replace(/"/g, '""')}"`),
-      '',
-      '--- ADDITIONS HISTORY ---',
-      'Code,Amount,Month,Year,Every Month',
-      ...additionsList.map(a => `"${a.addCode}","${a.addAmount}","${a.addMonth}","${a.addYear}","${a.everyMonth || 'N'}"`),
-      '',
-      '--- DEDUCTIONS HISTORY ---',
-      'Code,Amount,Month,Year,Every Month',
-      ...deductionsList.map(d => `"${d.didCode}","${d.didAmount}","${d.addMonth}","${d.addYear}","${d.everyMonth || 'N'}"`),
-      '',
-      '--- LEAVE HISTORY ---',
-      'Type,Start Date,End Date,Days,Year,Month',
-      ...leavesList.map(l => `"${l.leaveType}","${l.start || l.leaveStartDate || ''}","${l.end || l.leaveEndDate || ''}","${l.leaveDays || 0}","${l.leaveYear || ''}","${l.leaveMonth || ''}"`),
-      '',
-      '--- LOAN HISTORY ---',
-      'Loan ID,Amount,Start Date,Duration Months,Business Unit',
-      ...loansList.map(l => `"${l.loanId}","${l.loanAmount}","${l.loanStartDate}","${l.loanDuration}","${l.businessUnit || ''}"`)
-    ]
-
-    const csvContent = '\uFEFF' + lines.join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', `Employee_Pay_Sheet_${employee.epfNo}_${year}_${month}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    toast.success(`Pay sheet for ${employee.epfNo} exported to Excel!`)
+    try {
+      await downloadPaySheetExcel({
+        companyName,
+        month,
+        year,
+        employee,
+        calc: payrollCalculation,
+        activeBc,
+        plantFilter: selectedOption?.label || 'All Plants',
+        attendance: filteredAttendanceList,
+        transfers: employeeTransfers,
+        additions: additionsList,
+        deductions: deductionsList,
+        leaves: leavesList,
+        loans: loansList
+      }, `Employee_Pay_Sheet_${employee.epfNo}_${year}_${month}.xlsx`)
+      toast.success(`Pay sheet for ${employee.epfNo} exported to Excel!`)
+    } catch (err) {
+      console.error('Pay sheet Excel failed', err)
+      toast.error('Could not create the pay sheet Excel file')
+    }
   }
 
   // Builds the pay sheet PDF on one A4 or A5 page: the sheet is scaled to fit the page, never split

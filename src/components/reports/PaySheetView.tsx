@@ -80,17 +80,26 @@ export type PayrollCalculation = ReturnType<typeof payrollFromSummary>
 // Fixed render width so A4 and A5 get the same layout, independent of the screen size
 export async function renderPaySheetCanvas(element: HTMLElement) {
   const { default: html2canvas } = await import('html2canvas')
-  return html2canvas(element, {
-    scale: 2,
-    backgroundColor: '#ffffff',
-    useCORS: true,
-    windowWidth: 1000,
-    onclone: (doc: Document) => {
-      // ~680px wide fills a portrait page with readable text; taller sheets are scaled down below
-      const el = doc.querySelector('[data-paysheet]') as HTMLElement | null
-      if (el) el.style.width = '680px'
-    }
-  })
+  // html2canvas places text using a tiny gif it adds to this page. Tailwind's img { display: block }
+  // spoils that measurement and every line is drawn too low, so only that gif is put back inline
+  const textMeasureFix = document.createElement('style')
+  textMeasureFix.textContent = 'img[src^="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP"] { display: inline-block !important; }'
+  document.head.appendChild(textMeasureFix)
+  try {
+    return await html2canvas(element, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      windowWidth: 1000,
+      onclone: (doc: Document) => {
+        // ~680px wide fills a portrait page with readable text; taller sheets are scaled down below
+        const el = doc.querySelector('[data-paysheet]') as HTMLElement | null
+        if (el) el.style.width = '680px'
+      }
+    })
+  } finally {
+    textMeasureFix.remove()
+  }
 }
 
 export async function newPaySheetPdf(size: PaySheetSize) {
