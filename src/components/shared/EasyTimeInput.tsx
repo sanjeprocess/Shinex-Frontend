@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react'
-import { toast } from 'sonner'
-import { displayTime, parseEasyTime } from '../../utils/easyTime'
+import { displayTime } from '../../utils/easyTime'
 
-/** Time cell of the upload review: type 7.30 or 4.30pm; Enter or the arrow keys move to the next row. */
-export default function EasyTimeInput({ value, onCommit, column, className = '' }: {
+/** Time cell with the browser's clock picker. Enter moves to the next row of a table. */
+export default function EasyTimeInput({ value, onCommit, column, ariaLabel, className = '' }: {
   value?: string | null
   onCommit: (time: string) => void
   column: string
+  ariaLabel?: string
   className?: string
 }) {
   const shown = displayTime(value)
@@ -14,42 +14,31 @@ export default function EasyTimeInput({ value, onCommit, column, className = '' 
 
   useEffect(() => setDraft(shown), [shown])
 
-  const commit = () => {
-    const parsed = parseEasyTime(draft)
-    if (parsed === null) {
-      toast.error(`"${draft}" is not a time. Type it like 7.30, 16.45 or 4.30pm.`)
-      setDraft(shown)
-      return
-    }
-    setDraft(displayTime(parsed))
-    if (displayTime(parsed) !== shown) onCommit(parsed)
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setDraft(event.target.value)
+    // Blank while a part is being typed; a cleared time is committed on leaving the cell
+    if (event.target.value && event.target.value !== shown) onCommit(event.target.value)
   }
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Escape') {
-      setDraft(shown)
-      return
-    }
-    if (event.key !== 'Enter' && event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    if (event.key !== 'Enter') return
     event.preventDefault()
     const input = event.currentTarget
     const inputs = Array.from(input.closest('table')?.querySelectorAll<HTMLInputElement>(`input[data-time-col="${column}"]`) || [])
-    const next = inputs[inputs.indexOf(input) + (event.key === 'ArrowUp' ? -1 : 1)]
+    const next = inputs[inputs.indexOf(input) + 1]
     if (next) next.focus()
     else input.blur()
   }
 
   return (
     <input
-      type="text"
-      inputMode="text"
+      type="time"
       data-time-col={column}
+      aria-label={ariaLabel}
       value={draft}
-      placeholder="7.30"
-      title="Type 7.30, 730, 16.45 or 4.30pm. Enter moves to the next row."
-      onChange={e => setDraft(e.target.value)}
-      onFocus={e => e.target.select()}
-      onBlur={commit}
+      onChange={handleChange}
+      onClick={event => { try { event.currentTarget.showPicker() } catch { /* typing still works */ } }}
+      onBlur={() => { if (!draft && shown) onCommit('') }}
       onKeyDown={handleKeyDown}
       className={`form-input font-mono ${className}`}
     />

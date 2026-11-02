@@ -8,7 +8,7 @@ import SlideOver from '../../components/SlideOver'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import Toggle from '../../components/Toggle'
 import SearchableEmployeeSelect from '../../components/shared/SearchableEmployeeSelect'
-import EmployeeCellSearch from '../../components/shared/EmployeeCellSearch'
+import TableCellSearch, { CellSearchOption } from '../../components/shared/TableCellSearch'
 import EasyTimeInput from '../../components/shared/EasyTimeInput'
 import { reportYears } from '../../components/reports/ReportFilters'
 import { displayTime, parseEasyTime } from '../../utils/easyTime'
@@ -410,48 +410,6 @@ function ageFrom(dateOfBirth?: string): number | null {
   return today.getFullYear() - birth.getFullYear() - (hadBirthday ? 0 : 1)
 }
 
-// Plant card bar: one Time In / Time Out for all rows of the plant, or for one employee
-function PlantTimeBar({ employees, onApply }: {
-  employees: [string, string][]
-  onApply: (timeIn: string, timeOut: string, epf: string) => void
-}) {
-  const [timeIn, setTimeIn] = useState('')
-  const [timeOut, setTimeOut] = useState('')
-  const [epf, setEpf] = useState('')
-
-  const apply = () => {
-    const parsedIn = parseEasyTime(timeIn)
-    const parsedOut = parseEasyTime(timeOut)
-    if (parsedIn === null || parsedOut === null) {
-      toast.error('Type the time like 7.30, 16.45 or 4.30pm.')
-      return
-    }
-    if (!parsedIn && !parsedOut) {
-      toast.error('Type a Time In or a Time Out first.')
-      return
-    }
-    onApply(parsedIn, parsedOut, epf)
-  }
-
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-700">
-      <span className="font-semibold">Set times:</span>
-      <label className="flex items-center gap-1">Time In
-        <input aria-label="Set Time In" value={timeIn} onChange={e => setTimeIn(e.target.value)} placeholder="7.30" className="form-input w-20 text-xs h-7 font-mono" />
-      </label>
-      <label className="flex items-center gap-1">Time Out
-        <input aria-label="Set Time Out" value={timeOut} onChange={e => setTimeOut(e.target.value)} placeholder="16.30" className="form-input w-20 text-xs h-7 font-mono" />
-      </label>
-      <select aria-label="Apply times to" value={epf} onChange={e => setEpf(e.target.value)} className="form-input text-xs !py-0.5 h-7 w-52">
-        <option value="">All employees in this plant</option>
-        {employees.map(([code, name]) => <option key={code} value={code}>{code}{name ? ` - ${name}` : ''}</option>)}
-      </select>
-      <button type="button" onClick={apply} className="px-2.5 py-1 text-xs bg-white border rounded font-medium hover:bg-slate-50">Apply</button>
-      <span className="text-[11px] text-slate-500">Leave one blank to keep it. Hours and OT recalculate.</span>
-    </div>
-  )
-}
-
 type StagedRowEdits = {
   update: (patch: Partial<Attendance>) => void
   setEmployee: (epf: string) => void
@@ -466,17 +424,26 @@ type StagedRowEdits = {
   setShift: (shift: string) => void
 }
 
-// The clicked Excel row, laid out like the Attendance Transaction form. Everything edits the same row as the table
-function StagedRowDetails({ row, edits, employees, plants, sections, plantObj, employee, monthTotal, isStatutory, onClose }: {
+function PanelField({ label, className = '', children }: { label: string; className?: string; children: React.ReactNode }) {
+  return (
+    <label className={`block ${className}`}>
+      <span className="block text-xs font-medium text-slate-600 mb-1">{label}</span>
+      {children}
+    </label>
+  )
+}
+
+// The clicked Excel row. Everything edits the same row as the table
+function StagedRowDetails({ row, edits, employeeOptions, plantOptions, plants, sections, plantObj, employee, monthTotal, onClose }: {
   row: Attendance
   edits: StagedRowEdits
-  employees: any[]
+  employeeOptions: CellSearchOption[]
+  plantOptions: CellSearchOption[]
   plants: any[]
   sections: Section[]
   plantObj: any
   employee: any
   monthTotal?: { ot: number; days: number }
-  isStatutory: boolean
   onClose: () => void
 }) {
   const dayIn = excelDate(row.dayIn)
@@ -486,105 +453,105 @@ function StagedRowDetails({ row, edits, employees, plants, sections, plantObj, e
   const shift = row.secondShift === 'Y' ? '2nd' : (row.nightShift === 'Y' || row.fullNight === 'Y') ? 'Night' : 'Day'
   const mealRate = employee?.mealValue != null ? Number(employee.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200)
   const homePlant = employee ? resolvePlantRef(employee.plantCode, plants) : ''
-  const fieldClass = 'flex items-center gap-1.5 whitespace-nowrap'
+  const input = 'form-input w-full text-sm h-9'
+  const number = `${input} text-right`
+  const stat = (label: string, value: React.ReactNode) => (
+    <span className="px-2.5 py-1 rounded-md bg-slate-100 text-xs text-slate-600">{label} <strong className="text-sm text-slate-900">{value}</strong></span>
+  )
 
   return (
-    <div data-staged-details className="border-b border-slate-200 text-xs text-slate-800">
-      <div className="bg-[#e7d3b1] px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <label className={fieldClass}>Employee ID
-          <EmployeeCellSearch employees={employees} value={row.epfNo} onChange={edits.setEmployee} className="w-32 text-xs h-7" />
-        </label>
-        <label className={fieldClass}>Name
-          <input aria-label="Employee name" value={row.employeeName || ''} onChange={e => edits.update({ employeeName: e.target.value })} className="form-input w-52 text-xs h-7" />
-        </label>
-        <span className={fieldClass}>Age <strong className="text-red-700 text-sm">{ageFrom(employee?.dateOfBirth) ?? '—'}</strong></span>
-        <label className={fieldClass}>Basic Salary
-          <NumericInput aria-label="Basic salary" value={row.basicSalary ?? 0} onChange={e => edits.update({ basicSalary: Number(e.target.value || 0) })} className="form-input w-20 text-xs h-7 text-right" />
-        </label>
-        <label className={fieldClass}>Day Allowance
-          <NumericInput value={row.dayAllowance ?? 0} onChange={e => edits.update({ dayAllowance: Number(e.target.value || 0) })} className="form-input w-20 text-xs h-7 text-right" />
-        </label>
-        <label className={fieldClass}>Night Allowance
-          <NumericInput value={row.nightAllowance ?? 0} onChange={e => edits.update({ nightAllowance: Number(e.target.value || 0) })} className="form-input w-20 text-xs h-7 text-right" />
-        </label>
-        <span className={fieldClass} title="This employee in this month: saved days plus this upload">Total OT <strong className="text-red-700 text-sm">{monthTotal ? monthTotal.ot.toFixed(2) : 0}</strong></span>
-        <span className={fieldClass} title="This employee in this month: saved days plus this upload">Total Days <strong className="text-red-700 text-sm">{monthTotal ? monthTotal.days : 0}</strong></span>
-        <button type="button" onClick={onClose} className="ml-auto px-2 py-0.5 border border-slate-400 rounded bg-white hover:bg-slate-50">Close</button>
+    <div data-staged-details className="bg-white border-b border-slate-200 p-4 space-y-4 text-slate-800">
+      <div className="flex flex-wrap items-center gap-2">
+        <h4 className="text-sm font-semibold mr-2">{row.employeeName || 'New row'}</h4>
+        {stat('Age', ageFrom(employee?.dateOfBirth) ?? '—')}
+        {stat('Total OT', monthTotal ? monthTotal.ot.toFixed(2) : 0)}
+        {stat('Total Days', monthTotal ? monthTotal.days : 0)}
+        <button type="button" onClick={onClose} className="ml-auto px-3 py-1 text-xs border rounded font-medium hover:bg-slate-50">Close</button>
       </div>
 
-      <div className="bg-yellow-50 px-3 py-2 space-y-2">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <label className={fieldClass}>Attended Plant
-            <select aria-label="Row plant" value={row.plantCode || ''} onChange={e => edits.setPlant(e.target.value)} className="form-input w-52 text-xs !py-0.5 h-7">
-              <option value="">Select Plant</option>
-              {plants.map(c => <option key={c.code} value={c.code}>{c.code} - {c.name}</option>)}
-            </select>
-          </label>
-          {homePlant && homePlant !== row.plantCode && <span className="text-amber-800">Home plant: <strong>{homePlant}</strong></span>}
-          <label className={fieldClass}>Section
-            <select value={row.sectionCode || ''} onChange={e => edits.update({ sectionCode: e.target.value })} className="form-input w-40 text-xs !py-0.5 h-7">
-              <option value="">Select</option>
-              {sections.map(sec => <option key={sec.code} value={sec.code}>{sec.code} - {sec.name}</option>)}
-            </select>
-          </label>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <label className={fieldClass}>Day In
-            <input type="date" value={dayIn} onChange={e => edits.setDayIn(e.target.value)} className="form-input w-32 text-xs h-7" />
-          </label>
-          <label className={fieldClass}>Day Out
-            <input type="date" value={excelDate(row.dayOut) || dayIn} onChange={e => edits.update({ dayOut: e.target.value })} className="form-input w-32 text-xs h-7" />
-          </label>
-          <label className={fieldClass}>Time In
-            <EasyTimeInput column="details-in" value={row.timeIn} onCommit={edits.setTimeIn} className="w-20 text-xs h-7" />
-          </label>
-          <label className={fieldClass}>Time Out
-            <EasyTimeInput column="details-out" value={row.timeOut} onCommit={edits.setTimeOut} className="w-20 text-xs h-7" />
-          </label>
-          <label className={`${fieldClass} px-2 py-1 rounded bg-orange-400 text-white font-semibold cursor-pointer`}>
-            <input type="checkbox" checked={isHalf} onChange={e => edits.setHalfDay(e.target.checked)} /> Half Day Yes
-          </label>
-          <label className={fieldClass}>Total Work Hours
-            <NumericInput value={row.totalWorkingHours ?? ''} onChange={e => edits.update({ totalWorkingHours: Number(e.target.value || 0) })} className="form-input w-16 text-xs h-7 text-right" />
-          </label>
-          <label className={fieldClass}>Min Work Hours
-            <NumericInput value={row.minWorkHours ?? minWorkHoursFor(plantObj, row.plantCode, row.dayIn)} onChange={e => edits.setMinWorkHours(Number(e.target.value) || undefined)} className="form-input w-14 text-xs h-7 text-right bg-rose-200" />
-          </label>
-          <label className={fieldClass}>Total OT Hours
-            <NumericInput value={row.totalOt ?? ''} onChange={e => edits.update({ totalOt: Number(e.target.value || 0) })} className="form-input w-16 text-xs h-7 text-right" />
-          </label>
-          <label className={fieldClass}>Number Of Meal
-            <NumericInput integer value={row.noOfMeal ?? 1} onChange={e => edits.setMeals(Number(e.target.value || 0), mealRate)} className="form-input w-14 text-xs h-7 text-right" />
-          </label>
-          <label className={fieldClass}>Total Meal Value
-            <NumericInput value={row.totalMealValue ?? 0} onChange={e => edits.update({ totalMealValue: Number(e.target.value || 0) })} className="form-input w-20 text-xs h-7 text-right" />
-          </label>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap items-center gap-3 px-3 py-1.5 rounded border border-slate-400 bg-slate-300">
-            {([['Normal', 'Normal Day'], ['Poya', 'Sunday Poya'], ['Special', 'Other Special Day']] as const).map(([value, label]) => (
-              <label key={value} className="flex items-center gap-1 cursor-pointer">
-                <input type="radio" name={`day-type-${row.id}`} checked={dayType === value} onChange={() => edits.setDayType(value)} /> {label}
-              </label>
-            ))}
-            {isPoya && (
-              <label className={fieldClass}>Extra Payment
-                <NumericInput value={row.sundayPoyaExtra ?? 0} onChange={e => edits.update({ sundayPoyaExtra: Number(e.target.value || 0) })} className="form-input w-20 text-xs h-7 text-right" />
-              </label>
-            )}
-            <label className="flex items-center gap-1 cursor-pointer">
-              <input type="checkbox" checked={row.lateAllowNo === 'Y'} onChange={e => edits.update({ lateAllowNo: e.target.checked ? 'Y' : 'N' })} /> Not Allow Late
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
+        <PanelField label="Employee ID">
+          <TableCellSearch options={employeeOptions} value={row.epfNo} onChange={edits.setEmployee} placeholder="EPF or name" ariaLabel="Employee ID" className={`${input} font-mono`} />
+        </PanelField>
+        <PanelField label="Name" className="col-span-2">
+          <input value={row.employeeName || ''} onChange={e => edits.update({ employeeName: e.target.value })} className={input} />
+        </PanelField>
+        <PanelField label="Attended Plant" className="col-span-2">
+          <TableCellSearch options={plantOptions} value={row.plantCode} onChange={edits.setPlant} showLabel placeholder="Search plant" ariaLabel="Attended Plant" invalid={!row.plantCode} className={input} />
+          {homePlant && homePlant !== row.plantCode && <span className="block mt-1 text-xs text-amber-800">Home plant: <strong>{homePlant}</strong></span>}
+        </PanelField>
+        <PanelField label="Section">
+          <select value={row.sectionCode || ''} onChange={e => edits.update({ sectionCode: e.target.value })} className={input}>
+            <option value="">Select</option>
+            {sections.map(sec => <option key={sec.code} value={sec.code}>{sec.code} - {sec.name}</option>)}
+          </select>
+        </PanelField>
+
+        <PanelField label="Basic Salary">
+          <NumericInput value={row.basicSalary ?? 0} onChange={e => edits.update({ basicSalary: Number(e.target.value || 0) })} className={number} />
+        </PanelField>
+        <PanelField label="Day Allowance">
+          <NumericInput value={row.dayAllowance ?? 0} onChange={e => edits.update({ dayAllowance: Number(e.target.value || 0) })} className={number} />
+        </PanelField>
+        <PanelField label="Night Allowance">
+          <NumericInput value={row.nightAllowance ?? 0} onChange={e => edits.update({ nightAllowance: Number(e.target.value || 0) })} className={number} />
+        </PanelField>
+        <PanelField label="Number Of Meal">
+          <NumericInput integer value={row.noOfMeal ?? 1} onChange={e => edits.setMeals(Number(e.target.value || 0), mealRate)} className={number} />
+        </PanelField>
+        <PanelField label="Total Meal Value">
+          <NumericInput value={row.totalMealValue ?? 0} onChange={e => edits.update({ totalMealValue: Number(e.target.value || 0) })} className={number} />
+        </PanelField>
+        {isPoya ? (
+          <PanelField label="Extra Payment">
+            <NumericInput value={row.sundayPoyaExtra ?? 0} onChange={e => edits.update({ sundayPoyaExtra: Number(e.target.value || 0) })} className={number} />
+          </PanelField>
+        ) : <div className="hidden xl:block" />}
+
+        <PanelField label="Day In">
+          <input type="date" value={dayIn} onChange={e => edits.setDayIn(e.target.value)} className={input} />
+        </PanelField>
+        <PanelField label="Day Out">
+          <input type="date" value={excelDate(row.dayOut) || dayIn} onChange={e => edits.update({ dayOut: e.target.value })} className={input} />
+        </PanelField>
+        <PanelField label="Time In">
+          <EasyTimeInput column="details-in" value={row.timeIn} onCommit={edits.setTimeIn} className={input} />
+        </PanelField>
+        <PanelField label="Time Out">
+          <EasyTimeInput column="details-out" value={row.timeOut} onCommit={edits.setTimeOut} className={input} />
+        </PanelField>
+        <PanelField label="Total Work Hours">
+          <NumericInput value={row.totalWorkingHours ?? ''} onChange={e => edits.update({ totalWorkingHours: Number(e.target.value || 0) })} className={number} />
+        </PanelField>
+        <PanelField label="Total OT Hours">
+          <NumericInput value={row.totalOt ?? ''} onChange={e => edits.update({ totalOt: Number(e.target.value || 0) })} className={number} />
+        </PanelField>
+        <PanelField label="Min Work Hours">
+          <NumericInput value={row.minWorkHours ?? minWorkHoursFor(plantObj, row.plantCode, row.dayIn)} onChange={e => edits.setMinWorkHours(Number(e.target.value) || undefined)} className={number} />
+        </PanelField>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          {([['Normal', 'Normal Day'], ['Poya', 'Sunday Poya'], ['Special', 'Other Special Day']] as const).map(([value, label]) => (
+            <label key={value} className="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name={`day-type-${row.id}`} checked={dayType === value} onChange={() => edits.setDayType(value)} /> {label}
             </label>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 px-3 py-1.5 rounded border border-dashed border-rose-700 bg-rose-200">
-            {([['Day', 'Day Shift'], ['2nd', '2nd Shift'], ['Night', 'Night Shift']] as const).map(([value, label]) => (
-              <label key={value} className="flex items-center gap-1 cursor-pointer">
-                <input type="radio" name={`shift-${row.id}`} checked={shift === value} onChange={() => edits.setShift(value)} /> {label}
-              </label>
-            ))}
-          </div>
-          <label className={`${fieldClass} px-2 py-1 rounded bg-slate-700 text-white`} title="Set automatically from the Statutory Holidays calendar">
-            <input type="checkbox" checked={isStatutory} disabled readOnly /> Statutory holidays
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          {([['Day', 'Day Shift'], ['2nd', '2nd Shift'], ['Night', 'Night Shift']] as const).map(([value, label]) => (
+            <label key={value} className="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name={`shift-${row.id}`} checked={shift === value} onChange={() => edits.setShift(value)} /> {label}
+            </label>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={isHalf} onChange={e => edits.setHalfDay(e.target.checked)} /> Half Day
+          </label>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={row.lateAllowNo === 'Y'} onChange={e => edits.update({ lateAllowNo: e.target.checked ? 'Y' : 'N' })} /> Not Allow Late
           </label>
         </div>
       </div>
@@ -1171,6 +1138,13 @@ export default function AttendancePage() {
     uploadRows.forEach(add)
     return totals
   }, [uploadRows, rows])
+
+  const employeeOptions = useMemo<CellSearchOption[]>(() => employeeList.map(emp => ({
+    value: emp.epfNo,
+    label: `${emp.epfNo} - ${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
+    detail: `Plant: ${emp.plantCode || '-'}`
+  })), [employeeList])
+  const plantOptions = useMemo<CellSearchOption[]>(() => customerList.map(c => ({ value: c.code, label: `${c.code} - ${c.name}` })), [customerList])
 
   const stagedByPlant = useMemo(() => {
     const groups = new Map<string, Array<{ row: Attendance; index: number }>>()
@@ -1845,11 +1819,11 @@ export default function AttendancePage() {
     return Math.round(value * 100) / 100
   }
 
-  async function runStat(action: () => Promise<void>, failMessage: string) {
+  async function runStat(action: () => Promise<void>, failMessage: string, reload = true) {
     setStatBusy(true)
     try {
       await action()
-      await loadStatutory()
+      if (reload) await loadStatutory()
     } catch (err: any) {
       console.error(failMessage, err)
       const detail = typeof err?.response?.data === 'string' ? `: ${err.response.data}` : ''
@@ -1883,24 +1857,29 @@ export default function AttendancePage() {
       toast.error('Please select the holiday date')
       return
     }
-    if (!date.startsWith(`${statYear}-${statMonth}-`)) {
-      toast.error(`The holiday date must be in ${statMonth}/${statYear}`)
-      return
-    }
-    if (statData?.holidays.some(h => h.holidayDate === date)) {
-      toast.error('This date is already a statutory holiday')
-      return
-    }
+    const holidayYear = date.slice(0, 4)
+    const holidayMonth = date.slice(5, 7)
+    const otherMonth = holidayYear !== statYear || holidayMonth !== statMonth
     const notWorkingValue = parseStatValue('Not Working Value', statNew.notWorkingValue)
     const workingValue = parseStatValue('Working Value', statNew.workingValue)
     if (notWorkingValue === null || workingValue === null) return
 
     runStat(async () => {
+      const month = otherMonth ? await getStatutoryMonth(holidayYear, holidayMonth, localStorage.getItem('hsb_active_bc') || '') : statData
+      if (month?.holidays.some(h => h.holidayDate === date)) {
+        toast.error('This date is already a statutory holiday')
+        return
+      }
       await saveStatutoryHoliday({ holidayDate: date, holidayName: statNew.holidayName, workingValue, notWorkingValue })
       // Keep the values for the next holiday; most months use the same amounts
       setStatNew(prev => ({ ...prev, date: '', holidayName: '' }))
       toast.success(`Statutory holiday ${date} added`)
-    }, 'Failed to add statutory holiday')
+      // The new period reloads the panel
+      if (otherMonth) {
+        setStatYear(holidayYear)
+        setStatMonth(holidayMonth)
+      }
+    }, 'Failed to add statutory holiday', !otherMonth)
   }
 
   function handleSaveStatHoliday(date: string) {
@@ -2652,8 +2631,6 @@ export default function AttendancePage() {
                           <input
                             type="date"
                             value={statNew.date}
-                            min={`${statYear}-${statMonth}-01`}
-                            max={`${statYear}-${statMonth}-${String(new Date(Number(statYear), Number(statMonth), 0).getDate()).padStart(2, '0')}`}
                             onChange={e => setStatNew(prev => ({ ...prev, date: e.target.value }))}
                             className="form-input text-xs py-1 px-2 h-8"
                           />
@@ -3243,9 +3220,6 @@ export default function AttendancePage() {
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Grouped by plant. Excel values are used first; empty cells are filled from the Employee and Plant masters. Plant fields in each header apply to all rows of that plant.
-              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -3317,20 +3291,6 @@ export default function AttendancePage() {
                 Save All Plants ({stagedValidation.filter(v => v.isValid).length})
               </button>
             </div>
-          </div>
-
-          {/* Plant Shift Logic Info Banner */}
-          <div className="mx-4 my-2.5 p-2 bg-slate-50 border border-slate-200 rounded-md text-[11px] text-slate-600 flex flex-wrap items-center gap-x-5 gap-y-1">
-            <span className="font-semibold text-slate-800 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              Plant Shift Logic:
-            </span>
-            <span>
-              <strong>Plant A</strong> (shift starts at 7:30): Hours count from max(ClockIn, 07:30) (e.g. 06:00 to 16:00 = 8.5 hrs).
-            </span>
-            <span>
-              <strong>Plant B</strong> (actual arrival): Hours count from ClockIn, capped up to 9 hrs (e.g. 06:00 to 16:00 = 9 hrs capped).
-            </span>
           </div>
 
           {/* Plant-wise review: plant fields in the card header, employee + day fields per row */}
@@ -3444,10 +3404,6 @@ export default function AttendancePage() {
                         {variesHint('dasForAttAllowance')}
                       </span>
                     </div>
-                    <PlantTimeBar
-                      employees={Array.from(new Map(plantRows.filter(r => r.epfNo).map(r => [r.epfNo, r.employeeName || ''])).entries())}
-                      onApply={(timeIn, timeOut, epf) => applyStagedTimes(plantObj, new Set(group.items.filter(i => !epf || i.row.epfNo === epf).map(i => i.index)), timeIn, timeOut)}
-                    />
                   </div>
 
                   {!collapsed && (() => {
@@ -3457,68 +3413,53 @@ export default function AttendancePage() {
                       <StagedRowDetails
                         row={selected.row}
                         edits={stagedRowEdits(selected.index, selected.row, plantObj)}
-                        employees={employeeList}
+                        employeeOptions={employeeOptions}
+                        plantOptions={plantOptions}
                         plants={customerList}
                         sections={sectionList}
                         plantObj={plantObj}
                         employee={employeeList.find(e => (e.epfNo || '').trim().toLowerCase() === (selected.row.epfNo || '').trim().toLowerCase())}
                         monthTotal={stagedMonthTotals.get(`${(selected.row.epfNo || '').trim().toLowerCase()}|${excelDate(selected.row.dayIn).slice(0, 7)}`)}
-                        isStatutory={stagedHolidayDates.has(excelDate(selected.row.dayIn))}
                         onClose={() => setSelectedStagedId(null)}
                       />
                     )
                   })()}
                   {!collapsed && (
                     <div className="overflow-x-auto max-h-[420px]">
-                      <table className="min-w-[2600px] w-full text-xs">
-                        <thead className="bg-slate-50 text-left text-slate-600 sticky top-0 z-10 border-b">
+                      <table className="min-w-[1000px] w-full text-sm">
+                        <thead className="bg-slate-50 text-left text-xs text-slate-600 sticky top-0 z-10 border-b">
                           <tr>
-                            <th className="px-2 py-2">Status</th>
-                            <th className="px-2 py-2">Employee ID *</th>
-                            <th className="px-2 py-2">Employee Name</th>
-                            <th className="px-2 py-2">Age</th>
-                            <th className="px-2 py-2">Section</th>
-                            <th className="px-2 py-2" title="The plant this day was worked at. Changing it moves only this row.">Plant</th>
-                            <th className="px-2 py-2 bg-amber-50/60">Basic Salary</th>
-                            <th className="px-2 py-2 bg-amber-50/60">Day Allowance</th>
-                            <th className="px-2 py-2 bg-amber-50/60">Night Allowance</th>
-                            <th className="px-2 py-2 bg-amber-50/60" title="This employee's OT hours in the row's month: saved days plus this upload">Month Total OT</th>
-                            <th className="px-2 py-2 bg-amber-50/60" title="This employee's days in the row's month: saved days plus this upload">Month Total Days</th>
-                            <th className="px-2 py-2">Day In</th>
-                            <th className="px-2 py-2">Day Out</th>
-                            <th className="px-2 py-2">Time In</th>
-                            <th className="px-2 py-2">Time Out</th>
-                            <th className="px-2 py-2">Half Day</th>
-                            <th className="px-2 py-2">Total Work Hours</th>
-                            <th className="px-2 py-2" title="OT starts after these hours">Min Work Hours</th>
-                            <th className="px-2 py-2">Total OT</th>
-                            <th className="px-2 py-2">Day Type</th>
-                            <th className="px-2 py-2">Sunday Poya</th>
-                            <th className="px-2 py-2">Sunday Poya Extra Payment</th>
-                            <th className="px-2 py-2">Shift</th>
-                            <th className="px-2 py-2">Not Allow Late</th>
-                            <th className="px-2 py-2">No. Of Meal</th>
-                            <th className="px-2 py-2">Total Meal Value</th>
-                            <th className="px-2 py-2">Statutory Holiday</th>
-                            <th className="px-2 py-2 text-center">Action</th>
+                            <th className="px-3 py-2">Status</th>
+                            <th className="px-3 py-2">Employee ID</th>
+                            <th className="px-3 py-2">Name</th>
+                            <th className="px-3 py-2" title="The plant this day was worked at. Changing it moves only this row.">Plant</th>
+                            <th className="px-3 py-2">Day In</th>
+                            <th className="px-3 py-2">Time In</th>
+                            <th className="px-3 py-2">Time Out</th>
+                            <th className="px-3 py-2 text-right">Hours</th>
+                            <th className="px-3 py-2 text-right">OT</th>
+                            <th className="px-3 py-2">Notes</th>
+                            <th className="px-3 py-2"></th>
                           </tr>
                         </thead>
                         <tbody className="divide-y">
-                          {group.items.map(({ row, index }) => {
+                          {group.items.map(({ row, index }, position) => {
                             const val = stagedValidation[index] || { isValid: true, errors: [], updatesSaved: false }
                             const matchedEmp = employeeList.find(e => (e.epfNo || '').trim().toLowerCase() === (row.epfNo || '').trim().toLowerCase())
                             const empDisplayName = row.employeeName || (matchedEmp ? `${matchedEmp.firstName} ${matchedEmp.lastName || ''}`.trim() : '-')
-                            const mealRate = matchedEmp?.mealValue != null ? Number(matchedEmp.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200)
                             const dayInValue = excelDate(row.dayIn)
                             const isHalfDay = row.workingDays === 0.5 || row.halfDay === 1 || row.halfDay === 0.5
-                            const shift = row.secondShift === 'Y' ? '2nd' : (row.nightShift === 'Y' || row.fullNight === 'Y') ? 'Night' : 'Day'
-                            const rowSundayPoya = row.saturdayPoya === 'Y'
-                            const dayType = row.specialDay === 'Y' ? 'Special' : 'Normal'
-                            const isStatutory = stagedHolidayDates.has(dayInValue)
                             const edits = stagedRowEdits(index, row, plantObj)
                             const isSelected = row.id === selectedStagedId
-                            const monthTotal = stagedMonthTotals.get(`${(row.epfNo || '').trim().toLowerCase()}|${dayInValue.slice(0, 7)}`)
-                            const rowsBelow = group.items.slice(group.items.findIndex(i => i.index === index) + 1).map(i => i.index)
+                            const rowsBelow = group.items.slice(position + 1).map(i => i.index)
+                            const notes = [
+                              isHalfDay && 'Half Day',
+                              row.saturdayPoya === 'Y' && 'Sunday Poya',
+                              row.specialDay === 'Y' && 'Special',
+                              row.secondShift === 'Y' && '2nd Shift',
+                              (row.nightShift === 'Y' || row.fullNight === 'Y') && 'Night',
+                              stagedHolidayDates.has(dayInValue) && 'Holiday'
+                            ].filter(Boolean) as string[]
 
                             return (
                               <tr
@@ -3527,7 +3468,7 @@ export default function AttendancePage() {
                                 onFocusCapture={() => setSelectedStagedId(row.id)}
                                 className={`cursor-pointer ${isSelected ? 'bg-emerald-50 outline outline-2 -outline-offset-2 outline-emerald-500' : val.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/40 hover:bg-rose-50/60'}`}
                               >
-                                <td className="px-2 py-1.5">
+                                <td className="px-3 py-1.5">
                                   {val.isValid ? (
                                     val.updatesSaved ? (
                                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-sky-50 text-sky-700 border border-sky-200" title="This employee and date is already saved; saving replaces it">Will update</span>
@@ -3537,80 +3478,51 @@ export default function AttendancePage() {
                                   ) : (
                                     <div className="flex flex-col gap-0.5">
                                       {val.errors.map((e, ei) => (
-                                        <span key={ei} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-800 border border-rose-200">⚠️ {e}</span>
+                                        <span key={ei} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-800 border border-rose-200">{e}</span>
                                       ))}
                                     </div>
                                   )}
                                 </td>
-                                <td className="px-2 py-1.5">
-                                  <EmployeeCellSearch
-                                    employees={employeeList}
+                                <td className="px-3 py-1.5">
+                                  <TableCellSearch
+                                    options={employeeOptions}
                                     value={row.epfNo}
                                     onChange={edits.setEmployee}
+                                    placeholder="EPF or name"
+                                    ariaLabel="Employee ID of this row"
                                     invalid={val.errors.some(er => er.includes('EPF'))}
-                                    className="w-32 text-xs"
+                                    className="w-32 text-xs font-mono"
                                   />
                                 </td>
-                                <td className="px-2 py-1.5">
-                                  <input
-                                    value={row.employeeName || ''}
-                                    placeholder={empDisplayName}
-                                    onChange={e => updateUploadRow(index, { employeeName: e.target.value })}
-                                    className="form-input w-40 text-xs"
+                                <td className="px-3 py-1.5">
+                                  <span className="block max-w-[160px] truncate text-slate-800" title={empDisplayName}>{empDisplayName}</span>
+                                </td>
+                                <td className="px-3 py-1.5">
+                                  <TableCellSearch
+                                    options={plantOptions}
+                                    value={row.plantCode}
+                                    onChange={edits.setPlant}
+                                    showLabel
+                                    placeholder="Search plant"
+                                    ariaLabel="Plant of this row"
+                                    invalid={!row.plantCode}
+                                    className="w-40 text-xs"
                                   />
                                 </td>
-                                <td className="px-2 py-1.5 text-center text-slate-700">{ageFrom(matchedEmp?.dateOfBirth) ?? '—'}</td>
-                                <td className="px-2 py-1.5">
-                                  <select value={row.sectionCode || ''} onChange={e => updateUploadRow(index, { sectionCode: e.target.value })} className="form-input w-28 text-xs">
-                                    <option value="">Select</option>
-                                    {sectionList.map(sec => (
-                                      <option key={sec.code} value={sec.code}>{sec.code} - {sec.name}</option>
-                                    ))}
-                                  </select>
-                                </td>
-                                <td className="px-2 py-1.5">
-                                  <select aria-label="Plant of this row" value={row.plantCode || ''} onChange={e => edits.setPlant(e.target.value)} className="form-input w-32 text-xs">
-                                    <option value="">Select Plant</option>
-                                    {customerList.map(c => <option key={c.code} value={c.code}>{c.code} - {c.name}</option>)}
-                                  </select>
-                                </td>
-                                <td className="px-2 py-1.5 bg-amber-50/30">
-                                  <NumericInput value={row.basicSalary ?? 0} onChange={e => updateUploadRow(index, { basicSalary: Number(e.target.value || 0) })} className="form-input w-20 text-xs text-right mono-numeric" />
-                                </td>
-                                <td className="px-2 py-1.5 bg-amber-50/30">
-                                  <NumericInput value={row.dayAllowance ?? 0} onChange={e => updateUploadRow(index, { dayAllowance: Number(e.target.value || 0) })} className="form-input w-20 text-xs text-right mono-numeric" />
-                                </td>
-                                <td className="px-2 py-1.5 bg-amber-50/30">
-                                  <NumericInput value={row.nightAllowance ?? 0} onChange={e => updateUploadRow(index, { nightAllowance: Number(e.target.value || 0) })} className="form-input w-20 text-xs text-right mono-numeric" />
-                                </td>
-                                <td className="px-2 py-1.5 bg-amber-50/30 text-right font-mono text-slate-700">{monthTotal ? monthTotal.ot.toFixed(2) : '—'}</td>
-                                <td className="px-2 py-1.5 bg-amber-50/30 text-right font-mono text-slate-700">{monthTotal ? monthTotal.days : '—'}</td>
-                                <td className="px-2 py-1.5">
+                                <td className="px-3 py-1.5">
                                   <input
                                     type="date"
+                                    aria-label="Day In of this row"
                                     value={dayInValue || ''}
                                     onChange={e => edits.setDayIn(e.target.value)}
                                     className={`form-input w-32 text-xs ${val.errors.some(er => er.includes('Date')) ? 'border-red-400 bg-red-50' : ''}`}
                                   />
                                 </td>
-                                <td className="px-2 py-1.5">
-                                  <input type="date" value={excelDate(row.dayOut) || dayInValue || ''} onChange={e => updateUploadRow(index, { dayOut: e.target.value })} className="form-input w-32 text-xs" />
+                                <td className="px-3 py-1.5">
+                                  <EasyTimeInput column="in" value={row.timeIn} onCommit={edits.setTimeIn} className="w-28 text-xs" />
                                 </td>
-                                <td className="px-2 py-1.5">
-                                  <EasyTimeInput
-                                    column="in"
-                                    value={row.timeIn}
-                                    onCommit={edits.setTimeIn}
-                                    className="w-20 text-xs"
-                                  />
-                                </td>
-                                <td className="px-2 py-1.5 whitespace-nowrap">
-                                  <EasyTimeInput
-                                    column="out"
-                                    value={row.timeOut}
-                                    onCommit={edits.setTimeOut}
-                                    className="w-20 text-xs"
-                                  />
+                                <td className="px-3 py-1.5 whitespace-nowrap">
+                                  <EasyTimeInput column="out" value={row.timeOut} onCommit={edits.setTimeOut} className="w-28 text-xs" />
                                   <button
                                     type="button"
                                     disabled={rowsBelow.length === 0}
@@ -3622,87 +3534,19 @@ export default function AttendancePage() {
                                     ↓
                                   </button>
                                 </td>
-                                <td className="px-2 py-1.5 text-center">
-                                  <select
-                                    value={isHalfDay ? 'half' : 'full'}
-                                    onChange={e => edits.setHalfDay(e.target.value === 'half')}
-                                    className="form-input w-24 text-xs"
-                                  >
-                                    <option value="full">Full Day</option>
-                                    <option value="half">Half Day</option>
-                                  </select>
+                                <td className="px-3 py-1.5 text-right font-mono">{row.totalWorkingHours ?? '—'}</td>
+                                <td className="px-3 py-1.5 text-right font-mono">{row.totalOt ?? '—'}</td>
+                                <td className="px-3 py-1.5">
+                                  <div className="flex flex-wrap gap-1">
+                                    {notes.map(note => <span key={note} className="px-1.5 py-0.5 rounded bg-slate-100 text-[10px] font-semibold text-slate-700 whitespace-nowrap">{note}</span>)}
+                                  </div>
                                 </td>
-                                <td className="px-2 py-1.5">
-                                  <NumericInput value={row.totalWorkingHours ?? ''} onChange={e => updateUploadRow(index, { totalWorkingHours: Number(e.target.value || 0) })} className="form-input w-16 text-xs text-right" />
-                                </td>
-                                <td className="px-2 py-1.5 whitespace-nowrap">
-                                  <NumericInput
-                                    value={row.minWorkHours ?? minWorkHoursFor(plantObj, row.plantCode, row.dayIn)}
-                                    onChange={e => edits.setMinWorkHours(Number(e.target.value) || undefined)}
-                                    className="form-input w-14 text-xs text-right"
-                                  />
-                                  {setting.maxHoursCap ? <span className="text-[10px] text-slate-400"> (cap {setting.maxHoursCap})</span> : null}
-                                </td>
-                                <td className="px-2 py-1.5">
-                                  <NumericInput value={row.totalOt ?? ''} onChange={e => updateUploadRow(index, { totalOt: Number(e.target.value || 0) })} className="form-input w-16 text-xs text-right" />
-                                </td>
-                                <td className="px-2 py-1.5">
-                                  <select
-                                    value={dayType}
-                                    disabled={rowSundayPoya}
-                                    onChange={e => updateUploadRow(index, {
-                                      normalDay: e.target.value === 'Normal' ? 'Y' : 'N',
-                                      specialDay: e.target.value === 'Special' ? 'Y' : 'N'
-                                    })}
-                                    className="form-input w-32 text-xs disabled:opacity-50"
-                                  >
-                                    <option value="Normal">Normal Day</option>
-                                    <option value="Special">Other Special Day</option>
-                                  </select>
-                                </td>
-                                <td className="px-2 py-1.5 text-center">
-                                  <input type="checkbox" checked={rowSundayPoya} onChange={e => handleStagedSundayPoya(index, row, e.target.checked)} />
-                                </td>
-                                <td className="px-2 py-1.5">
-                                  {rowSundayPoya ? (
-                                    <NumericInput value={row.sundayPoyaExtra ?? 0} onChange={e => updateUploadRow(index, { sundayPoyaExtra: Number(e.target.value || 0) })} className="form-input w-20 text-xs text-right mono-numeric" />
-                                  ) : (
-                                    <span className="text-slate-400">—</span>
-                                  )}
-                                </td>
-                                <td className="px-2 py-1.5">
-                                  <select value={shift} onChange={e => handleStagedShiftChange(index, row, e.target.value)} className="form-input w-32 text-xs">
-                                    <option value="Day">Day Shift</option>
-                                    <option value="2nd">2nd Shift</option>
-                                    <option value="Night">Night Shift</option>
-                                  </select>
-                                </td>
-                                <td className="px-2 py-1.5 text-center">
-                                  <input type="checkbox" checked={row.lateAllowNo === 'Y'} onChange={e => updateUploadRow(index, { lateAllowNo: e.target.checked ? 'Y' : 'N' })} />
-                                </td>
-                                <td className="px-2 py-1.5">
-                                  <NumericInput
-                                    integer
-                                    value={row.noOfMeal ?? 1}
-                                    onChange={e => edits.setMeals(Number(e.target.value || 0), mealRate)}
-                                    className="form-input w-14 text-xs text-right"
-                                  />
-                                </td>
-                                <td className="px-2 py-1.5">
-                                  <NumericInput value={row.totalMealValue ?? 0} onChange={e => updateUploadRow(index, { totalMealValue: Number(e.target.value || 0) })} className="form-input w-20 text-xs text-right mono-numeric" />
-                                </td>
-                                <td className="px-2 py-1.5 text-center" title="Set automatically from the Statutory Holidays calendar">
-                                  {isStatutory ? (
-                                    <span className="tag-pill bg-amber-50 text-amber-800 border border-amber-200">✓ Yes</span>
-                                  ) : (
-                                    <span className="text-slate-400">—</span>
-                                  )}
-                                </td>
-                                <td className="px-2 py-1.5 text-center">
+                                <td className="px-3 py-1.5 text-right">
                                   <button
                                     type="button"
                                     title="Remove Row"
-                                    onClick={() => setUploadRows(prev => prev.filter((_, rIdx) => rIdx !== index))}
+                                    aria-label="Remove Row"
+                                    onClick={event => { event.stopPropagation(); setUploadRows(prev => prev.filter((_, rIdx) => rIdx !== index)) }}
                                     className="p-1 text-slate-400 hover:text-red-600 rounded"
                                   >
                                     <Trash2 className="w-4 h-4" />
