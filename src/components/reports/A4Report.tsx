@@ -35,6 +35,10 @@ export interface A4ReportProps {
   onGenerate?: () => void
   onExportPdf?: () => void
   filterControls?: React.ReactNode
+  tableClassName?: string // e.g. 'compact' or 'salary-sheet' for reports with many columns
+  metaRight?: React.ReactNode // replaces the print date on the right of the header
+  hideHeader?: boolean // the report draws its own header in customTopBlock
+  pdfFontSize?: number
 }
 
 /** Formats a Date or date string to dd/MM/yyyy */
@@ -74,6 +78,10 @@ export default function A4Report({
   onGenerate,
   onExportPdf,
   filterControls,
+  tableClassName = '',
+  metaRight,
+  hideHeader = false,
+  pdfFontSize = 9,
 }: A4ReportProps) {
   const styleId = useId()
 
@@ -164,7 +172,8 @@ export default function A4Report({
       margin: { top: 28, left: 12, right: 12, bottom: 15 },
       styles: {
         font: 'times',
-        fontSize: 9,
+        fontSize: pdfFontSize,
+        cellPadding: pdfFontSize < 9 ? 0.6 : undefined,
         lineColor: [0, 0, 0],
         lineWidth: 0.2,
         textColor: [0, 0, 0],
@@ -270,11 +279,13 @@ export default function A4Report({
                 className={`a4-page ${orientation === 'landscape' ? 'landscape l' : 'portrait p'}`}
               >
                 {/* Header */}
-                <div className="a4-header">
-                  <div className="a4-meta-left">{metaLeft}</div>
-                  <h1>{title}</h1>
-                  <div className="a4-meta-right">{printDate}</div>
-                </div>
+                {!hideHeader && (
+                  <div className="a4-header">
+                    <div className="a4-meta-left">{metaLeft}</div>
+                    <h1>{title}</h1>
+                    <div className="a4-meta-right">{metaRight ?? printDate}</div>
+                  </div>
+                )}
 
                 {subtitle && <div className="a4-subtitle">{subtitle}</div>}
 
@@ -282,7 +293,7 @@ export default function A4Report({
                 {customTopBlock && customTopBlock(pageIdx, totalPages)}
 
                 {/* Table */}
-                <table className="a4-table">
+                <table className={`a4-table ${tableClassName}`}>
                   <thead>
                     {customHeaderRow ? (
                       customHeaderRow

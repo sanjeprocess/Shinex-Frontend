@@ -16,15 +16,24 @@ export default function SearchableEmployeeSelect({
   value,
   onChange,
   employees: passedEmployees,
+  customers: passedCustomers,
   placeholder = 'Search employee by EPF or name',
   className = ''
 }: {
   value?: string | null;
   onChange: (epf: string | null, context?: EmployeeContext) => void;
   employees?: Employee[];
+  customers?: { code: string; name: string }[];
   placeholder?: string;
   className?: string;
 }) {
+  const plantNameOf = (plantCode?: string) => {
+    const key = (plantCode || '').split(/\s|\//)[0].trim().toUpperCase()
+    if (!key) return '—'
+    const source: any[] = passedCustomers && passedCustomers.length > 0 ? passedCustomers : customers
+    return source.find((customer: any) => (customer.code || '').trim().toUpperCase() === key)?.name || plantCode || '—'
+  }
+
   const [fetchedEmployees, setFetchedEmployees] = useState<Employee[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [q, setQ] = useState('')
@@ -87,7 +96,7 @@ export default function SearchableEmployeeSelect({
     if (!selectedEmployee) return undefined
 
     const sectionName = sections.find((section: any) => section.code === selectedEmployee.sectionCode)?.name || '—'
-    const plantName = customers.find((customer: any) => customer.code === selectedEmployee.plantCode)?.name || '—'
+    const plantName = plantNameOf(selectedEmployee.plantCode)
     const employeeName = (selectedEmployee.firstName + ' ' + (selectedEmployee.lastName || '')).trim() || '—'
     const businessCenter = selectedEmployee.businessCenter || localStorage.getItem('hsb_active_bc') || '—'
 
@@ -98,7 +107,7 @@ export default function SearchableEmployeeSelect({
       plantName,
       businessCenter
     }
-  }, [selectedEmployee])
+  }, [selectedEmployee, passedCustomers])
 
   const options = useMemo(() => {
     const s = q.trim().toLowerCase()
@@ -124,7 +133,7 @@ export default function SearchableEmployeeSelect({
       epfNo: employee.epfNo,
       employeeName: (employee.firstName + ' ' + (employee.lastName || '')).trim() || '—',
       sectionName: sections.find((section: any) => section.code === employee.sectionCode)?.name || '—',
-      plantName: customers.find((customer: any) => customer.code === employee.plantCode)?.name || '—',
+      plantName: plantNameOf(employee.plantCode),
       businessCenter: employee.businessCenter || localStorage.getItem('hsb_active_bc') || '—'
     }
 

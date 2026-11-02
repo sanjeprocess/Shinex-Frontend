@@ -110,7 +110,7 @@ export const getMonthlySummary = async (epfNo: string, year: string, month: stri
   const plantDayMap = new Map<string, number>()
 
   empAtt.forEach(a => {
-    const weight = a.halfDay === 1 ? 0.5 : 1.0
+    const weight = (a.halfDay === 1 || a.halfDay === 0.5) ? 0.5 : 1.0
     normalDays += weight
     if (a.totalOt && a.totalOt > 0) otHours += a.totalOt
     if (a.saturdayPoya === 'Y') poyaDays += 1

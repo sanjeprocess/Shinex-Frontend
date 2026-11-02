@@ -3,8 +3,17 @@ import A4Report from '../../components/reports/A4Report'
 import { list as listEmployees, Employee } from '../../mocks/employees'
 import { list as listCustomers, Customer } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
+import { list as listDeductionTypes } from '../../mocks/deductions'
 import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
+
+const bankLabel = (bank?: string, branch?: string) => [bank, branch].map(v => (v || '').trim()).filter(Boolean).join(' / ')
+
+// Deduction codes whose master name is an "Advance" (lower-case)
+async function loadAdvanceCodes(): Promise<Set<string>> {
+  const masters = await listDeductionTypes().catch(() => [])
+  return new Set(masters.filter(m => (m.name || '').toLowerCase().includes('advance')).map(m => (m.code || '').trim().toLowerCase()))
+}
 
 export default function SalaryAdvanceReportPage() {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
@@ -51,8 +60,8 @@ export default function SalaryAdvanceReportPage() {
           advance.epfNo,
           fullName,
           plantDisplay,
-          employee?.bankAccountNumber || '',
-          employee?.branchCode || '',
+          advance.bankAccountNumber || employee?.bankAccountNumber || '',
+          bankLabel(advance.bankName || employee?.bankName, advance.bankBranchName || employee?.branchName),
           Number(advance.totalAmount ?? 0),
           Number(advance.monthlyCut ?? 0)
         ] as [string, string, string, string, string, number, number]
@@ -62,15 +71,16 @@ export default function SalaryAdvanceReportPage() {
       console.warn('Salary advance endpoint failed, falling back to deduction transactions', error)
       try {
         const cleanBc = businessCenter && businessCenter !== 'ALL' ? businessCenter.split(' / ')[0].trim() : ''
-        const [transRes, emps] = await Promise.all([
+        const [transRes, emps, advanceCodes] = await Promise.all([
           api.get('/deduction-transactions', { params: { businessCenter: cleanBc || undefined } }).catch(() => ({ data: [] })),
-          listEmployees(cleanBc)
+          listEmployees(cleanBc),
+          loadAdvanceCodes()
         ])
         const list = Array.isArray(transRes.data) ? transRes.data : []
         const filtered = list.filter((d: any) => {
           const code = (d.didCode || '').toLowerCase()
           const name = (d.deductionName || '').toLowerCase()
-          const isAdv = code.includes('adv') || name.includes('advance')
+          const isAdv = code.includes('adv') || name.includes('advance') || advanceCodes.has(code)
           if (!isAdv) return false
           if (d.status && d.status.toUpperCase() !== 'ACTIVE') return false
           const targetStr = `${year}-${String(month).padStart(2, '0')}`
@@ -89,7 +99,7 @@ export default function SalaryAdvanceReportPage() {
             fullName,
             plantDisplay,
             employee?.bankAccountNumber || '',
-            employee?.branchCode || '',
+            bankLabel(employee?.bankName, employee?.branchName),
             Number(advance.totalAmount ?? 0),
             Number(advance.monthlyCut ?? 0)
           ] as [string, string, string, string, string, number, number]
@@ -118,21 +128,18 @@ export default function SalaryAdvanceReportPage() {
     </div>
   )
 
-  const columns = ['Emp_ID', 'Name', 'Plant', 'Bank Account No', 'Bank_Code', 'Total Advance', 'Monthly Cut']
+  const columns = ['Emp_ID', 'Name', 'Bank Account No', 'Bank / Branch', 'D_Value']
 
-  const displayRows = rows.map(([empId, name, plant, acc, code, totAdv, cutVal]) => [
+  const displayRows = rows.map(([empId, name, , acc, code, , cutVal]) => [
     empId,
     name,
-    plant,
     acc,
     code,
-    formatCurrency(totAdv),
     formatCurrency(cutVal),
   ])
 
-  const grandTotalAdvance = rows.reduce((acc, [, , , , , totAdv]) => acc + totAdv, 0)
   const grandMonthlyCut = rows.reduce((acc, [, , , , , , cutVal]) => acc + cutVal, 0)
-  const totalRow = ['', 'Total', '', '', '', formatCurrency(grandTotalAdvance), formatCurrency(grandMonthlyCut)]
+  const totalRow = ['', 'Total', '', '', formatCurrency(grandMonthlyCut)]
 
   const filterControls = (
     <>

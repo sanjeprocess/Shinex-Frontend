@@ -20,11 +20,16 @@ export type Customer = {
   documentUrl?: string;
   countFromShiftStart?: boolean;
   shiftStart?: string;
+  shiftEnd?: string;
+  minWorkHours?: number;
   maxHoursCap?: number | null;
   mealValue?: number;
 };
 
 export const customers: Customer[] = [];
+
+const numberOrNull = (value: unknown): number | null =>
+  value === '' || value == null || !Number.isFinite(Number(value)) ? null : Number(value);
 
 export const list = async (businessCenter?: string): Promise<Customer[]> => {
   const activeBc = businessCenter || '';
@@ -58,6 +63,8 @@ export const list = async (businessCenter?: string): Promise<Customer[]> => {
       documentUrl: (c.docPath || c.documentUrl || '').trim(),
       countFromShiftStart: c.countFromShiftStart != null ? Boolean(c.countFromShiftStart) : (cached.countFromShiftStart != null ? cached.countFromShiftStart : undefined),
       shiftStart: c.shiftStart || cached.shiftStart || undefined,
+      shiftEnd: c.shiftEnd || undefined,
+      minWorkHours: c.minWorkHours != null ? Number(c.minWorkHours) : undefined,
       maxHoursCap: c.maxHoursCap != null ? Number(c.maxHoursCap) : (cached.maxHoursCap != null ? cached.maxHoursCap : undefined),
       mealValue: c.mealValue != null ? Number(c.mealValue) : (cached.mealValue != null ? cached.mealValue : 200)
     };
@@ -87,7 +94,9 @@ export const create = async (r: Customer): Promise<Customer> => {
     docPath: r.documentUrl && r.documentUrl.length < 500 ? r.documentUrl : null,
     countFromShiftStart: r.countFromShiftStart,
     shiftStart: r.shiftStart,
-    maxHoursCap: r.maxHoursCap,
+    shiftEnd: r.shiftEnd,
+    minWorkHours: numberOrNull(r.minWorkHours),
+    maxHoursCap: numberOrNull(r.maxHoursCap),
     mealValue: r.mealValue
   };
 
@@ -128,7 +137,9 @@ export const update = async (code: string, patch: Partial<Customer>): Promise<Cu
     docPath: patch.documentUrl && patch.documentUrl.length < 500 ? patch.documentUrl : null,
     countFromShiftStart: patch.countFromShiftStart,
     shiftStart: patch.shiftStart,
-    maxHoursCap: patch.maxHoursCap,
+    shiftEnd: patch.shiftEnd,
+    minWorkHours: numberOrNull(patch.minWorkHours),
+    maxHoursCap: numberOrNull(patch.maxHoursCap),
     mealValue: patch.mealValue
   };
 

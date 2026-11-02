@@ -21,11 +21,16 @@ import LoansPage from '../pages/Loans/LoansPage'
 import ReportsPage from '../pages/Reports/ReportsPage'
 import EmployeeHistoryPage from '../pages/Reports/EmployeeHistoryPage'
 import AttendanceReportPage from '../pages/Reports/AttendanceReportPage'
+import AttendanceTotalPage from '../pages/Reports/AttendanceTotalPage'
 import SalaryAdvanceTotalPage from '../pages/Reports/SalaryAdvanceTotalPage'
 import SalaryAdvanceReportPage from '../pages/Reports/SalaryAdvanceReportPage'
 import LoanReportPage from '../pages/Reports/LoanReportPage'
 import TelephoneDeductReportPage from '../pages/Reports/TelephoneDeductReportPage'
 import EpfCFormPage from '../pages/Reports/EpfCFormPage'
+import AdvanceRequestSheetPage from '../pages/Reports/AdvanceRequestSheetPage'
+import SalarySheetPage from '../pages/Reports/SalarySheetPage'
+import SalarySheetTotalPage from '../pages/Reports/SalarySheetTotalPage'
+import UniformReportPage from '../pages/Reports/UniformReportPage'
 import AuditLogPage from '../pages/Audit/AuditLogPage'
 import AdminControlPage from '../pages/Admin/AdminControlPage'
 import MonthlyBreakdown from '../pages/Process/MonthlyBreakdown'
@@ -101,10 +106,15 @@ export default function AppRouter() {
         <Route path="reports"            element={<ModuleRoute mod="reports">      <ReportsPage />         </ModuleRoute>} />
         <Route path="employee-history"   element={<ModuleRoute mod="payAdvice">    <EmployeeHistoryPage /> </ModuleRoute>} />
         <Route path="reports/attendance" element={<ModuleRoute mod="reports">      <AttendanceReportPage /></ModuleRoute>} />
+        <Route path="reports/attendance-total" element={<ModuleRoute mod="reports"><AttendanceTotalPage /></ModuleRoute>} />
         <Route path="reports/salary-advance-total" element={<ModuleRoute mod="reports"><SalaryAdvanceTotalPage /></ModuleRoute>} />
         <Route path="reports/salary-advance"       element={<ModuleRoute mod="reports"><SalaryAdvanceReportPage /></ModuleRoute>} />
         <Route path="reports/loan"       element={<ModuleRoute mod="reports">      <LoanReportPage />      </ModuleRoute>} />
         <Route path="reports/telephone-deduct" element={<ModuleRoute mod="reports"><TelephoneDeductReportPage /></ModuleRoute>} />
+        <Route path="reports/advance-request-sheet" element={<ModuleRoute mod="reports"><AdvanceRequestSheetPage /></ModuleRoute>} />
+        <Route path="reports/salary-sheet" element={<ModuleRoute mod="reports"><SalarySheetPage /></ModuleRoute>} />
+        <Route path="reports/salary-sheet-total" element={<ModuleRoute mod="reports"><SalarySheetTotalPage /></ModuleRoute>} />
+        <Route path="reports/uniform" element={<ModuleRoute mod="reports"><UniformReportPage /></ModuleRoute>} />
         <Route path="reports/epf-c-form" element={<ModuleRoute mod="reports">      <EpfCFormPage />        </ModuleRoute>} />
         <Route path="audit-logs"         element={<ModuleRoute mod="audit">        <AuditLogPage />        </ModuleRoute>} />
 

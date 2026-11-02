@@ -7,6 +7,7 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchInput from '../../components/SearchInput'
 import NumericInput from '../../components/NumericInput'
 import { list, create, update, remove, Customer } from '../../mocks/customers'
+import { resolvePlantSetting } from '../../utils/shiftHoursCalculator'
 import { list as listBC } from '../../mocks/businessCenters'
 import { validateNameField } from '../../utils/validators'
 import { PROFIT_CENTERS } from '../../constants/profitCenters'
@@ -60,6 +61,8 @@ export default function CustomersPage() {
       documentUrl: '',
       countFromShiftStart: true,
       shiftStart: '07:30',
+      shiftEnd: '16:30',
+      minWorkHours: 9,
       maxHoursCap: '',
       mealValue: 200
     })
@@ -74,6 +77,8 @@ export default function CustomersPage() {
       ...row,
       countFromShiftStart: row.countFromShiftStart !== undefined ? row.countFromShiftStart : !isPlantB,
       shiftStart: row.shiftStart || '07:30',
+      shiftEnd: row.shiftEnd || resolvePlantSetting(row).shiftEnd,
+      minWorkHours: row.minWorkHours ?? 9,
       maxHoursCap: row.maxHoursCap !== undefined ? row.maxHoursCap : (isPlantB ? 9 : ''),
       mealValue: row.mealValue !== undefined ? row.mealValue : 200
     })
@@ -404,6 +409,27 @@ export default function CustomersPage() {
                   onChange={e => setForm({ ...form, shiftStart: e.target.value })}
                 />
                 <span className="text-[10px] text-slate-500 mt-0.5 block">e.g. 07:30 for Plant A</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700">Shift End Time</label>
+                <input
+                  type="time"
+                  className="mt-1 w-full form-input text-xs"
+                  value={form.shiftEnd || '16:30'}
+                  onChange={e => setForm({ ...form, shiftEnd: e.target.value })}
+                />
+                <span className="text-[10px] text-slate-500 mt-0.5 block">Default Time Out in attendance</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700">Min Work Hours</label>
+                <NumericInput
+                  className="mt-1 w-full form-input mono-numeric text-xs"
+                  value={form.minWorkHours ?? 9}
+                  onChange={e => setForm({ ...form, minWorkHours: e.target.value === '' ? '' : Number(e.target.value) })}
+                />
+                <span className="text-[10px] text-slate-500 mt-0.5 block">OT starts after these hours</span>
               </div>
 
               <div>

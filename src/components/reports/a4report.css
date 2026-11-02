@@ -77,7 +77,7 @@
 .a4-subtitle {
   font-family: "Times New Roman", Times, serif;
   font-weight: bold;
-  text-align: center;
+  text-align: left;
   margin-bottom: 3.5mm;
   font-size: 10.5pt;
 }
@@ -229,3 +229,21 @@
     page-break-after: auto !important;
   }
 }
+
+/* Reports with many columns */
+.a4-table.compact { font-size: 7.5pt; }
+.a4-table.compact th, .a4-table.compact td { padding: 0.8mm 0.8mm; }
+.a4-table.compact th { text-decoration: none; }
+
+/* Salary sheet: 29 columns on landscape A4 */
+.a4-table.salary-sheet { font-size: 6pt; table-layout: auto; }
+.a4-table.salary-sheet th { padding: 0.5mm 0.3mm; text-decoration: none; font-size: 6.5pt; }
+.a4-table.salary-sheet td { padding: 1mm 0.4mm; white-space: nowrap; }
+.a4-table.salary-sheet td:first-child { white-space: normal; min-width: 30mm; }
+.a4-table.salary-sheet td:last-child { min-width: 12mm; }
+.a4-table.salary-sheet .ss-group { text-align: center; }
+.a4-table.salary-sheet .ss-name { text-align: center; vertical-align: middle; }
+.a4-table.salary-sheet .ss-vertical { vertical-align: bottom; text-align: left; height: 22mm; }
+.a4-table.salary-sheet .ss-vertical span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; display: inline-block; }
+
+.ss-top-block { border: 1px solid #000; border-bottom: 0; padding: 2.5mm 3mm; font-size: 9pt; line-height: 1.7; }

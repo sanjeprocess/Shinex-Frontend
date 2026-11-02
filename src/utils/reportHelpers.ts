@@ -39,8 +39,9 @@ export function formatTimeAmPm(timeStr?: string): string {
 /** Converts decimal hours like 11.25 to "11:15" */
 export function decimalToHmm(num?: number): string {
   if (num == null || isNaN(num) || num <= 0) return '0:00'
-  const h = Math.floor(num)
-  const m = Math.round((num - h) * 60)
+  const totalMinutes = Math.round(num * 60)
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
   return `${h}:${String(m).padStart(2, '0')}`
 }
 

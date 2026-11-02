@@ -45,8 +45,8 @@ const SHIFT_ICONS: Record<string, any> = {
 }
 
 // Helper to compute total hours and OT hours dynamically considering Plant shift rules
-function computeHours(timeInStr: string, timeOutStr: string, plant?: any, plantCode?: string): { hours: number; ot: number } {
-  const result = computePlantHours(timeInStr, timeOutStr, plant, plantCode);
+function computeHours(timeInStr: string, timeOutStr: string, plant?: any, plantCode?: string, minWorkHours?: number): { hours: number; ot: number } {
+  const result = computePlantHours(timeInStr, timeOutStr, plant, plantCode, minWorkHours);
   return { hours: result.hours, ot: result.ot };
 }
 
@@ -70,13 +70,12 @@ const excelFieldMap: Record<string, keyof Attendance> = {
   normalday: 'normalDay', saturdaypoya: 'saturdayPoya', specialday: 'specialDay',
   dayshift: 'dayShift', secondshift: 'secondShift', nightshift: 'nightShift', fullnight: 'fullNight',
   noofmeal: 'noOfMeal', noofmeals: 'noOfMeal', meals: 'noOfMeal', meal: 'noOfMeal',
-  mealtype: 'mealType' as any,
   totalmealvalue: 'totalMealValue', mealvalue: 'totalMealValue', statutoryholidays: 'statutoryHolidays',
   sundaypoyaextra: 'sundayPoyaExtra', businesscenter: 'businessCenter',
   // Attendance Transaction form fields (plant / employee level)
   year: 'atttYear', month: 'attMonth', employeeid: 'epfNo', empid: 'epfNo', epf: 'epfNo',
   otcalauto: 'otCalAuto', otcalculateauto: 'otCalAuto', otcalcauto: 'otCalAuto', otauto: 'otCalAuto',
-  poyasaturdaynormal: 'poyaSaturdayNormal', poyasaturdaynormalrate: 'poyaSaturdayNormal', poyasatnormal: 'poyaSaturdayNormal',
+  sundaypoya: 'saturdayPoya', poya: 'saturdayPoya', minworkhours: 'minWorkHours',
   noofstaff: 'noOfStaff', numberofstaff: 'noOfStaff',
   attallowance: 'attAllowance', attendanceallowance: 'attAllowance',
   dasforattallowance: 'dasForAttAllowance', dasforattalowance: 'dasForAttAllowance',
@@ -97,7 +96,7 @@ const excelFieldMap: Record<string, keyof Attendance> = {
 }
 
 const excelYesNoFields = new Set<keyof Attendance>([
-  'otCalAuto', 'attAllowance', 'poyaSaturdayNormal', 'lateAllowNo',
+  'otCalAuto', 'attAllowance', 'lateAllowNo',
   'normalDay', 'saturdayPoya', 'specialDay', 'dayShift', 'secondShift', 'nightShift', 'fullNight'
 ])
 
@@ -106,6 +105,25 @@ function excelYN(value: unknown): string {
   const text = String(value ?? '').trim().toLowerCase()
   if (!text) return ''
   return ['y', 'yes', '1', 'true', 'x', '✓', '✔'].includes(text) ? 'Y' : 'N'
+}
+
+// OT Calculate Auto: ticked = from the hours; unticked = the value entered by hand is kept
+function otFromHours(otCalAuto: string | undefined, computedOt: number, currentOt?: number): number {
+  return otCalAuto === 'N' ? (currentOt ?? 0) : computedOt
+}
+
+// Sunday Poya extra when the row has none: employee master value, else 1.5x day rate (same as payroll)
+function defaultSundayPoyaExtra(employee: any, dayRate: number): number {
+  const fromEmployee = Number(employee?.sundayPoyaExtra) || 0
+  return fromEmployee > 0 ? fromEmployee : Math.round(dayRate * 1.5 * 100) / 100
+}
+
+// Time In / Out for a shift: day shift follows the plant master start and end
+function shiftDefaultTimes(shift: string, plant?: any, plantCode?: string): { timeIn: string; timeOut: string } {
+  if (shift === '2nd') return { timeIn: '16:00', timeOut: '00:00' }
+  if (shift === 'Night') return { timeIn: '20:00', timeOut: '04:00' }
+  const setting = resolvePlantSetting(plant, plantCode)
+  return { timeIn: setting.shiftStart || '07:30', timeOut: setting.shiftEnd || '16:30' }
 }
 
 // Plant level fields of the Attendance Transaction form, taken from the Plant master
@@ -197,17 +215,17 @@ function parseAttendanceRows(
       else if (field === 'dayOut') (record as any)[field] = excelDate(value)
       else if (field === 'timeIn' || field === 'timeOut') (record as any)[field] = excelTime(value)
       else if ((field as string) === 'shiftName') {
-        // "Day" / "2nd" / "Night" / "Full Night" text column
+        // "Day" / "2nd" / "Night" text column; old "Full Night" sheets count as Night
         const text = String(value ?? '').trim().toLowerCase()
         if (!text) return
-        const shift = text.includes('full') ? 'fullNight' : text.includes('night') ? 'nightShift' : (text.includes('2') || text.includes('second')) ? 'secondShift' : 'dayShift'
+        const shift = text.includes('night') ? 'nightShift' : (text.includes('2') || text.includes('second')) ? 'secondShift' : 'dayShift'
         ;(['dayShift', 'secondShift', 'nightShift', 'fullNight'] as const).forEach(f => { (record as any)[f] = f === shift ? 'Y' : 'N' })
       }
       else if ((field as string) === 'dayTypeName') {
-        // "Normal" / "Saturday and Poya" / "Special" text column
+        // "Normal" / "Sunday Poya" / "Special" text column
         const text = String(value ?? '').trim().toLowerCase()
         if (!text) return
-        const type = text.includes('special') ? 'specialDay' : (text.includes('poya') || text.includes('sat')) ? 'saturdayPoya' : 'normalDay'
+        const type = text.includes('special') ? 'specialDay' : (text.includes('poya') || text.includes('sun') || text.includes('sat')) ? 'saturdayPoya' : 'normalDay'
         ;(['normalDay', 'saturdayPoya', 'specialDay'] as const).forEach(f => { (record as any)[f] = f === type ? 'Y' : 'N' })
       }
       else if (excelYesNoFields.has(field)) {
@@ -231,9 +249,7 @@ function parseAttendanceRows(
           ;(record as any).workingDays = Number.isFinite(num) ? num : 1
           ;(record as any).halfDay = ((record as any).workingDays <= 0.5 && (record as any).workingDays > 0) ? 1 : 0
         }
-      } else if (field === 'mealType') {
-        (record as any).mealType = String(value ?? '').trim()
-      } else if (['basicSalary', 'dayAllowance', 'nightAllowance', 'halfDay', 'totalWorkingHours', 'totalOt', 'noOfMeal', 'totalMealValue', 'statutoryHolidays', 'sundayPoyaExtra'].includes(field)) {
+      } else if (['basicSalary', 'dayAllowance', 'nightAllowance', 'halfDay', 'totalWorkingHours', 'totalOt', 'minWorkHours', 'noOfMeal', 'totalMealValue', 'statutoryHolidays', 'sundayPoyaExtra'].includes(field)) {
         const text = String(value ?? '').trim()
         if (text === '') return // blank: filled from the Employee / Plant master below
         const number = Number(text.replace(/^0+(?=\d)/, ''))
@@ -255,26 +271,25 @@ function parseAttendanceRows(
 
     const plantObj = customerList.find(c => c.code === autoPlant || c.name === autoPlant)
     const plantDefaults = plantMasterValues(plantObj)
-    const hasShift = [record.dayShift, record.secondShift, record.nightShift, record.fullNight].includes('Y')
+    if (record.fullNight === 'Y') record.nightShift = 'Y'
+    const hasShift = [record.dayShift, record.secondShift, record.nightShift].includes('Y')
     const hasDayType = [record.normalDay, record.saturdayPoya, record.specialDay].includes('Y')
-    const isNightShift = record.nightShift === 'Y' || record.fullNight === 'Y'
-    const mealType = record.mealType || matchedEmployee?.mealType || 'Standard'
+    const isNightShift = record.nightShift === 'Y'
+    const shiftName = isNightShift ? 'Night' : record.secondShift === 'Y' ? '2nd' : 'Day'
+    const isSundayPoya = record.saturdayPoya === 'Y'
     const mealRate = matchedEmployee?.mealValue != null ? Number(matchedEmployee.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200)
     const noOfMeals = record.noOfMeal != null ? Number(record.noOfMeal) : 1
     const totalMealValue = (record.totalMealValue != null && record.totalMealValue > 0) ? record.totalMealValue : (noOfMeals * mealRate)
 
     // Compute working hours and OT using Plant shift settings
-    let totalWorkingHours = record.totalWorkingHours
-    let totalOt = record.totalOt
-    if (record.timeIn && record.timeOut) {
-      const computed = computePlantHours(record.timeIn, record.timeOut, plantObj, autoPlant)
-      totalWorkingHours = computed.hours
-      totalOt = computed.ot
-    } else if (record.timeIn) {
-      const computed = computePlantHours(record.timeIn, '16:00', plantObj, autoPlant)
-      totalWorkingHours = computed.hours
-      totalOt = computed.ot
-    }
+    // Blank times come from the plant master; values in the Excel file win over calculated ones
+    const defaultTimes = shiftDefaultTimes(shiftName, plantObj, autoPlant)
+    const timeIn = record.timeIn || defaultTimes.timeIn
+    const timeOut = record.timeOut || defaultTimes.timeOut
+    const computed = computePlantHours(timeIn, timeOut, plantObj, autoPlant, record.minWorkHours)
+    const totalWorkingHours = record.totalWorkingHours ?? computed.hours
+    const otCalAuto = record.otCalAuto || plantDefaults.otCalAuto || 'Y'
+    const totalOt = record.totalOt ?? otFromHours(otCalAuto, computed.ot)
 
     return {
       ...defaultAttendanceRecord,
@@ -290,26 +305,28 @@ function parseAttendanceRows(
       dayAllowance: record.dayAllowance ?? matchedEmployee?.dayAllowance ?? 0,
       nightAllowance: record.nightAllowance ?? (isNightShift ? (matchedEmployee?.nightAllowance ?? 0) : 0),
       // Excel value wins; blanks come from the Plant master
-      otCalAuto: record.otCalAuto || plantDefaults.otCalAuto || 'Y',
+      otCalAuto,
       noOfStaff: record.noOfStaff ?? plantDefaults.noOfStaff ?? 0,
       attAllowance: record.attAllowance || plantDefaults.attAllowance || 'N',
       dasForAttAllowance: record.dasForAttAllowance ?? plantDefaults.dasForAttAllowance ?? 0,
-      poyaSaturdayNormal: record.poyaSaturdayNormal || 'N',
       lateAllowNo: record.lateAllowNo || 'N',
       dayShift: hasShift ? (record.dayShift || 'N') : 'Y',
       secondShift: record.secondShift || 'N',
       nightShift: record.nightShift || 'N',
-      fullNight: record.fullNight || 'N',
+      fullNight: 'N',
       normalDay: hasDayType ? (record.normalDay || 'N') : 'Y',
       saturdayPoya: record.saturdayPoya || 'N',
       specialDay: record.specialDay || 'N',
       workingDays: (record.halfDay === 1 || record.halfDay === 0.5) ? 0.5 : (record.workingDays ?? 1),
       halfDay: record.halfDay ?? (record.workingDays === 0.5 ? 1 : 0),
       noOfMeal: noOfMeals,
-      mealType,
       totalMealValue,
-      totalWorkingHours: totalWorkingHours ?? 8.0,
-      totalOt: totalOt ?? 0,
+      timeIn,
+      timeOut,
+      minWorkHours: computed.minWorkHours,
+      totalWorkingHours,
+      totalOt,
+      sundayPoyaExtra: record.sundayPoyaExtra ?? (isSundayPoya ? defaultSundayPoyaExtra(matchedEmployee, Number(autoSalary) || 0) : 0),
       businessCenter: record.businessCenter || businessCenter
     } as Attendance
   })
@@ -363,6 +380,9 @@ const defaultAttendanceRecord: Attendance = {
   id: '', atttYear: '', attMonth: '', epfNo: '', plantCode: '', dayIn: '', timeIn: '',
   businessCenter: ''
 }
+
+// Normalise a plant reference ("P01", "p01 ", "P01 / Plant Name") to its bare upper-case code
+const normPlantCode = (value?: string | null) => (value || '').split(/\s|\//)[0].trim().toUpperCase()
 
 export default function AttendancePage() {
   const defaultForm: Attendance = {
@@ -512,7 +532,7 @@ export default function AttendancePage() {
         let otHours = 0
 
         empAttList.forEach(a => {
-          const weight = a.halfDay === 1 ? 0.5 : 1.0
+          const weight = (a.halfDay === 1 || a.halfDay === 0.5) ? 0.5 : 1.0
           presentDays += weight
           if (a.totalOt && a.totalOt > 0) otHours += a.totalOt
         })
@@ -637,8 +657,7 @@ export default function AttendancePage() {
     const defaultPlant = uploadDefaultPlant || (customerList[0]?.code || '');
     const defaultSection = uploadDefaultSection || (sectionList[0]?.code || '');
     const plantObj = customerList.find(c => c.code === defaultPlant || c.name === defaultPlant);
-    const defaultTimeIn = '08:00';
-    const defaultTimeOut = '16:00';
+    const { timeIn: defaultTimeIn, timeOut: defaultTimeOut } = shiftDefaultTimes('Day', plantObj, defaultPlant);
     const computed = computePlantHours(defaultTimeIn, defaultTimeOut, plantObj, defaultPlant);
     const mealRate = plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200;
 
@@ -659,13 +678,14 @@ export default function AttendancePage() {
       workingDays: 1,
       halfDay: 0,
       totalWorkingHours: computed.hours,
-      totalOt: computed.ot,
+      ...plantMasterValues(plantObj),
+      totalOt: otFromHours(plantMasterValues(plantObj).otCalAuto, computed.ot),
+      minWorkHours: computed.minWorkHours,
       dayShift: 'Y',
       secondShift: 'N',
       nightShift: 'N',
       fullNight: 'N',
       noOfMeal: 1,
-      mealType: 'Standard',
       totalMealValue: mealRate,
       normalDay: 'Y',
       saturdayPoya: 'N',
@@ -684,12 +704,32 @@ export default function AttendancePage() {
     setUploadRows(previous => previous.map(row => (row.plantCode || '') === plantCode ? { ...row, ...patch } : row))
   }
 
+  function resetPlantRowsFromMaster(plantCode: string, plant: any) {
+    setUploadRows(previous => previous.map(row => {
+      if ((row.plantCode || '') !== plantCode) return row
+      const computed = computePlantHours(row.timeIn || '', row.timeOut || '', plant, plantCode)
+      const master = plantMasterValues(plant)
+      return { ...row, ...master, minWorkHours: computed.minWorkHours, totalWorkingHours: computed.hours, totalOt: otFromHours(master.otCalAuto, computed.ot, row.totalOt) }
+    }))
+  }
+
+  // Ticking OT Calculate Auto recalculates the plant's rows; unticking keeps the values for manual editing
+  function setPlantOtAuto(plantCode: string, plant: any, checked: boolean) {
+    setUploadRows(previous => previous.map(row => {
+      if ((row.plantCode || '') !== plantCode) return row
+      if (!checked) return { ...row, otCalAuto: 'N' }
+      const computed = computePlantHours(row.timeIn || '', row.timeOut || '', plant, plantCode, row.minWorkHours)
+      return { ...row, otCalAuto: 'Y', totalOt: computed.ot }
+    }))
+  }
+
   function movePlantRows(fromPlant: string, toPlant: string) {
     const target = customerList.find(c => c.code === toPlant)
     setUploadRows(previous => previous.map(row => {
       if ((row.plantCode || '') !== fromPlant) return row
       const computed = computePlantHours(row.timeIn || '08:00', row.timeOut || '16:00', target, toPlant)
-      return { ...row, ...plantMasterValues(target), plantCode: toPlant, customerCode: toPlant, totalWorkingHours: computed.hours, totalOt: computed.ot }
+      const master = plantMasterValues(target)
+      return { ...row, ...master, plantCode: toPlant, customerCode: toPlant, minWorkHours: computed.minWorkHours, totalWorkingHours: computed.hours, totalOt: otFromHours(master.otCalAuto ?? row.otCalAuto, computed.ot, row.totalOt) }
     }))
   }
 
@@ -705,7 +745,7 @@ export default function AttendancePage() {
     const plantObj = customerList.find(c => c.code === plantCode || c.name === plantCode)
     const mealRate = matched.mealValue != null ? Number(matched.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200)
     const isNight = row.nightShift === 'Y' || row.fullNight === 'Y'
-    const computed = computePlantHours(row.timeIn || '08:00', row.timeOut || '16:00', plantObj, plantCode)
+    const computed = computePlantHours(row.timeIn || '08:00', row.timeOut || '16:00', plantObj, plantCode, row.minWorkHours)
     updateUploadRow(index, {
       epfNo: matched.epfNo,
       employeeName: `${matched.firstName} ${matched.lastName || ''}`.trim(),
@@ -715,22 +755,31 @@ export default function AttendancePage() {
       basicSalary: resolveEmployeeBasicSalary(matched, sectionList),
       dayAllowance: matched.dayAllowance ?? 0,
       nightAllowance: isNight ? (matched.nightAllowance ?? 0) : 0,
-      mealType: matched.mealType || 'Standard',
       totalMealValue: (row.noOfMeal ?? 1) * mealRate,
       totalWorkingHours: computed.hours,
-      totalOt: computed.ot
+      totalOt: otFromHours(row.otCalAuto, computed.ot, row.totalOt)
     })
   }
 
   function handleStagedShiftChange(index: number, row: Attendance, shift: string) {
     const matched = employeeList.find(emp => (emp.epfNo || '').trim().toLowerCase() === (row.epfNo || '').trim().toLowerCase())
-    const isNight = shift === 'Night' || shift === 'Full Night'
+    const isNight = shift === 'Night'
     updateUploadRow(index, {
       dayShift: shift === 'Day' ? 'Y' : 'N',
       secondShift: shift === '2nd' ? 'Y' : 'N',
       nightShift: shift === 'Night' ? 'Y' : 'N',
-      fullNight: shift === 'Full Night' ? 'Y' : 'N',
+      fullNight: 'N',
       nightAllowance: isNight ? (row.nightAllowance || matched?.nightAllowance || 0) : 0
+    })
+  }
+
+  function handleStagedSundayPoya(index: number, row: Attendance, checked: boolean) {
+    const matched = employeeList.find(emp => (emp.epfNo || '').trim().toLowerCase() === (row.epfNo || '').trim().toLowerCase())
+    updateUploadRow(index, {
+      saturdayPoya: checked ? 'Y' : 'N',
+      normalDay: checked ? 'N' : 'Y',
+      specialDay: 'N',
+      sundayPoyaExtra: checked ? (row.sundayPoyaExtra || defaultSundayPoyaExtra(matched, Number(row.basicSalary) || 0)) : 0
     })
   }
 
@@ -975,7 +1024,6 @@ export default function AttendancePage() {
         Plant_Code: record.plantCode,
         Section_Code: record.sectionCode,
         OT_Cal_Auto: record.otCalAuto || 'N',
-        Poya_Saturday_normal: record.poyaSaturdayNormal || 'N',
         No_Of_Staff: record.noOfStaff ?? 0,
         Att_Allowance: record.attAllowance || 'N',
         Das_for_Att_Alowance: record.dasForAttAllowance ?? 0,
@@ -987,14 +1035,13 @@ export default function AttendancePage() {
         Time_Out: record.timeOut,
         Half_Day: isHalf ? 0.5 : 0,
         Total_Working_Hours: record.totalWorkingHours,
+        Min_Work_Hours: record.minWorkHours,
         Total_OT: record.totalOt,
-        Shift: record.dayShift === 'Y' ? 'Day' : record.secondShift === 'Y' ? '2nd' : record.nightShift === 'Y' ? 'Night' : 'Full Night',
+        Shift: record.secondShift === 'Y' ? '2nd' : (record.nightShift === 'Y' || record.fullNight === 'Y') ? 'Night' : 'Day',
         Day_shift: record.dayShift,
         second_Shift: record.secondShift,
         Night_Shift: record.nightShift,
-        Full_Night: record.fullNight,
         No_of_Meal: record.noOfMeal ?? 1,
-        Meal_Type: record.mealType || 'Standard',
         Total_Meal_Value: record.totalMealValue ?? 0,
         Basic_Salary: record.basicSalary,
         Day_Allowance: record.dayAllowance,
@@ -1014,27 +1061,11 @@ export default function AttendancePage() {
     toast.success(`Exported ${uploadRows.length} attendance rows to attendance-updated.xlsx`)
   }
 
-  function getDefaultEmployeeValues(employee?: any, shift: string = 'Day') {
-    if (!employee) return {}
-    const autoSalary = resolveEmployeeBasicSalary(employee)
-    const isNight = shift === 'Night' || shift === 'Full Night'
-    return {
-      epfNo: employee.epfNo || '',
-      plantCode: employee.plantCode || '',
-      businessCenter: employee.businessCenter || localStorage.getItem('hsb_active_bc') || '',
-      basicSalary: autoSalary,
-      dayAllowance: employee.dayAllowance || 0,
-      nightAllowance: isNight ? (employee.nightAllowance || 0) : 0
-    }
-  }
-
   // Add flow
   function handleAdd() {
-    const firstEmployee = employeeList.find((employee) => employee?.epfNo)
     const todayStr = new Date().toISOString().split('T')[0]
     const empty = {
       ...defaultForm,
-      ...getDefaultEmployeeValues(firstEmployee, 'Day'),
       dayIn: todayStr,
       dayOut: todayStr,
       timeIn: '08:00',
@@ -1122,7 +1153,8 @@ export default function AttendancePage() {
     }
 
     const plantObj = customerList.find(c => c.code === form.plantCode || c.name === form.plantCode);
-    const { hours, ot } = computeHours(form.timeIn || '', form.timeOut || '', plantObj, form.plantCode);
+    const { hours, ot: computedOt } = computeHours(form.timeIn || '', form.timeOut || '', plantObj, form.plantCode, form.minWorkHours);
+    const ot = otFromHours(form.otCalAuto, computedOt, form.totalOt);
     let yr = form.atttYear
     let mo = form.attMonth
     if (form.dayIn && form.dayIn.includes('-')) {
@@ -1471,107 +1503,115 @@ export default function AttendancePage() {
     const emp = employeeList.find(e => e.epfNo === form.epfNo)
     const codes = new Set<string>()
 
-    if (emp?.plantCode) {
-      const cleanHome = emp.plantCode.split(' ')[0].trim()
-      codes.add(cleanHome)
-    }
+    if (emp?.plantCode) codes.add(normPlantCode(emp.plantCode))
 
     empTransfers.forEach(t => {
-      if (t.fromPlant) codes.add(t.fromPlant.split(' ')[0].trim())
-      if (t.toPlant) codes.add(t.toPlant.split(' ')[0].trim())
+      if (t.fromPlant) codes.add(normPlantCode(t.fromPlant))
+      if (t.toPlant) codes.add(normPlantCode(t.toPlant))
     })
 
-    const filtered = customerList.filter(c => codes.has(c.code))
+    const filtered = customerList.filter(c => codes.has(normPlantCode(c.code)))
     if (filtered.length === 0 && emp?.plantCode) {
-      const cleanHome = emp.plantCode.split(' ')[0].trim()
+      const cleanHome = emp.plantCode.split(/\s|\//)[0].trim()
       return [{ code: cleanHome, name: emp.plantCode }]
     }
     return filtered
   }, [form.epfNo, employeeList, empTransfers, customerList])
 
+  // Resolve a plant reference (code, "CODE / Name", or name) to the customer master code
+  function resolvePlantCode(ref: string | undefined): string {
+    if (!ref) return ''
+    const key = normPlantCode(ref)
+    const match = customerList.find(c => normPlantCode(c.code) === key)
+      || customerList.find(c => (c.name || '').trim().toUpperCase() === ref.trim().toUpperCase())
+    return match ? match.code : ref.split(/\s|\//)[0].trim()
+  }
+
+  // New entries take Time In / Out and Min Work Hours from the plant master; edits keep their saved values
+  function plantFormDefaults(plant: any, plantCode: string, current: Attendance): Partial<Attendance> {
+    if (isEditing) return {}
+    const setting = resolvePlantSetting(plant, plantCode)
+    const otCalAuto = plant ? (plant.otAuto ? 'Y' : 'N') : current.otCalAuto
+    const isDay = current.secondShift !== 'Y' && current.nightShift !== 'Y' && current.fullNight !== 'Y'
+    return isDay
+      ? { otCalAuto, minWorkHours: setting.minWorkHours, timeIn: setting.shiftStart, timeOut: setting.shiftEnd }
+      : { otCalAuto, minWorkHours: setting.minWorkHours }
+  }
+
   function handleEmployeeChange(epf: string | null) {
     if (!epf) return
     const emp = employeeList.find(e => e.epfNo === epf)
-    const empTrans = transfers.filter(t => t.epfNo === epf)
-    const activeTransfer = empTrans.find(t => t.status === 'Active') || empTrans[0]
+    const activeTransfer = transfers.find(t => t.epfNo === epf && String(t.status || '').toLowerCase() === 'active')
 
-    let effectivePlant = emp?.plantCode ? emp.plantCode.split(' ')[0].trim() : ''
-    if (activeTransfer?.toPlant) {
-      const targetCode = activeTransfer.toPlant.split(' ')[0].trim()
-      if (customerList.some(c => c.code === targetCode)) {
-        effectivePlant = targetCode
-      } else {
-        effectivePlant = activeTransfer.toPlant
-      }
-    }
+    // Plant comes from the employee master; an active plant transfer overrides it
+    const effectivePlant = resolvePlantCode(activeTransfer?.toPlant || emp?.plantCode)
 
     if (emp) {
       const autoSalary = resolveEmployeeBasicSalary(emp);
       const isNight = form.nightShift === 'Y' || form.fullNight === 'Y';
-      const plantObj = customerList.find(c => c.code === effectivePlant || c.name === effectivePlant);
+      const plantObj = customerList.find(c => c.code === effectivePlant);
       const mealRate = emp.mealValue != null ? Number(emp.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200);
-      const mealType = emp.mealType || 'Standard';
       const noOfMeals = form.noOfMeal ?? 1;
       setForm(prev => ({
         ...prev,
         epfNo: epf,
         plantCode: effectivePlant,
+        customerCode: effectivePlant,
         businessCenter: emp.businessCenter || prev.businessCenter || localStorage.getItem('hsb_active_bc') || '',
         basicSalary: autoSalary,
         dayAllowance: emp.dayAllowance || 0,
         nightAllowance: isNight ? (emp.nightAllowance || 0) : 0,
-        mealType,
-        totalMealValue: noOfMeals * mealRate
+        totalMealValue: noOfMeals * mealRate,
+        ...plantFormDefaults(plantObj, effectivePlant, prev)
       }))
     } else {
-      setForm(prev => ({ ...prev, epfNo: epf, plantCode: effectivePlant }))
+      setForm(prev => ({ ...prev, epfNo: epf, plantCode: effectivePlant, customerCode: effectivePlant }))
     }
+    if (effectivePlant && errors.plantCode) setErrors(prev => ({ ...prev, plantCode: undefined }))
   }
 
-  const selectedDayType = form.normalDay === 'Y' ? 'Normal' : (form.saturdayPoya === 'Y' ? 'SaturdayPoya' : (form.specialDay === 'Y' ? 'Special' : 'Normal'))
+  const isSundayPoya = form.saturdayPoya === 'Y'
+  const selectedDayType = form.specialDay === 'Y' ? 'Special' : 'Normal'
 
-  function handleDayTypeChange(type: 'Normal' | 'SaturdayPoya' | 'Special') {
-    const dailyRate = form.basicSalary || 0;
-    const poyaExtraPayment = Math.round(dailyRate * 1.5 * 100) / 100;
-
+  function handleDayTypeChange(type: 'Normal' | 'Special') {
     setForm(prev => ({
       ...prev,
       normalDay: type === 'Normal' ? 'Y' : 'N',
-      saturdayPoya: type === 'SaturdayPoya' ? 'Y' : 'N',
       specialDay: type === 'Special' ? 'Y' : 'N',
-      sundayPoyaExtra: type === 'SaturdayPoya' ? (prev.sundayPoyaExtra && prev.sundayPoyaExtra > 0 ? prev.sundayPoyaExtra : poyaExtraPayment) : prev.sundayPoyaExtra
+      saturdayPoya: 'N',
+      sundayPoyaExtra: 0
     }))
   }
 
-  const selectedShift = form.dayShift === 'Y' ? 'Day' : (form.secondShift === 'Y' ? '2nd' : (form.nightShift === 'Y' ? 'Night' : 'Full Night'))
+  function handleSundayPoyaChange(checked: boolean) {
+    const currentEmp = employeeList.find(e => (e.epfNo || '').trim() === (form.epfNo || '').trim());
+    setForm(prev => ({
+      ...prev,
+      saturdayPoya: checked ? 'Y' : 'N',
+      normalDay: checked ? 'N' : 'Y',
+      specialDay: 'N',
+      sundayPoyaExtra: checked ? (prev.sundayPoyaExtra && prev.sundayPoyaExtra > 0 ? prev.sundayPoyaExtra : defaultSundayPoyaExtra(currentEmp, prev.basicSalary || 0)) : 0
+    }))
+  }
 
-  function handleShiftChange(shift: 'Day' | '2nd' | 'Night' | 'Full Night') {
-    const isNight = shift === 'Night' || shift === 'Full Night';
+  const selectedShift = form.secondShift === 'Y' ? '2nd' : ((form.nightShift === 'Y' || form.fullNight === 'Y') ? 'Night' : 'Day')
+
+  function handleShiftChange(shift: 'Day' | '2nd' | 'Night') {
+    const isNight = shift === 'Night';
     const currentEmp = employeeList.find(e => (e.epfNo || '').trim() === (form.epfNo || '').trim());
     const empNightAllowance = currentEmp?.nightAllowance || 0;
 
-    let nextTimeIn = form.timeIn || '08:00';
-    let nextTimeOut = form.timeOut || '16:00';
-
-    if (shift === 'Day') {
-      nextTimeIn = '08:00';
-      nextTimeOut = '16:00'; // Normal 8-hour day end time (4:00 PM)
-    } else if (shift === '2nd') {
-      nextTimeIn = '16:00';
-      nextTimeOut = '00:00';
-    } else if (shift === 'Night' || shift === 'Full Night') {
-      nextTimeIn = '20:00';
-      nextTimeOut = '04:00';
-    }
-
-    const { hours, ot } = computeHours(nextTimeIn, nextTimeOut);
+    const currentPlant = customerList.find(c => c.code === form.plantCode || c.name === form.plantCode);
+    const { timeIn: nextTimeIn, timeOut: nextTimeOut } = shiftDefaultTimes(shift, currentPlant, form.plantCode);
+    const { hours, ot: computedOt } = computeHours(nextTimeIn, nextTimeOut, currentPlant, form.plantCode, form.minWorkHours);
+    const ot = otFromHours(form.otCalAuto, computedOt, form.totalOt);
 
     setForm(prev => ({
       ...prev,
       dayShift: shift === 'Day' ? 'Y' : 'N',
       secondShift: shift === '2nd' ? 'Y' : 'N',
       nightShift: shift === 'Night' ? 'Y' : 'N',
-      fullNight: shift === 'Full Night' ? 'Y' : 'N',
+      fullNight: 'N',
       timeIn: nextTimeIn,
       timeOut: nextTimeOut,
       totalWorkingHours: hours,
@@ -1583,8 +1623,10 @@ export default function AttendancePage() {
   // Live computed hours with plant shift timing logic
   const liveComputed = useMemo(() => {
     const currentPlant = customerList.find(c => c.code === form.plantCode || c.name === form.plantCode);
-    return computePlantHours(form.timeIn || '', form.timeOut || '', currentPlant, form.plantCode);
-  }, [form.timeIn, form.timeOut, form.plantCode, customerList]);
+    return computePlantHours(form.timeIn || '', form.timeOut || '', currentPlant, form.plantCode, form.minWorkHours);
+  }, [form.timeIn, form.timeOut, form.plantCode, form.minWorkHours, customerList]);
+
+  const formPlantSetting = resolvePlantSetting(customerList.find(c => c.code === form.plantCode || c.name === form.plantCode), form.plantCode)
 
   // Statutory holiday lookups for the logs table and the panel
   const statHolidayMap = useMemo(() => {
@@ -1690,7 +1732,7 @@ export default function AttendancePage() {
     // Day Type Badge
     let dayTypeNode = <span className="tag-pill bg-slate-100 text-slate-700 border">Normal</span>
     if (r.saturdayPoya === 'Y') {
-      dayTypeNode = <span className="tag-pill bg-violet-50 text-violet-700 border border-violet-200">Poya/Sat</span>
+      dayTypeNode = <span className="tag-pill bg-violet-50 text-violet-700 border border-violet-200">Sunday Poya</span>
     } else if (r.specialDay === 'Y') {
       dayTypeNode = <span className="tag-pill bg-rose-50 text-rose-700 border border-rose-200">Special</span>
     }
@@ -2394,7 +2436,7 @@ export default function AttendancePage() {
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Employee *</label>
-                <SearchableEmployeeSelect employees={employeeList} value={form.epfNo} onChange={(epf) => { handleEmployeeChange(epf || ''); if (errors.epfNo) setErrors(prev => ({ ...prev, epfNo: undefined })) }} />
+                <SearchableEmployeeSelect employees={employeeList} customers={customerList} value={form.epfNo} onChange={(epf) => { handleEmployeeChange(epf || ''); if (errors.epfNo) setErrors(prev => ({ ...prev, epfNo: undefined })) }} />
                 {errors.epfNo && <p className="mt-1 text-xs text-red-500">{errors.epfNo}</p>}
               </div>
               <div className="col-span-2">
@@ -2407,14 +2449,15 @@ export default function AttendancePage() {
                   )}
                   {form.epfNo && !hasPlantTransfer && (
                     <span className="text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded font-medium border border-slate-200">
-                      Current Plant: {form.plantCode || 'Not Set'}
+                      Current Plant: {form.plantCode ? `${form.plantCode}${customerList.find(c => c.code === form.plantCode)?.name ? ' - ' + customerList.find(c => c.code === form.plantCode)?.name : ''}` : 'Not Set'}
                     </span>
                   )}
                 </div>
                 <select 
                   value={form.plantCode} 
                   onChange={e => { 
-                    setForm({ ...form, plantCode: e.target.value }); 
+                    const selectedPlant = customerList.find(c => c.code === e.target.value);
+                    setForm({ ...form, plantCode: e.target.value, customerCode: e.target.value, ...plantFormDefaults(selectedPlant, e.target.value, form) }); 
                     if (errors.plantCode) setErrors(prev => ({ ...prev, plantCode: undefined })) 
                   }} 
                   className={`w-full form-input ${errors.plantCode ? 'border-red-300 ring-2 ring-red-100' : ''}`}
@@ -2422,9 +2465,10 @@ export default function AttendancePage() {
                   <option value="">Select plant</option>
                   {relevantPlants.map(c => {
                     const emp = employeeList.find(e => e.epfNo === form.epfNo);
-                    const isCurrent = emp?.plantCode?.startsWith(c.code);
-                    const isFromPlant = empTransfers.some(t => t.fromPlant?.includes(c.code));
-                    const isToPlant = empTransfers.some(t => t.toPlant?.includes(c.code));
+                    const code = normPlantCode(c.code);
+                    const isCurrent = !!emp?.plantCode && normPlantCode(emp.plantCode) === code;
+                    const isFromPlant = empTransfers.some(t => !!t.fromPlant && normPlantCode(t.fromPlant) === code);
+                    const isToPlant = empTransfers.some(t => !!t.toPlant && normPlantCode(t.toPlant) === code);
                     let tag = '';
                     if (isCurrent) tag = ' (Current Plant)';
                     else if (isFromPlant) tag = ' (Previous Plant)';
@@ -2576,8 +2620,15 @@ export default function AttendancePage() {
                 <input type="time" value={form.timeOut} onChange={e => setForm({ ...form, timeOut: e.target.value })} className="mt-1 w-full form-input" />
               </div>
               <div className="col-span-2 flex items-center justify-between p-2 bg-slate-50 border rounded-lg">
-                <span className="text-xs font-semibold text-slate-600">Half Day Entry</span>
-                <Toggle checked={form.halfDay === 1} onChange={v => setForm({ ...form, halfDay: v ? 1 : 0 })} />
+                <span className="text-xs font-semibold text-slate-600">Day Entry</span>
+                <select
+                  value={form.halfDay === 1 || form.halfDay === 0.5 ? 'half' : 'full'}
+                  onChange={e => setForm({ ...form, halfDay: e.target.value === 'half' ? 0.5 : 0 })}
+                  className="form-input w-36 text-xs"
+                >
+                  <option value="full">Full Day</option>
+                  <option value="half">Half Day</option>
+                </select>
               </div>
             </div>
 
@@ -2585,12 +2636,33 @@ export default function AttendancePage() {
             <div className="flex flex-col gap-2 bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-100">
               <div className="flex gap-4 items-center">
                 <div>
+                  <label className="text-xs text-emerald-800 block font-medium">Min Work Hours</label>
+                  <NumericInput
+                    value={form.minWorkHours ?? liveComputed.minWorkHours}
+                    onChange={e => setForm(prev => ({ ...prev, minWorkHours: Number(e.target.value) || undefined }))}
+                    className="form-input w-16 text-xs text-right mono-numeric mt-0.5"
+                  />
+                </div>
+                <div>
                   <span className="text-xs text-emerald-800 block font-medium">Total Working Hours</span>
                   <span className="text-lg font-bold font-mono text-emerald-950">{liveComputed.hours.toFixed(1)} hrs</span>
                 </div>
                 <div className="border-l border-emerald-200 pl-4">
-                  <span className="text-xs text-emerald-800 block font-medium">Calculated OT</span>
-                  <span className={`text-lg font-bold font-mono ${liveComputed.ot > 0 ? 'text-[#C08A2E]' : 'text-emerald-900'}`}>{liveComputed.ot.toFixed(1)} hrs</span>
+                  {form.otCalAuto === 'N' ? (
+                    <>
+                      <label className="text-xs text-emerald-800 block font-medium">OT Hours (Manual)</label>
+                      <NumericInput
+                        value={form.totalOt ?? 0}
+                        onChange={e => setForm(prev => ({ ...prev, totalOt: Number(e.target.value || 0) }))}
+                        className="form-input w-20 text-xs text-right mono-numeric mt-0.5"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-xs text-emerald-800 block font-medium">Calculated OT</span>
+                      <span className={`text-lg font-bold font-mono ${liveComputed.ot > 0 ? 'text-[#C08A2E]' : 'text-emerald-900'}`}>{liveComputed.ot.toFixed(1)} hrs</span>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="text-[11px] text-slate-600 bg-white/80 px-2 py-1 rounded border border-emerald-200/60 flex items-center justify-between">
@@ -2599,6 +2671,7 @@ export default function AttendancePage() {
                     ? `Plant Shift Start: ${liveComputed.appliedShiftStart} (counted from ${liveComputed.startTimeStr})`
                     : `Actual arrival: ${liveComputed.startTimeStr}`}
                   {liveComputed.capped ? ` (capped at ${liveComputed.maxHoursCap} hrs)` : ''}
+                  {` · Plant ${formPlantSetting.shiftStart} - ${formPlantSetting.shiftEnd}`}
                 </span>
                 <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-100 px-1.5 py-0.5 rounded">Plant Rule</span>
               </div>
@@ -2609,31 +2682,31 @@ export default function AttendancePage() {
           <section className="space-y-3">
             <h4 className="font-semibold mb-1">Day Type</h4>
             <div className="flex rounded-lg bg-slate-100 p-0.5 border">
-              <button type="button" onClick={() => handleDayTypeChange('Normal')} className={`flex-1 text-center py-1 text-xs font-semibold rounded-md transition-all ${selectedDayType === 'Normal' ? 'bg-white shadow text-slate-900' : 'text-slate-600 hover:text-slate-900'}`}>Normal</button>
-              <button type="button" onClick={() => handleDayTypeChange('SaturdayPoya')} className={`flex-1 text-center py-1 text-xs font-semibold rounded-md transition-all ${selectedDayType === 'SaturdayPoya' ? 'bg-white shadow text-slate-900' : 'text-slate-600 hover:text-slate-900'}`}>Poya/Sat</button>
+              <button type="button" onClick={() => handleDayTypeChange('Normal')} className={`flex-1 text-center py-1 text-xs font-semibold rounded-md transition-all ${selectedDayType === 'Normal' && !isSundayPoya ? 'bg-white shadow text-slate-900' : 'text-slate-600 hover:text-slate-900'}`}>Normal</button>
               <button type="button" onClick={() => handleDayTypeChange('Special')} className={`flex-1 text-center py-1 text-xs font-semibold rounded-md transition-all ${selectedDayType === 'Special' ? 'bg-white shadow text-slate-900' : 'text-slate-600 hover:text-slate-900'}`}>Special</button>
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="flex items-center justify-between p-1 bg-white border rounded">
-                <span className="text-slate-600 font-medium">Poya / Saturday Normal</span>
-                <Toggle checked={form.poyaSaturdayNormal === 'Y'} onChange={v => setForm({ ...form, poyaSaturdayNormal: v ? 'Y' : 'N' })} />
+              <div className="col-span-2 flex items-center justify-between p-1 bg-white border rounded">
+                <span className="text-slate-600 font-medium">Sunday Poya</span>
+                <Toggle checked={isSundayPoya} onChange={handleSundayPoyaChange} />
               </div>
-              <div className="col-span-2">
-                <label className="block text-slate-600 mb-1">Sunday Poya Extra Payment</label>
-                <NumericInput value={form.sundayPoyaExtra || 0} onChange={e => handleNumericInput('sundayPoyaExtra', 'Sunday/Poya extra payment', e.target.value)} className="w-full form-input" />
-              </div>
+              {isSundayPoya && (
+                <div className="col-span-2">
+                  <label className="block text-slate-600 mb-1">Sunday Poya Extra Payment</label>
+                  <NumericInput value={form.sundayPoyaExtra || 0} onChange={e => handleNumericInput('sundayPoyaExtra', 'Sunday/Poya extra payment', e.target.value)} className="w-full form-input" />
+                </div>
+              )}
             </div>
           </section>
 
           {/* Section 6: Shift */}
           <section className="space-y-2">
             <h4 className="font-semibold mb-1">Shift</h4>
-            <div className="grid grid-cols-4 gap-1 p-0.5 rounded-lg bg-slate-100 border">
+            <div className="grid grid-cols-3 gap-1 p-0.5 rounded-lg bg-slate-100 border">
               {[
                 { name: 'Day', icon: Sun },
                 { name: '2nd', icon: Sunset },
-                { name: 'Night', icon: Moon },
-                { name: 'Full Night', icon: Star }
+                { name: 'Night', icon: Moon }
               ].map(s => {
                 const Icon = s.icon;
                 const active = selectedShift === s.name;
@@ -2650,7 +2723,7 @@ export default function AttendancePage() {
           {/* Section 7: Meals & Misc */}
           <section>
             <h4 className="font-semibold mb-2">Meals & Misc</h4>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <div>
                 <label className="block text-xs text-slate-600">No of Meals</label>
                 <NumericInput
@@ -2669,20 +2742,6 @@ export default function AttendancePage() {
                   }}
                   className="mt-1 w-full form-input text-right mono-numeric"
                 />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-600">Meal Type</label>
-                <select
-                  value={form.mealType || 'Standard'}
-                  onChange={e => setForm({ ...form, mealType: e.target.value })}
-                  className="mt-1 w-full form-input text-xs"
-                >
-                  <option value="Standard">Standard</option>
-                  <option value="Staff Meal">Staff Meal</option>
-                  <option value="Subsidized">Subsidized</option>
-                  <option value="Special">Special</option>
-                  <option value="Free Meal">Free Meal</option>
-                </select>
               </div>
               <div>
                 <label className="block text-xs text-slate-600">Total Meal Value</label>
@@ -2732,7 +2791,7 @@ export default function AttendancePage() {
                 <select
                   value={uploadDefaultPlant}
                   onChange={e => setUploadDefaultPlant(e.target.value)}
-                  className="form-input text-xs py-1 h-7 max-w-[130px]"
+                  className="form-input text-xs !py-0.5 !px-2 h-8 w-40"
                 >
                   <option value="">(None)</option>
                   {customerList.map(c => (
@@ -2746,7 +2805,7 @@ export default function AttendancePage() {
                 <select
                   value={uploadDefaultSection}
                   onChange={e => setUploadDefaultSection(e.target.value)}
-                  className="form-input text-xs py-1 h-7 max-w-[130px]"
+                  className="form-input text-xs !py-0.5 !px-2 h-8 w-40"
                 >
                   <option value="">(None)</option>
                   {sectionList.map(s => (
@@ -2843,11 +2902,11 @@ export default function AttendancePage() {
                         <button type="button" onClick={toggleCollapsed} className="text-xs text-slate-500 hover:text-slate-800 w-4">
                           {collapsed ? '▸' : '▾'}
                         </button>
-                        <span className="text-xs font-semibold text-slate-600">Employee Plant:</span>
+                        <span className="text-xs font-semibold text-slate-600 whitespace-nowrap">Employee Plant:</span>
                         <select
                           value={group.plantCode}
                           onChange={e => movePlantRows(group.plantCode, e.target.value)}
-                          className={`form-input text-xs py-1 h-7 max-w-[220px] ${group.plantCode ? '' : 'border-red-400 bg-red-50'}`}
+                          className={`form-input text-xs font-medium !py-0.5 !px-2 h-8 w-64 ${group.plantCode ? '' : 'border-red-400 bg-red-50'}`}
                         >
                           <option value="">Select Plant</option>
                           {customerList.map(c => (
@@ -2869,7 +2928,7 @@ export default function AttendancePage() {
                           type="button"
                           disabled={!plantObj}
                           onClick={() => {
-                            updatePlantRows(group.plantCode, plantMasterValues(plantObj))
+                            resetPlantRowsFromMaster(group.plantCode, plantObj)
                             toast.success(`Plant ${group.plantCode} values reset from the Plant master`)
                           }}
                           className="px-2.5 py-1 text-xs border rounded bg-white hover:bg-slate-50 font-medium disabled:opacity-40"
@@ -2888,13 +2947,13 @@ export default function AttendancePage() {
                     </div>
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-700">
                       <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input type="checkbox" checked={first?.otCalAuto === 'Y'} onChange={e => updatePlantRows(group.plantCode, { otCalAuto: e.target.checked ? 'Y' : 'N' })} />
+                        <input type="checkbox" checked={first?.otCalAuto === 'Y'} onChange={e => setPlantOtAuto(group.plantCode, plantObj, e.target.checked)} />
                         <span>OT Calculate Auto</span>{variesHint('otCalAuto')}
                       </label>
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input type="checkbox" checked={first?.poyaSaturdayNormal === 'Y'} onChange={e => updatePlantRows(group.plantCode, { poyaSaturdayNormal: e.target.checked ? 'Y' : 'N' })} />
-                        <span>Poya / Saturday Normal Rate</span>{variesHint('poyaSaturdayNormal')}
-                      </label>
+                      <span className="flex items-center gap-1.5">
+                        <span>Plant Start - End:</span>
+                        <span className="px-2 py-0.5 rounded bg-white border border-slate-200 font-mono" title="From the Plant master">{setting.shiftStart} - {setting.shiftEnd}</span>
+                      </span>
                       <span className="flex items-center gap-1.5">
                         <span>Working Days:</span>
                         <span className="px-2 py-0.5 rounded bg-white border border-slate-200 font-mono" title="From the Plant master">{plantObj?.workingDays ?? '—'}</span>
@@ -2934,13 +2993,14 @@ export default function AttendancePage() {
                             <th className="px-2 py-2">Time Out</th>
                             <th className="px-2 py-2">Half Day</th>
                             <th className="px-2 py-2">Total Work Hours</th>
-                            <th className="px-2 py-2" title="OT starts after 8 hours">Min Work Hours</th>
+                            <th className="px-2 py-2" title="OT starts after these hours">Min Work Hours</th>
                             <th className="px-2 py-2">Total OT</th>
                             <th className="px-2 py-2">Day Type</th>
+                            <th className="px-2 py-2">Sunday Poya</th>
+                            <th className="px-2 py-2">Sunday Poya Extra Payment</th>
                             <th className="px-2 py-2">Shift</th>
                             <th className="px-2 py-2">Not Allow Late</th>
                             <th className="px-2 py-2">No. Of Meal</th>
-                            <th className="px-2 py-2">Meal Type</th>
                             <th className="px-2 py-2">Total Meal Value</th>
                             <th className="px-2 py-2">Statutory Holiday</th>
                             <th className="px-2 py-2 text-center">Action</th>
@@ -2954,10 +3014,11 @@ export default function AttendancePage() {
                             const mealRate = matchedEmp?.mealValue != null ? Number(matchedEmp.mealValue) : (plantObj?.mealValue != null ? Number(plantObj.mealValue) : 200)
                             const dayInValue = excelDate(row.dayIn)
                             const isHalfDay = row.workingDays === 0.5 || row.halfDay === 1 || row.halfDay === 0.5
-                            const shift = row.dayShift === 'Y' ? 'Day' : row.secondShift === 'Y' ? '2nd' : row.nightShift === 'Y' ? 'Night' : row.fullNight === 'Y' ? 'Full Night' : 'Day'
-                            const dayType = row.saturdayPoya === 'Y' ? 'SaturdayPoya' : row.specialDay === 'Y' ? 'Special' : 'Normal'
+                            const shift = row.secondShift === 'Y' ? '2nd' : (row.nightShift === 'Y' || row.fullNight === 'Y') ? 'Night' : 'Day'
+                            const rowSundayPoya = row.saturdayPoya === 'Y'
+                            const dayType = row.specialDay === 'Y' ? 'Special' : 'Normal'
                             const isStatutory = stagedHolidayDates.has(dayInValue)
-                            const recompute = (timeIn: string, timeOut: string) => computePlantHours(timeIn, timeOut, plantObj, row.plantCode)
+                            const recompute = (timeIn: string, timeOut: string, minWorkHours = row.minWorkHours) => computePlantHours(timeIn, timeOut, plantObj, row.plantCode, minWorkHours)
 
                             return (
                               <tr key={row.id || index} className={val.isValid ? 'hover:bg-slate-50' : 'bg-rose-50/40 hover:bg-rose-50/60'}>
@@ -3028,9 +3089,9 @@ export default function AttendancePage() {
                                     value={row.timeIn || ''}
                                     onChange={e => {
                                       const computed = recompute(e.target.value, row.timeOut || '')
-                                      updateUploadRow(index, { timeIn: e.target.value, totalWorkingHours: computed.hours, totalOt: computed.ot })
+                                      updateUploadRow(index, { timeIn: e.target.value, totalWorkingHours: computed.hours, totalOt: otFromHours(row.otCalAuto, computed.ot, row.totalOt) })
                                     }}
-                                    className="form-input w-24 text-xs"
+                                    className="form-input w-36 text-xs"
                                   />
                                 </td>
                                 <td className="px-2 py-1.5">
@@ -3040,23 +3101,34 @@ export default function AttendancePage() {
                                     value={(row.timeOut || '').slice(0, 8)}
                                     onChange={e => {
                                       const computed = recompute(row.timeIn || '', e.target.value)
-                                      updateUploadRow(index, { timeOut: e.target.value, totalWorkingHours: computed.hours, totalOt: computed.ot })
+                                      updateUploadRow(index, { timeOut: e.target.value, totalWorkingHours: computed.hours, totalOt: otFromHours(row.otCalAuto, computed.ot, row.totalOt) })
                                     }}
-                                    className="form-input w-24 text-xs"
+                                    className="form-input w-36 text-xs"
                                   />
                                 </td>
                                 <td className="px-2 py-1.5 text-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={isHalfDay}
-                                    onChange={e => updateUploadRow(index, { workingDays: e.target.checked ? 0.5 : 1, halfDay: e.target.checked ? 0.5 : 0 })}
-                                  />
+                                  <select
+                                    value={isHalfDay ? 'half' : 'full'}
+                                    onChange={e => updateUploadRow(index, e.target.value === 'half' ? { workingDays: 0.5, halfDay: 0.5 } : { workingDays: 1, halfDay: 0 })}
+                                    className="form-input w-24 text-xs"
+                                  >
+                                    <option value="full">Full Day</option>
+                                    <option value="half">Half Day</option>
+                                  </select>
                                 </td>
                                 <td className="px-2 py-1.5">
                                   <NumericInput value={row.totalWorkingHours ?? ''} onChange={e => updateUploadRow(index, { totalWorkingHours: Number(e.target.value || 0) })} className="form-input w-16 text-xs text-right" />
                                 </td>
-                                <td className="px-2 py-1.5 text-slate-600 font-mono">
-                                  8{setting.maxHoursCap ? <span className="text-[10px] text-slate-400"> (cap {setting.maxHoursCap})</span> : null}
+                                <td className="px-2 py-1.5 whitespace-nowrap">
+                                  <NumericInput
+                                    value={row.minWorkHours ?? setting.minWorkHours ?? 9}
+                                    onChange={e => {
+                                      const minWorkHours = Number(e.target.value) || undefined
+                                      updateUploadRow(index, { minWorkHours, totalOt: otFromHours(row.otCalAuto, recompute(row.timeIn || '', row.timeOut || '', minWorkHours).ot, row.totalOt) })
+                                    }}
+                                    className="form-input w-14 text-xs text-right"
+                                  />
+                                  {setting.maxHoursCap ? <span className="text-[10px] text-slate-400"> (cap {setting.maxHoursCap})</span> : null}
                                 </td>
                                 <td className="px-2 py-1.5">
                                   <NumericInput value={row.totalOt ?? ''} onChange={e => updateUploadRow(index, { totalOt: Number(e.target.value || 0) })} className="form-input w-16 text-xs text-right" />
@@ -3064,24 +3136,32 @@ export default function AttendancePage() {
                                 <td className="px-2 py-1.5">
                                   <select
                                     value={dayType}
+                                    disabled={rowSundayPoya}
                                     onChange={e => updateUploadRow(index, {
                                       normalDay: e.target.value === 'Normal' ? 'Y' : 'N',
-                                      saturdayPoya: e.target.value === 'SaturdayPoya' ? 'Y' : 'N',
                                       specialDay: e.target.value === 'Special' ? 'Y' : 'N'
                                     })}
-                                    className="form-input w-32 text-xs"
+                                    className="form-input w-32 text-xs disabled:opacity-50"
                                   >
                                     <option value="Normal">Normal Day</option>
-                                    <option value="SaturdayPoya">Saturday and Poya</option>
                                     <option value="Special">Other Special Day</option>
                                   </select>
                                 </td>
+                                <td className="px-2 py-1.5 text-center">
+                                  <input type="checkbox" checked={rowSundayPoya} onChange={e => handleStagedSundayPoya(index, row, e.target.checked)} />
+                                </td>
                                 <td className="px-2 py-1.5">
-                                  <select value={shift} onChange={e => handleStagedShiftChange(index, row, e.target.value)} className="form-input w-24 text-xs">
+                                  {rowSundayPoya ? (
+                                    <NumericInput value={row.sundayPoyaExtra ?? 0} onChange={e => updateUploadRow(index, { sundayPoyaExtra: Number(e.target.value || 0) })} className="form-input w-20 text-xs text-right mono-numeric" />
+                                  ) : (
+                                    <span className="text-slate-400">—</span>
+                                  )}
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <select value={shift} onChange={e => handleStagedShiftChange(index, row, e.target.value)} className="form-input w-32 text-xs">
                                     <option value="Day">Day Shift</option>
                                     <option value="2nd">2nd Shift</option>
                                     <option value="Night">Night Shift</option>
-                                    <option value="Full Night">Full Night</option>
                                   </select>
                                 </td>
                                 <td className="px-2 py-1.5 text-center">
@@ -3097,15 +3177,6 @@ export default function AttendancePage() {
                                     }}
                                     className="form-input w-14 text-xs text-right"
                                   />
-                                </td>
-                                <td className="px-2 py-1.5">
-                                  <select value={row.mealType || 'Standard'} onChange={e => updateUploadRow(index, { mealType: e.target.value })} className="form-input w-28 text-xs">
-                                    <option value="Standard">Standard</option>
-                                    <option value="Staff Meal">Staff Meal</option>
-                                    <option value="Subsidized">Subsidized</option>
-                                    <option value="Special">Special</option>
-                                    <option value="Free Meal">Free Meal</option>
-                                  </select>
                                 </td>
                                 <td className="px-2 py-1.5">
                                   <NumericInput value={row.totalMealValue ?? 0} onChange={e => updateUploadRow(index, { totalMealValue: Number(e.target.value || 0) })} className="form-input w-20 text-xs text-right mono-numeric" />

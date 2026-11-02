@@ -54,7 +54,7 @@ function computePlantHours(timeInStr, timeOutStr, plant, plantCode) {
   }
 
   const hours = Math.round(rawHours * 10) / 10;
-  const ot = Math.max(0, Math.round((hours - 8.0) * 10) / 10);
+  const ot = Math.max(0, Math.round((hours - 9.0) * 10) / 10); // Min Work Hours default
   const startH = Math.floor(startMinutes / 60);
   const startM = startMinutes % 60;
   const startTimeStr = `${String(startH).padStart(2, '0')}:${String(startM).padStart(2, '0')}`;
@@ -83,7 +83,7 @@ console.log('======================================================\n');
 const resA = computePlantHours('06:00', '16:00', { countFromShiftStart: true, shiftStart: '07:30' });
 assert(resA.hours === 8.5, `Plant A: 06:00 -> 16:00 gives 8.5 hours (actual: ${resA.hours})`);
 assert(resA.startTimeStr === '07:30', `Plant A: Start time begins from shiftStart 07:30 (actual: ${resA.startTimeStr})`);
-assert(resA.ot === 0.5, `Plant A: OT calculated as 8.5 - 8.0 = 0.5 hours (actual: ${resA.ot})`);
+assert(resA.ot === 0, `Plant A: 8.5 hours is below Min Work Hours 9, so no OT (actual: ${resA.ot})`);
 
 // Test 2: Plant B (counts from actual arrival 6:00, capped at 9 hours)
 const resB = computePlantHours('06:00', '16:00', { countFromShiftStart: false, maxHoursCap: 9 }, 'PLANT-B');

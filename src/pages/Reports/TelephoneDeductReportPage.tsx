@@ -5,6 +5,7 @@ import { list as listCustomers, Customer } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
 import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
+import { plantKey } from '../../components/reports/ReportFilters'
 
 export default function TelephoneDeductReportPage() {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
@@ -46,7 +47,7 @@ export default function TelephoneDeductReportPage() {
       const mapped = report.data.map((item: any) => {
         const employee = emps.find(e => (e.epfNo || '').trim() === (item.epfNo || '').trim())
         const fullName = employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : item.employeeName || item.epfNo
-        const customer = custs.find(c => c.code === employee?.plantCode)
+        const customer = custs.find(c => plantKey(c.code) === plantKey(employee?.plantCode))
         return [item.epfNo, fullName, customer?.name || '', Number(item.monthlyCut ?? 0)] as [string, string, string, number]
       })
       setRows(mapped)

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
+import { toast } from 'sonner'
 import A4Report from '../../components/reports/A4Report'
 import { Attendance } from '../../mocks/attendance'
 import { list as listEmployees } from '../../mocks/employees'
@@ -18,6 +19,7 @@ export default function AttendanceReportPage() {
   const [employees, setEmployees] = useState<any[]>([])
   const [attendanceList, setAttendanceList] = useState<Attendance[]>([])
   const [loading, setLoading] = useState<boolean>(false)
+  const requestId = useRef(0)
 
   useEffect(() => {
     Promise.all([
@@ -28,13 +30,13 @@ export default function AttendanceReportPage() {
       setBusinessCenters(bcs)
       setCustomers(custs)
       setEmployees(emps)
-      setSelectedPlant(current => custs.some(customer => customer.code === current)
-        ? current
-        : custs[0]?.code || '')
+      // Keep "All Plants" selected unless the chosen plant no longer exists in this business center
+      setSelectedPlant(current => !current || custs.some(customer => customer.code === current) ? current : '')
     })
   }, [businessCenter])
 
   const loadData = async () => {
+    const thisRequest = ++requestId.current
     setLoading(true)
     try {
       const cleanBc = businessCenter && businessCenter !== 'ALL' ? businessCenter.split(' / ')[0].trim() : ''
@@ -44,16 +46,19 @@ export default function AttendanceReportPage() {
       if (!Array.isArray(response.data)) {
         throw new Error('Attendance report returned an invalid response.')
       }
+      if (thisRequest !== requestId.current) return
       setAttendanceList(response.data.map((row: any) => ({
         ...row,
         atttYear: row.attYear || row.atttYear,
         dasForAttAllowance: row.daysForAttAllowance ?? row.dasForAttAllowance
       })))
     } catch (error) {
+      if (thisRequest !== requestId.current) return
       setAttendanceList([])
       console.error('Attendance report could not be loaded', error)
+      toast.error('Attendance report could not be loaded')
     } finally {
-      setLoading(false)
+      if (thisRequest === requestId.current) setLoading(false)
     }
   }
 
@@ -62,18 +67,10 @@ export default function AttendanceReportPage() {
   }, [businessCenter, year, month, selectedPlant])
 
   const selectedCustObj = customers.find(c => c.code === selectedPlant)
-  const plantTitle = selectedCustObj
-    ? `${selectedCustObj.name} - ${selectedCustObj.address || selectedCustObj.code}`
-    : ''
+  const plantTitle = selectedCustObj?.name || 'Attendance Report - All Plants'
 
-  const metaLeft = (
-    <div>
-      <div>{selectedCustObj?.name || ''}</div>
-      <div>
-        Year : {year} &nbsp; Month : {month}
-      </div>
-    </div>
-  )
+  const metaLeft = <strong>{selectedCustObj?.address1 || selectedCustObj?.code || ''}</strong>
+  const metaRight = <div>Year : {year} &nbsp;&nbsp; Month : {month}</div>
 
   const columns = [
     'Name',
@@ -83,9 +80,9 @@ export default function AttendanceReportPage() {
     'Off Date',
     'Off Time',
     'Total Hours',
-    'Hours H:MM',
+    'Total Hours In H:MM',
     'OT Hours',
-    'OT H:MM',
+    'OT Hours H:MM',
     'Meal',
     'Meal Value',
     'OT Min',
@@ -94,55 +91,69 @@ export default function AttendanceReportPage() {
     'Normal Day',
   ]
 
-  // Filter attendance by year, month, and selected plant
-  const cleanYear = year.trim()
-  const cleanMonth = month.trim().padStart(2, '0')
-
-  let filtered = attendanceList.filter(a => {
-    const matchYear =
-      a.atttYear === cleanYear || (a.dayIn && a.dayIn.startsWith(cleanYear))
-    const matchMonth =
-      a.attMonth === cleanMonth ||
-      (a.dayIn && a.dayIn.slice(5, 7) === cleanMonth) ||
-      (a.dayIn && parseInt(a.dayIn.slice(5, 7), 10) === parseInt(cleanMonth, 10))
-    const matchPlant = !selectedPlant || a.plantCode === selectedPlant || a.customerCode === selectedPlant
-    return matchYear && matchMonth && matchPlant
+  const cleanPlant = selectedPlant.trim().toUpperCase()
+  const filtered = attendanceList.filter(a => {
+    if (!cleanPlant) return true
+    return (a.plantCode || '').trim().toUpperCase() === cleanPlant || (a.customerCode || '').trim().toUpperCase() === cleanPlant
   })
 
-  // Group by employee
-  filtered.sort((a, b) => (a.epfNo || '').localeCompare(b.epfNo || ''))
+  // Group by employee (numeric-aware EPF order), then by date
+  filtered.sort((a, b) =>
+    (a.epfNo || '').trim().localeCompare((b.epfNo || '').trim(), undefined, { numeric: true })
+    || (a.dayIn || '').localeCompare(b.dayIn || '')
+    || (a.timeIn || '').localeCompare(b.timeIn || ''))
 
-  let displayRows: any[][] = []
+  const displayRows: any[][] = filtered.map(a => {
+    const emp = employees.find(e => (e.epfNo || '').trim() === (a.epfNo || '').trim())
+    const empFullName = emp ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim() : (a.employeeName || '').trim()
+    const totalHours = a.totalWorkingHours || 0
+    const otHours = a.totalOt || 0
+    const hasOut = !!a.timeOut
 
-  if (filtered.length > 0) {
-    displayRows = filtered.map(a => {
-      const emp = employees.find(e => (e.epfNo || '').trim() === (a.epfNo || '').trim())
-      const empFullName = emp ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim() : a.epfNo
-      const nameCol = `${empFullName || a.epfNo}-${a.epfNo}`
-      const totalHours = a.totalWorkingHours || 0
-      const otHours = a.totalOt || 0
-      const offDate = a.dayOut || a.dayIn
+    return [
+      empFullName || a.epfNo,
+      a.epfNo,
+      formatDateDdMmmYyyy(a.dayIn),
+      formatTimeAmPm(a.timeIn),
+      hasOut ? formatDateDdMmmYyyy(a.dayOut || a.dayIn) : '—',
+      hasOut ? formatTimeAmPm(a.timeOut) : '—',
+      totalHours.toFixed(2),
+      decimalToHmm(totalHours),
+      otHours.toFixed(2),
+      decimalToHmm(otHours),
+      (a.noOfMeal || 0).toFixed(2),
+      formatCurrency(a.totalMealValue || 0),
+      String(Math.round(otHours * 60)),
+      formatCurrency(a.basicSalary || 0),
+      a.dayShift || '',
+      a.normalDay || '',
+    ]
+  })
 
-      return [
-        nameCol,
-        a.epfNo,
-        formatDateDdMmmYyyy(a.dayIn),
-        formatTimeAmPm(a.timeIn),
-        formatDateDdMmmYyyy(offDate),
-        formatTimeAmPm(a.timeOut || a.timeIn),
-        totalHours.toFixed(2),
-        decimalToHmm(totalHours),
-        otHours.toFixed(2),
-        decimalToHmm(otHours),
-        (a.noOfMeal || 0).toFixed(2),
-        formatCurrency(a.totalMealValue || 0),
-        '0.00',
-        formatCurrency(a.basicSalary || 0),
-        a.dayShift || '',
-        a.normalDay || '',
-      ]
-    })
-  }
+  const totalHours = filtered.reduce((sum, a) => sum + (a.totalWorkingHours || 0), 0)
+  const totalOt = filtered.reduce((sum, a) => sum + (a.totalOt || 0), 0)
+  const totalMeals = filtered.reduce((sum, a) => sum + (a.noOfMeal || 0), 0)
+  const totalMealValue = filtered.reduce((sum, a) => sum + (a.totalMealValue || 0), 0)
+  const employeeCount = new Set(filtered.map(a => (a.epfNo || '').trim())).size
+
+  const totalRow = filtered.length > 0 ? [
+    'Total',
+    `${employeeCount} Emp`,
+    '',
+    '',
+    '',
+    '',
+    totalHours.toFixed(2),
+    decimalToHmm(totalHours),
+    totalOt.toFixed(2),
+    decimalToHmm(totalOt),
+    totalMeals.toFixed(2),
+    formatCurrency(totalMealValue),
+    String(Math.round(totalOt * 60)),
+    '',
+    '',
+    '',
+  ] : undefined
 
   const filterControls = (
     <>
@@ -217,11 +228,15 @@ export default function AttendanceReportPage() {
       orientation="landscape"
       title={plantTitle}
       metaLeft={metaLeft}
+      metaRight={metaRight}
       columns={columns}
       rows={displayRows}
+      totalRow={totalRow}
       numericFromColIndex={6}
-      rowsPerPage={18}
+      rowsPerPage={22}
+      tableClassName="compact"
       isLoading={loading}
+      emptyMessage="No attendance for the selected filters."
       filterControls={filterControls}
       onGenerate={loadData}
     />

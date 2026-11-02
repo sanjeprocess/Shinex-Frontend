@@ -25,6 +25,7 @@ export type Attendance = {
   halfDay?: number;            // Half_Day (FLOAT) - 0 or 0.5 or 1
   totalWorkingHours?: number;  // Total_Working_Hours (FLOAT)
   totalOt?: number;            // Total_OT (FLOAT)
+  minWorkHours?: number;       // Min_Work_Hours (FLOAT) - OT = hours above this
   normalDay?: string;          // Normal_Day (NCHAR(1)) - 'Y'/'N'
   saturdayPoya?: string;       // Saturday_Poya (NCHAR(1)) - 'Y'/'N'
   specialDay?: string;         // Special_Day (CHAR(1)) - 'Y'/'N'
@@ -76,6 +77,7 @@ function fromApi(a: any): Attendance {
     halfDay: a.halfDay,
     totalWorkingHours: a.totalWorkingHours,
     totalOt: a.totalOt,
+    minWorkHours: a.minWorkHours ?? undefined,
     normalDay: String(a.normalDay || '').trim(),
     saturdayPoya: String(a.saturdayPoya || '').trim(),
     specialDay: String(a.specialDay || '').trim(),

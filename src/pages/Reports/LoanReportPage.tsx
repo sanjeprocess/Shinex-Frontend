@@ -6,6 +6,7 @@ import { list as listBC } from '../../mocks/businessCenters'
 import { computeDeductionMetrics } from '../../mocks/deductionTransactions'
 import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
+import { plantKey } from '../../components/reports/ReportFilters'
 
 export default function LoanReportPage() {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
@@ -21,6 +22,7 @@ export default function LoanReportPage() {
     Array<{
       empId: string
       name: string
+      plantCode: string
       currentMonthValue: number
       duration: string
       alreadyDeduct: number
@@ -38,9 +40,7 @@ export default function LoanReportPage() {
       setBusinessCenters(bcs)
       setCustomers(custs)
       setEmployees(emps)
-      setSelectedClient(current => custs.some(customer => customer.code === current)
-        ? current
-        : custs[0]?.code || '')
+      setSelectedClient(current => custs.some(customer => customer.code === current) ? current : '')
     })
   }, [businessCenter])
 
@@ -65,6 +65,7 @@ export default function LoanReportPage() {
         return {
           empId: tx.epfNo,
           name: fullName,
+          plantCode: employee?.plantCode || '',
           currentMonthValue: Number(tx.monthlyCut || 0),
           duration: `${metrics.totalMonthsWindow} months`,
           alreadyDeduct: Math.max(0, Number(tx.totalAmount || 0) - metrics.remainingBalance),
@@ -86,7 +87,8 @@ export default function LoanReportPage() {
   }, [businessCenter, year, month])
 
   const selectedCust = customers.find(c => c.code === selectedClient)
-  const clientName = selectedCust ? selectedCust.name : ''
+  const clientName = selectedCust ? selectedCust.name : 'All Clients'
+  const visibleRows = selectedClient ? loanRows.filter(r => plantKey(r.plantCode) === plantKey(selectedClient)) : loanRows
 
   const metaLeft = (
     <div>
@@ -106,7 +108,7 @@ export default function LoanReportPage() {
     { header: 'Total Balance', align: 'right' },
   ]
 
-  const displayRows = loanRows.map(r => [
+  const displayRows = visibleRows.map(r => [
     r.empId,
     r.name,
     formatCurrency(r.currentMonthValue),
@@ -116,10 +118,10 @@ export default function LoanReportPage() {
     formatCurrency(r.totalBalance),
   ])
 
-  const sumCur = loanRows.reduce((a, b) => a + b.currentMonthValue, 0)
-  const sumAlready = loanRows.reduce((a, b) => a + b.alreadyDeduct, 0)
-  const sumTotal = loanRows.reduce((a, b) => a + b.totalLoanValue, 0)
-  const sumBal = loanRows.reduce((a, b) => a + b.totalBalance, 0)
+  const sumCur = visibleRows.reduce((a, b) => a + b.currentMonthValue, 0)
+  const sumAlready = visibleRows.reduce((a, b) => a + b.alreadyDeduct, 0)
+  const sumTotal = visibleRows.reduce((a, b) => a + b.totalLoanValue, 0)
+  const sumBal = visibleRows.reduce((a, b) => a + b.totalBalance, 0)
 
   const totalRow = [
     '',
@@ -201,13 +203,14 @@ export default function LoanReportPage() {
 
   return (
     <A4Report
-      orientation="landscape"
+      orientation="portrait"
       title="Loan Report"
       metaLeft={metaLeft}
       columns={columns}
       rows={displayRows}
       totalRow={totalRow}
-      rowsPerPage={18}
+      rowsPerPage={28}
+      tableClassName="compact"
       isLoading={loading}
       emptyMessage="No data for the selected filters."
       filterControls={filterControls}
