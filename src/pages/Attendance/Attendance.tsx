@@ -96,7 +96,9 @@ const excelFieldMap: Record<string, keyof Attendance> = {
   workinghours: 'totalWorkingHours', workhours: 'totalWorkingHours', totalworkhours: 'totalWorkingHours', hours: 'totalWorkingHours',
   ot: 'totalOt', othours: 'totalOt', totalothours: 'totalOt', totalothm: 'totalOt',
   numberofmeal: 'noOfMeal', numberofmeals: 'noOfMeal', statutoryholiday: 'statutoryHolidays',
-  shift: 'shiftName' as any, daytype: 'dayTypeName' as any
+  shift: 'shiftName' as any, daytype: 'dayTypeName' as any,
+  // Branch attendance sheets
+  comcode: 'plantCode', ename: 'employeeName', companyname: 'plantName' as any
 }
 
 const excelYesNoFields = new Set<keyof Attendance>([
@@ -233,6 +235,19 @@ function resolvePlantRef(ref: string | undefined, customerList: any[]): string {
   return match ? match.code : text.split('/')[0].trim()
 }
 
+// Branch sheets write OT as hours.minutes (2.3 = 2 h 30 min). A column is read that way only when it has
+// .15 / .3 / .45 values and none of the quarter-hour decimals (.25 / .5 / .75) that decimal OT uses
+function otColumnIsHoursMinutes(values: unknown[]): boolean {
+  const minutes = values
+    .map(value => String(value ?? '').trim())
+    .filter(text => text !== '' && Number.isFinite(Number(text)))
+    .map(text => Math.round((Number(text) % 1) * 100))
+  return minutes.some(m => m === 15 || m === 30 || m === 45)
+    && !minutes.some(m => m === 25 || m === 50 || m === 75 || m > 59)
+}
+
+const hoursMinutesToHours = (value: number) => Math.round((Math.trunc(value) + Math.round((value % 1) * 100) / 60) * 100) / 100
+
 function parseAttendanceRows(
   data: unknown[][],
   businessCenter: string,
@@ -241,11 +256,14 @@ function parseAttendanceRows(
   employeeList: any[] = [],
   customerList: any[] = [],
   transfers: any[] = [],
-  nameNotes: { matched: number; unclear: number } = { matched: 0, unclear: 0 }
+  nameNotes: { matched: number; unclear: number; otHoursMinutes?: boolean } = { matched: 0, unclear: 0 }
 ): Attendance[] {
   if (!data.length) return []
   // "Day_In (yyyy-MM-dd)" -> "dayin": hints in brackets are ignored
   const headers = data[0].map(value => String(value ?? '').replace(/\(.*?\)/g, '').toLowerCase().replace(/[^a-z0-9]/g, ''))
+  const otColumn = headers.findIndex(header => excelFieldMap[header] === 'totalOt')
+  const otHoursMinutes = otColumn >= 0 && otColumnIsHoursMinutes(data.slice(1).map(row => row[otColumn]))
+  nameNotes.otHoursMinutes = otHoursMinutes
   return data.slice(1).filter(row => row.some(Boolean)).map((row, index) => {
     const record: Partial<Attendance> = {
       id: uuid(), atttYear: '', attMonth: '', epfNo: '',
@@ -266,6 +284,12 @@ function parseAttendanceRows(
         if (!text) return
         const shift = text.includes('night') ? 'nightShift' : (text.includes('2') || text.includes('second')) ? 'secondShift' : 'dayShift'
         ;(['dayShift', 'secondShift', 'nightShift', 'fullNight'] as const).forEach(f => { (record as any)[f] = f === shift ? 'Y' : 'N' })
+      }
+      else if ((field as string) === 'plantName') {
+        // Used only when it is the exact name of a plant; Com_Code / Plant_Code wins
+        const text = String(value ?? '').trim().toUpperCase()
+        const plant = text ? customerList.find(c => (c.name || '').trim().toUpperCase() === text) : undefined
+        if (plant) record.customerCode = plant.code
       }
       else if ((field as string) === 'dayTypeName') {
         // "Normal" / "Sunday Poya" / "Special" text column
@@ -299,7 +323,7 @@ function parseAttendanceRows(
         const text = String(value ?? '').trim()
         if (text === '') return // blank: filled from the Employee / Plant master below
         const number = Number(text.replace(/^0+(?=\d)/, ''))
-        ;(record as any)[field] = Number.isFinite(number) ? number : 0
+        ;(record as any)[field] = !Number.isFinite(number) ? 0 : field === 'totalOt' && otHoursMinutes ? hoursMinutesToHours(number) : number
       } else if (field === 'businessCenter') (record as any)[field] = String(value ?? '').trim() || businessCenter
       else (record as any)[field] = String(value ?? '').trim()
     })
@@ -308,6 +332,12 @@ function parseAttendanceRows(
     const yearFromDate = dayInVal.includes('-') ? dayInVal.split('-')[0] : ''
     const monthFromDate = dayInVal.includes('-') ? dayInVal.split('-')[1] : ''
 
+    // "D M CHANDRALATHA - E73": the EPF No at the end of the name
+    const nameWithEpf = !record.epfNo && record.employeeName ? /^(.*\S)\s*-\s*([A-Za-z]{0,4}\d+)$/.exec(record.employeeName.trim()) : null
+    if (nameWithEpf) {
+      record.employeeName = nameWithEpf[1].trim()
+      record.epfNo = nameWithEpf[2]
+    }
     let cleanEpf = (record.epfNo || '').trim().toLowerCase()
     let matchedEmployee = cleanEpf ? employeeList.find(e => (e.epfNo || '').trim().toLowerCase() === cleanEpf) : undefined
     // No such EPF: the Employee ID cell or the name column can still find the employee
@@ -882,7 +912,7 @@ export default function AttendancePage() {
     try {
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true })
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
-      const nameNotes = { matched: 0, unclear: 0 }
+      const nameNotes: { matched: number; unclear: number; otHoursMinutes?: boolean } = { matched: 0, unclear: 0 }
       const parsed = parseAttendanceRows(
         XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true }),
         localStorage.getItem('hsb_active_bc') || defaultForm.businessCenter,
@@ -899,6 +929,7 @@ export default function AttendancePage() {
       }
       setUploadRows(parsed)
       toast.success(`${parsed.length} attendance rows loaded for review`)
+      if (nameNotes.otHoursMinutes) toast.info('The OT column was read as hours.minutes: 2.3 is 2 hours 30 minutes.')
       if (nameNotes.matched) toast.info(`${nameNotes.matched} rows found the employee by name. Please check them before saving.`)
       if (nameNotes.unclear) toast.error(`${nameNotes.unclear} rows have a name that fits more than one employee. Please choose the employee.`)
     } catch (error) {
