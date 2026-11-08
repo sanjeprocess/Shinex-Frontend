@@ -42,14 +42,23 @@ export function payrollFromSummary(monthlyData: MonthlySummary, employee: any) {
   const epf12 = monthlyData.epf12 !== undefined ? monthlyData.epf12 : Math.round(normalAmount * 0.12 * 100) / 100
   const etf3 = monthlyData.etf3 !== undefined ? monthlyData.etf3 : Math.round(normalAmount * 0.03 * 100) / 100
 
+  // Night shift days are shown on the Night line with their day pay; the totals above stay as calculated
+  const nightNormalDays = Math.max(0, Math.min(normalDays, nightDays,
+    monthlyData.nightNormalDays !== undefined ? monthlyData.nightNormalDays : (poyaDays > 0 ? 0 : nightDays)))
+  const nightDayPay = Math.round(nightNormalDays * normalRate * 100) / 100
+  const shownNormalDays = Math.round((normalDays - nightNormalDays) * 100) / 100
+  const shownNormalAmount = Math.round((normalAmount - nightDayPay) * 100) / 100
+  const shownNightAmount = Math.round((nightAmount + nightDayPay) * 100) / 100
+  const shownNightRate = nightNormalDays > 0 && nightDays > 0 ? Math.round(shownNightAmount / nightDays * 100) / 100 : nightRate
+
   return {
     basicSalary: normalRate,
-    normalDays,
+    normalDays: shownNormalDays,
     normalRate,
-    normalAmount,
+    normalAmount: shownNormalAmount,
     nightDays,
-    nightRate,
-    nightAmount,
+    nightRate: shownNightRate,
+    nightAmount: shownNightAmount,
     poyaDays,
     poyaRate,
     poyaAmount,
@@ -59,6 +68,9 @@ export function payrollFromSummary(monthlyData: MonthlySummary, employee: any) {
     incentive,
     statutoryDays: monthlyData.attendance?.statutoryHolidayCount || 0,
     statutoryHolidayAmount,
+    // OT worked on statutory holidays: (Daily Rate / 9) x 2, already in statutoryHolidayAmount
+    statutoryOtHours: Number(monthlyData.statutoryOtHours || 0),
+    statutoryOtRate: Number(monthlyData.statutoryOtRate || 0),
     totalAdditions,
     grossSalary,
     epf8,
@@ -274,8 +286,8 @@ const PaySheetView = forwardRef<HTMLDivElement, PaySheetViewProps>(function PayS
                 <tr>
                   <td className="px-2.5 py-1 print:py-[1px] font-sans font-medium text-slate-800">STATUTORY HOLIDAY / சட்டப்பூர்வ விடுமுறை / ව්‍යවස්ථාපිත නිවාඩු</td>
                   <td className="px-2 py-1 print:py-[1px] text-center text-slate-700">{calc.statutoryDays || '—'}</td>
-                  <td className="px-2 py-1 print:py-[1px] text-center text-slate-400">—</td>
-                  <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap text-slate-400">—</td>
+                  <td className={`px-2 py-1 print:py-[1px] text-center ${calc.statutoryOtHours > 0 ? 'text-amber-700 font-bold' : 'text-slate-400'}`}>{calc.statutoryOtHours > 0 ? calc.statutoryOtHours : '—'}</td>
+                  <td className={`px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap ${calc.statutoryOtHours > 0 ? 'text-slate-700' : 'text-slate-400'}`}>{calc.statutoryOtHours > 0 ? calc.statutoryOtRate.toFixed(2) : '—'}</td>
                   <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-900">{calc.statutoryHolidayAmount > 0 ? calc.statutoryHolidayAmount.toFixed(2) : '—'}</td>
                 </tr>
                 <tr>

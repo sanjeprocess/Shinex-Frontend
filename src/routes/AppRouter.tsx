@@ -31,6 +31,7 @@ import EpfCFormPage from '../pages/Reports/EpfCFormPage'
 import AdvanceRequestSheetPage from '../pages/Reports/AdvanceRequestSheetPage'
 import SalarySheetPage from '../pages/Reports/SalarySheetPage'
 import SalarySheetTotalPage from '../pages/Reports/SalarySheetTotalPage'
+import SalaryBankListPage from '../pages/Reports/SalaryBankListPage'
 import UniformReportPage from '../pages/Reports/UniformReportPage'
 import AuditLogPage from '../pages/Audit/AuditLogPage'
 import AdminControlPage from '../pages/Admin/AdminControlPage'
@@ -116,6 +117,7 @@ export default function AppRouter() {
         <Route path="reports/advance-request-sheet" element={<ModuleRoute mod="reports"><AdvanceRequestSheetPage /></ModuleRoute>} />
         <Route path="reports/salary-sheet" element={<ModuleRoute mod="reports"><SalarySheetPage /></ModuleRoute>} />
         <Route path="reports/salary-sheet-total" element={<ModuleRoute mod="reports"><SalarySheetTotalPage /></ModuleRoute>} />
+        <Route path="reports/salary-bank-list" element={<ModuleRoute mod="reports"><SalaryBankListPage /></ModuleRoute>} />
         <Route path="reports/uniform" element={<ModuleRoute mod="reports"><UniformReportPage /></ModuleRoute>} />
         <Route path="reports/epf-c-form" element={<ModuleRoute mod="reports">      <EpfCFormPage />        </ModuleRoute>} />
         <Route path="audit-logs"         element={<ModuleRoute mod="audit">        <AuditLogPage />        </ModuleRoute>} />

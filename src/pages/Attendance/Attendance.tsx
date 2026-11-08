@@ -589,11 +589,39 @@ function StagedRowDetails({ row, edits, employeeOptions, plantOptions, plants, s
   )
 }
 
+// Rows per save request: a large upload sent in one request can be refused before it reaches the server
+const BULK_SAVE_BATCH = 5
+
+// The reason a save was refused, from the server's reply when it gives one
+function saveErrorText(error: any): string {
+  const status = error?.response?.status
+  const data = error?.response?.data
+  const detail = typeof data === 'string'
+    ? data.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160)
+    : data?.message || data?.error || ''
+  return [status ? `status ${status}` : '', detail || error?.message || 'Bulk attendance save failed'].filter(Boolean).join(': ')
+}
+
+// A batch that timed out or met a server/network error is sent again; saving the same day again only updates it
+async function saveBatchWithRetry(batch: Attendance[], attempts = 3) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await bulkSaveAttendance(batch)
+    } catch (error: any) {
+      const status = error?.response?.status
+      const retry = !error?.response || error?.code === 'ECONNABORTED' || status >= 500
+      if (attempt >= attempts || !retry) throw error
+    }
+  }
+}
+
 function validateUploadRow(
   row: Attendance,
   allUploadRows: Attendance[],
   savedRows: Attendance[],
-  empList: any[]
+  empList: any[],
+  customerList: any[] = [],
+  transfers: any[] = []
 ): {
   isValid: boolean;
   errors: string[];
@@ -630,6 +658,17 @@ function validateUploadRow(
   // 4. Plant check
   if (!(row.plantCode || '').trim()) {
     errs.push('Missing Plant')
+  } else if (cleanEpf && customerList.length) {
+    // An employee of another plant only counts here when a plant transfer covers that day
+    const employee = empList.find(e => (e.epfNo || '').trim().toLowerCase() === cleanEpf)
+    const homePlant = employee ? resolvePlantRef(employee.plantCode, customerList) : ''
+    const day = excelDate(row.dayIn)
+    const transferred = transfers.some(t => (t.epfNo || '').trim().toLowerCase() === cleanEpf
+      && t.transferDate && day >= t.transferDate && (!t.endDate || day <= t.endDate)
+      && resolvePlantRef(t.toPlant, customerList) === row.plantCode)
+    if (homePlant && homePlant !== row.plantCode && !transferred) {
+      errs.push(`Employee belongs to plant ${homePlant}`)
+    }
   }
 
   return {
@@ -1145,8 +1184,8 @@ export default function AttendancePage() {
   }
 
   const stagedValidation = useMemo(
-    () => uploadRows.map(r => validateUploadRow(r, uploadRows, rows, employeeList)),
-    [uploadRows, rows, employeeList]
+    () => uploadRows.map(r => validateUploadRow(r, uploadRows, rows, employeeList, customerList, transfers)),
+    [uploadRows, rows, employeeList, customerList, transfers]
   )
 
   const stagedMonthTotals = useMemo(() => {
@@ -1208,7 +1247,7 @@ export default function AttendancePage() {
     }
     const validated = scopeRows.map(r => ({
       row: r,
-      val: validateUploadRow(r, uploadRows, rows, employeeList)
+      val: validateUploadRow(r, uploadRows, rows, employeeList, customerList, transfers)
     }))
     const validRows = validated.filter(v => v.val.isValid).map(v => v.row)
     const invalidRows = validated.filter(v => !v.val.isValid).map(v => v.row)
@@ -1248,30 +1287,75 @@ export default function AttendancePage() {
 
     setSaveError(null)
     setSaveSummaries([])
-    try {
-      const result = await bulkSaveAttendance(enrichedValid)
-      const nowStr = new Date().toLocaleString()
-      setLastSavedTimestamp(nowStr)
-
-      const summaryLines = result.summaries.map(s => s.message)
-      setSaveSummaries(summaryLines)
-      setSaveError(null)
-      toast.success(`${summaryLines.join('\n')}${invalidCount > 0 ? `\n${invalidCount} invalid rows retained for review.` : ''}`)
-
-      setUploadRows([...otherRows, ...invalidRows])
-      await listAttendance(localStorage.getItem('hsb_active_bc') || '').then(setRows)
-      // Switch to logs tab and reset filters so newly saved rows are immediately visible
-      setFilterYear('ALL')
-      setFilterMonth('ALL')
-      setFilterPlant('ALL')
-      setFilterEmployee('ALL')
-      setActiveTab('logs')
-    } catch (error: any) {
-      console.error('Bulk attendance save failed', error)
-      const msg = error?.response?.data?.message || error?.message || 'Bulk attendance save failed'
-      setSaveError(msg)
-      toast.error(String(msg))
+    // Saved in small batches; a refused batch stops the save and its rows stay staged
+    const savedIds = new Set<string>()
+    const groups = new Map<string, { plantCode: string; year: string; month: string; employees: Set<string>; inserted: number; updated: number; failed: number }>()
+    let failure: string | null = null
+    // Plant by plant and month by month: a batch never mixes plants or months
+    const byPlantMonth = new Map<string, Attendance[]>()
+    enrichedValid.forEach(r => {
+      const key = `${(r.plantCode || '').trim().toUpperCase()}|${excelDate(r.dayIn).slice(0, 7)}`
+      byPlantMonth.set(key, [...(byPlantMonth.get(key) || []), r])
+    })
+    const batches: Attendance[][] = []
+    byPlantMonth.forEach(list => {
+      for (let start = 0; start < list.length; start += BULK_SAVE_BATCH) batches.push(list.slice(start, start + BULK_SAVE_BATCH))
+    })
+    let sent = 0
+    for (const batch of batches) {
+      sent += batch.length
+      if (enrichedValid.length > BULK_SAVE_BATCH) {
+        toast.loading(`Saving ${sent} of ${enrichedValid.length} rows (plant ${batch[0].plantCode})...`, { id: 'bulk-save-progress' })
+      }
+      try {
+        const result = await saveBatchWithRetry(batch)
+        batch.forEach(r => savedIds.add(r.id))
+        result.summaries.forEach(summary => {
+          const key = `${summary.plantCode}|${summary.year}|${summary.month}`
+          const group = groups.get(key) || { plantCode: summary.plantCode, year: summary.year, month: summary.month, employees: new Set<string>(), inserted: 0, updated: 0, failed: 0 }
+          group.inserted += summary.inserted || 0
+          group.updated += summary.updated || 0
+          group.failed += summary.failed || 0
+          batch.filter(r => (r.plantCode || '').trim().toUpperCase() === (summary.plantCode || '').trim().toUpperCase())
+            .forEach(r => group.employees.add((r.epfNo || '').trim().toUpperCase()))
+          groups.set(key, group)
+        })
+      } catch (error: any) {
+        console.error('Bulk attendance save failed', error)
+        failure = saveErrorText(error)
+        break
+      }
     }
+    toast.dismiss('bulk-save-progress')
+
+    const summaryLines = Array.from(groups.values()).map(g =>
+      `Plant ${g.plantCode} – ${g.year}/${g.month} – ${g.employees.size} employees – ${g.inserted + g.updated} rows saved (inserted ${g.inserted}, updated ${g.updated}, failed ${g.failed})`)
+    const unsavedRows = validRows.filter(r => !savedIds.has(r.id))
+    setUploadRows([...otherRows, ...invalidRows, ...unsavedRows])
+    if (savedIds.size > 0) {
+      setLastSavedTimestamp(new Date().toLocaleString())
+      setSaveSummaries(summaryLines)
+      await listAttendance(localStorage.getItem('hsb_active_bc') || '').then(setRows)
+    }
+
+    if (failure) {
+      // The error bar already starts with "Not saved to the database:"
+      const msg = savedIds.size > 0
+        ? `the last ${unsavedRows.length} rows (${failure}). ${savedIds.size} of ${enrichedValid.length} rows were saved; the rest are still in the preview.`
+        : failure
+      setSaveError(msg)
+      toast.error(`Not saved to the database: ${msg}`)
+      return
+    }
+
+    setSaveError(null)
+    toast.success(`${summaryLines.join('\n')}${invalidCount > 0 ? `\n${invalidCount} invalid rows retained for review.` : ''}`)
+    // Switch to logs tab and reset filters so newly saved rows are immediately visible
+    setFilterYear('ALL')
+    setFilterMonth('ALL')
+    setFilterPlant('ALL')
+    setFilterEmployee('ALL')
+    setActiveTab('logs')
   }
 
   async function handleBulkSave() {
@@ -1704,6 +1788,14 @@ export default function AttendancePage() {
       return searchStr.includes(q.toLowerCase())
     })
   }, [rows, employeeList, q, filterYear, filterMonth, filterEmployee, filterPlant])
+
+  // Employee filter choices: with a plant picked, only that plant's employees and anyone with attendance there
+  const filterEmployeeOptions = useMemo(() => {
+    if (filterPlant === 'ALL') return employeeList
+    const plant = filterPlant.trim()
+    const worked = new Set(rows.filter(r => (r.plantCode || '').trim() === plant).map(r => (r.epfNo || '').trim().toUpperCase()))
+    return employeeList.filter(e => resolvePlantRef(e.plantCode, customerList) === plant || worked.has((e.epfNo || '').trim().toUpperCase()))
+  }, [employeeList, customerList, rows, filterPlant])
 
   // Plants worked summary map per employee across attendance rows.
   const employeePlantsWorkedMap = useMemo(() => {
@@ -2826,8 +2918,8 @@ export default function AttendancePage() {
             onChange={e => setFilterEmployee(e.target.value)}
             className="form-input text-xs py-1 px-2 h-8 max-w-[180px]"
           >
-            <option value="ALL">All Employees ({employeeList.length})</option>
-            {employeeList.map(e => (
+            <option value="ALL">All Employees ({filterEmployeeOptions.length})</option>
+            {filterEmployeeOptions.map(e => (
               <option key={e.epfNo} value={e.epfNo}>
                 {e.epfNo} - {e.firstName} {e.lastName || ''}
               </option>
@@ -2840,7 +2932,18 @@ export default function AttendancePage() {
           <label className="text-xs text-slate-600 font-medium">Plant:</label>
           <select
             value={filterPlant}
-            onChange={e => setFilterPlant(e.target.value)}
+            onChange={e => {
+              const plant = e.target.value
+              setFilterPlant(plant)
+              // An employee of another plant would show nothing, so the employee filter starts again
+              if (plant !== 'ALL' && filterEmployee !== 'ALL') {
+                const epf = filterEmployee.trim().toUpperCase()
+                const employee = employeeList.find(x => (x.epfNo || '').trim().toUpperCase() === epf)
+                const inPlant = resolvePlantRef(employee?.plantCode, customerList) === plant.trim()
+                  || rows.some(r => (r.plantCode || '').trim() === plant.trim() && (r.epfNo || '').trim().toUpperCase() === epf)
+                if (!inPlant) setFilterEmployee('ALL')
+              }
+            }}
             className="form-input text-xs py-1 px-2 h-8 max-w-[180px]"
           >
             <option value="ALL">All Plants ({customerList.length})</option>

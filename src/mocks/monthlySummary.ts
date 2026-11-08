@@ -17,12 +17,18 @@ export type MonthlySummary = {
   nightRate?: number
   nightAmount?: number
   nightAllowance?: number
+  // Night shift days included in normalDays (the pay sheet shows them on the Night line)
+  nightNormalDays?: number
   poyaDayExtra?: number
   overtimeHours?: number
   overtimeRate?: number
   overtimeAmount?: number
   dayAllowance?: number
   statutoryHolidayAmount?: number
+  // OT worked on statutory holidays, included in statutoryHolidayAmount
+  statutoryOtHours?: number
+  statutoryOtRate?: number
+  statutoryOtAmount?: number
   totalAdditions: number
   grossSalary: number
 

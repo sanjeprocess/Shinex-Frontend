@@ -59,6 +59,7 @@ const MENU: MenuGroup[] = [
       { label: 'Attendance – Total',       to: '/reports/attendance-total', mod: 'reports' },
       { label: 'Salary Sheet',             to: '/reports/salary-sheet', mod: 'reports' },
       { label: 'Salary Sheet Total',       to: '/reports/salary-sheet-total', mod: 'reports' },
+      { label: 'Salary Bank List',         to: '/reports/salary-bank-list', mod: 'reports' },
       { label: 'Salary Advance – Total',   to: '/reports/salary-advance-total', mod: 'reports' },
       { label: 'Advance Request Sheet',    to: '/reports/advance-request-sheet', mod: 'reports' },
       { label: 'Salary Advance Report',    to: '/reports/salary-advance', mod: 'reports' },

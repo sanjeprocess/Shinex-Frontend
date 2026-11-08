@@ -121,7 +121,7 @@ export async function downloadPaySheetExcel(data: PaySheetExcelData, fileName: s
   line('INCENTIVE / ஊக்கத்தொகை / දිරිගැන්වීම් දීමනාව', null, null, null, calc.incentive)
   line('ATTENDANCE ALLOWANCE / கலந்துகொள்ளல் படி / පැමිණීමේ දීමනාව')
   line('ATTENDANCE BONUS / வருகை போனஸ் / පැමිණීමේ බෝනස්')
-  line('STATUTORY HOLIDAY / சட்டப்பூர்வ விடுமுறை / ව්‍යවස්ථාපිත නිවාඩු', calc.statutoryDays, null, null, calc.statutoryHolidayAmount)
+  line('STATUTORY HOLIDAY / சட்டப்பூர்வ விடுமுறை / ව්‍යවස්ථාපිත නිවාඩු', calc.statutoryDays, calc.statutoryOtHours || null, calc.statutoryOtHours > 0 ? calc.statutoryOtRate : null, calc.statutoryHolidayAmount)
   line('OTHER ADDITIONS / மற்றவை / වෙනත් එකතු කිරීම්', null, null, null, calc.totalAdditions)
   total('GROSS SALARY / மொத்த சம்பளம் / දළ වැටුප', calc.grossSalary, GREEN_TEXT, GREEN_FILL)
   sheet.addRow([])
