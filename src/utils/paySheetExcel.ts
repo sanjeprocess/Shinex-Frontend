@@ -115,6 +115,7 @@ export async function downloadPaySheetExcel(data: PaySheetExcelData, fileName: s
   })
   ;[2, 3, 4, 5].forEach(column => { header.getCell(column).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true } })
   line('NORMAL / பொது / සාමාන්‍ය', calc.normalDays, null, calc.normalRate, calc.normalAmount)
+  line('DAY OFF / விடுமுறை நாள் / නිවාඩු දිනය', calc.dayOffDays || null, null, calc.dayOffDays > 0 ? calc.dayOffRate : null, calc.dayOffAmount || null)
   line('NIGHT / இரவு / රාත්‍රී', calc.nightDays, null, calc.nightRate, calc.nightAmount)
   line('POYA / SUNDAY / ஞாயிறு / போயா / ඉරිදා / පෝය', calc.poyaDays, null, calc.poyaRate, calc.poyaAmount)
   line('OVERTIME / மேலதிக நேரம் / අතිකාල (1.5× rate)', null, calc.otHours, calc.otRate, calc.otAmount)

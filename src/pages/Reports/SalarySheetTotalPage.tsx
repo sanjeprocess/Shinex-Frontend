@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import A4Report from '../../components/reports/A4Report'
-import ReportFilters, { cleanBusinessCenter, useReportFilters } from '../../components/reports/ReportFilters'
+import ReportFilters, { cleanBusinessCenter, plantKey, useReportFilters } from '../../components/reports/ReportFilters'
 import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
 
@@ -9,7 +9,7 @@ type CompanyTotal = { plantCode: string; companyName: string; netSalary: number;
 
 export default function SalarySheetTotalPage() {
   const filters = useReportFilters()
-  const { year, month, businessCenter } = filters
+  const { year, month, businessCenter, plant } = filters
   const [data, setData] = useState<CompanyTotal[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -33,7 +33,8 @@ export default function SalarySheetTotalPage() {
     loadData()
   }, [businessCenter, year, month])
 
-  const sum = (pick: (row: CompanyTotal) => number) => data.reduce((total, row) => total + Number(pick(row) || 0), 0)
+  const visible = plant ? data.filter(row => plantKey(row.plantCode) === plantKey(plant)) : data
+  const sum = (pick: (row: CompanyTotal) => number) => visible.reduce((total, row) => total + Number(pick(row) || 0), 0)
 
   return (
     <A4Report
@@ -46,7 +47,7 @@ export default function SalarySheetTotalPage() {
         { header: 'E.P.F 12%', align: 'right' },
         { header: 'E.T.F 3%', align: 'right' },
       ]}
-      rows={data.map(row => [
+      rows={visible.map(row => [
         row.companyName,
         formatCurrency(row.netSalary),
         formatCurrency(row.epf12),
@@ -56,7 +57,7 @@ export default function SalarySheetTotalPage() {
       rowsPerPage={28}
       isLoading={loading}
       emptyMessage="No salary data for the selected filters."
-      filterControls={<ReportFilters filters={filters} showPlant={false} />}
+      filterControls={<ReportFilters filters={filters} />}
       onGenerate={loadData}
     />
   )

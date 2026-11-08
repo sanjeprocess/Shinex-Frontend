@@ -6,7 +6,7 @@ import { list as listBC } from '../../mocks/businessCenters'
 import { computeDeductionMetrics } from '../../mocks/deductionTransactions'
 import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
-import { defaultReportCenter, plantKey, reportYears } from '../../components/reports/ReportFilters'
+import { ClientSearch, defaultReportCenter, plantKey, reportYears } from '../../components/reports/ReportFilters'
 
 export default function LoanReportPage() {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
@@ -182,18 +182,7 @@ export default function LoanReportPage() {
 
       <div className="flex items-center gap-1.5">
         <label className="text-xs font-semibold text-slate-600">Client:</label>
-        <select
-          value={selectedClient}
-          onChange={e => setSelectedClient(e.target.value)}
-          className="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 max-w-[200px]"
-        >
-          <option value="">All Clients</option>
-          {customers.map(c => (
-            <option key={c.code} value={c.code}>
-              {c.code} - {c.name}
-            </option>
-          ))}
-        </select>
+        <ClientSearch value={selectedClient} onChange={setSelectedClient} customers={customers} />
       </div>
     </>
   )

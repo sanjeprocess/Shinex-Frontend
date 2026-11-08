@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
+import TableCellSearch from '../shared/TableCellSearch'
 import { list as listBC } from '../../mocks/businessCenters'
 import { list as listCustomers, Customer } from '../../mocks/customers'
 import { list as listEmployees, Employee } from '../../mocks/employees'
@@ -51,6 +52,32 @@ export function useReportFilters(defaultToFirstPlant = false) {
 
 type Filters = ReturnType<typeof useReportFilters>
 
+/** Client box of the reports: type any part of the code or name to find a client. */
+export function ClientSearch({ value, onChange, customers, allOption = true }: {
+  value: string
+  onChange: (code: string) => void
+  customers: Customer[]
+  allOption?: boolean
+}) {
+  const options = useMemo(() => [
+    ...(allOption ? [{ value: '', label: 'All Clients' }] : []),
+    ...customers.map(c => ({ value: c.code, label: `${c.code} - ${c.name}` })),
+  ], [customers, allOption])
+  return (
+    <TableCellSearch
+      options={options}
+      value={value}
+      // Without "All Clients" an emptied box keeps the client it had
+      onChange={code => { if (code || allOption) onChange(code) }}
+      showLabel
+      placeholder="Type client code or name"
+      ariaLabel="Client"
+      maxOptions={1000}
+      className="!w-[260px] !py-1.5 !px-2.5 !text-xs !border-slate-300 !rounded-lg"
+    />
+  )
+}
+
 export default function ReportFilters({ filters, showPlant = true, allPlantsOption = true }: { filters: Filters; showPlant?: boolean; allPlantsOption?: boolean }) {
   return (
     <>
@@ -79,10 +106,7 @@ export default function ReportFilters({ filters, showPlant = true, allPlantsOpti
       {showPlant && (
         <div className="flex items-center gap-1.5">
           <label className="text-xs font-semibold text-slate-600">Client:</label>
-          <select value={filters.plant} onChange={e => filters.setPlant(e.target.value)} className={`${selectClass} max-w-[220px]`}>
-            {allPlantsOption && <option value="">All Clients</option>}
-            {filters.customers.map(c => <option key={c.code} value={c.code}>{c.code} - {c.name}</option>)}
-          </select>
+          <ClientSearch value={filters.plant} onChange={filters.setPlant} customers={filters.customers} allOption={allPlantsOption} />
         </div>
       )}
     </>

@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react'
 import A4Report from '../../components/reports/A4Report'
 import { list as listBC } from '../../mocks/businessCenters'
 import { list as listEmployees } from '../../mocks/employees'
-import { list as listCustomers } from '../../mocks/customers'
+import { list as listCustomers, Customer } from '../../mocks/customers'
 import { list as listDeductionTypes } from '../../mocks/deductions'
-import { defaultReportCenter, reportYears } from '../../components/reports/ReportFilters'
+import { ClientSearch, defaultReportCenter, plantKey as plantCodeKey, reportYears } from '../../components/reports/ReportFilters'
 import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
 
@@ -12,6 +12,8 @@ export default function SalaryAdvanceTotalPage() {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
   const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
   const [businessCenter, setBusinessCenter] = useState<string>(defaultReportCenter)
+  const [selectedClient, setSelectedClient] = useState<string>('')
+  const [customers, setCustomers] = useState<Customer[]>([])
 
   const [businessCenters, setBusinessCenters] = useState<any[]>([])
   const [loading, setLoading] = useState<boolean>(false)
@@ -21,12 +23,20 @@ export default function SalaryAdvanceTotalPage() {
     listBC().then(setBusinessCenters)
   }, [])
 
+  // Clients of the selected business center; a client of another center is cleared
+  useEffect(() => {
+    listCustomers(businessCenter).catch(() => [] as Customer[]).then(custs => {
+      setCustomers(custs)
+      setSelectedClient(current => custs.some(c => c.code === current) ? current : '')
+    })
+  }, [businessCenter])
+
   const loadData = async () => {
     setLoading(true)
     try {
       const cleanBc = businessCenter && businessCenter !== 'ALL' ? businessCenter.split(' / ')[0].trim() : ''
       const response = await api.get('/reports/salary-advance-total', {
-        params: { businessCenter: cleanBc || 'ALL', year, month }
+        params: { businessCenter: cleanBc || 'ALL', year, month, plant: selectedClient || undefined }
       })
       if (!Array.isArray(response.data)) {
         throw new Error('Salary advance total report returned an invalid response.')
@@ -55,6 +65,7 @@ export default function SalaryAdvanceTotalPage() {
           const name = (d.deductionName || '').toLowerCase()
           if (!code.includes('adv') && !name.includes('advance') && !advanceCodes.has(code.trim())) return
           if (d.status && d.status.toUpperCase() !== 'ACTIVE') return
+          if (selectedClient && plantCodeKey(emps.find(e => (e.epfNo || '').trim() === (d.epfNo || '').trim())?.plantCode) !== plantCodeKey(selectedClient)) return
           const targetStr = `${year}-${String(month).padStart(2, '0')}`
           const s = (d.startDate || '').slice(0, 7)
           const e = (d.endDate || '').slice(0, 7)
@@ -74,7 +85,7 @@ export default function SalaryAdvanceTotalPage() {
 
   useEffect(() => {
     loadData()
-  }, [businessCenter, year, month])
+  }, [businessCenter, year, month, selectedClient])
 
   const columns = ['Company', 'Advance']
 
@@ -131,6 +142,11 @@ export default function SalaryAdvanceTotalPage() {
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        <label className="text-xs font-semibold text-slate-600">Client:</label>
+        <ClientSearch value={selectedClient} onChange={setSelectedClient} customers={customers} />
       </div>
     </>
   )

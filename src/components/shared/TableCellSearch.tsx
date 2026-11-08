@@ -6,7 +6,7 @@ const MAX_OPTIONS = 30
 export type CellSearchOption = { value: string; label: string; detail?: string }
 
 /** Search box for a form or table cell: type any part of the option. The list floats above the table's scroll area. */
-export default function TableCellSearch({ options, value, onChange, showLabel = false, placeholder = 'Search', ariaLabel, invalid = false, className = '' }: {
+export default function TableCellSearch({ options, value, onChange, showLabel = false, placeholder = 'Search', ariaLabel, invalid = false, className = '', maxOptions = MAX_OPTIONS }: {
   options: CellSearchOption[]
   value?: string | null
   onChange: (value: string) => void
@@ -15,6 +15,7 @@ export default function TableCellSearch({ options, value, onChange, showLabel = 
   ariaLabel?: string
   invalid?: boolean
   className?: string
+  maxOptions?: number
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const current = options.find(option => option.value === value)
@@ -30,9 +31,9 @@ export default function TableCellSearch({ options, value, onChange, showLabel = 
     if (!open) return []
     const tokens = draft.trim().toLowerCase().split(/\s+/).filter(Boolean)
     // Opening on a saved value lists everything; typing narrows it
-    if (!tokens.length || draft === shown) return options.slice(0, MAX_OPTIONS)
-    return options.filter(option => tokens.every(token => option.label.toLowerCase().includes(token))).slice(0, MAX_OPTIONS)
-  }, [options, draft, open, shown])
+    if (!tokens.length || draft === shown) return options.slice(0, maxOptions)
+    return options.filter(option => tokens.every(token => option.label.toLowerCase().includes(token))).slice(0, maxOptions)
+  }, [options, draft, open, shown, maxOptions])
 
   const place = () => {
     const rect = inputRef.current?.getBoundingClientRect()

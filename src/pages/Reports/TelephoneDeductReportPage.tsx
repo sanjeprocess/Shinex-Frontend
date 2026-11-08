@@ -5,12 +5,13 @@ import { list as listCustomers, Customer } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
 import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
-import { defaultReportCenter, plantKey, reportYears } from '../../components/reports/ReportFilters'
+import { ClientSearch, defaultReportCenter, plantKey, reportYears } from '../../components/reports/ReportFilters'
 
 export default function TelephoneDeductReportPage() {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
   const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
   const [businessCenter, setBusinessCenter] = useState<string>(defaultReportCenter)
+  const [selectedClient, setSelectedClient] = useState<string>('')
 
   const [businessCenters, setBusinessCenters] = useState<any[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -27,6 +28,7 @@ export default function TelephoneDeductReportPage() {
       setBusinessCenters(bcs)
       setCustomers(custs)
       setEmployees(emps)
+      setSelectedClient(current => custs.some(c => c.code === current) ? current : '')
     })
   }, [businessCenter])
 
@@ -72,14 +74,17 @@ export default function TelephoneDeductReportPage() {
 
   const columns = ['Emp_ID', 'Name', 'Customer Name', 'D_Value']
 
-  const displayRows = rows.map(([empId, name, cust, amt]) => [
+  const plantOf = (epfNo: string) => employees.find(e => (e.epfNo || '').trim() === (epfNo || '').trim())?.plantCode
+  const visibleRows = selectedClient ? rows.filter(([empId]) => plantKey(plantOf(empId)) === plantKey(selectedClient)) : rows
+
+  const displayRows = visibleRows.map(([empId, name, cust, amt]) => [
     empId,
     name,
     cust,
     formatCurrency(amt),
   ])
 
-  const totalDVal = rows.reduce((acc, [, , , amt]) => acc + amt, 0)
+  const totalDVal = visibleRows.reduce((acc, [, , , amt]) => acc + amt, 0)
   const totalRow = ['', 'Total', '', formatCurrency(totalDVal)]
 
   const filterControls = (
@@ -127,6 +132,11 @@ export default function TelephoneDeductReportPage() {
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        <label className="text-xs font-semibold text-slate-600">Client:</label>
+        <ClientSearch value={selectedClient} onChange={setSelectedClient} customers={customers} />
       </div>
     </>
   )

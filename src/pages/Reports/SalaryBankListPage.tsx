@@ -44,7 +44,7 @@ export function bankCode(bankName?: string | null): string {
 
 export default function SalaryBankListPage() {
   const filters = useReportFilters()
-  const { year, month, businessCenter, employees } = filters
+  const { year, month, businessCenter, plant, employees } = filters
   const [data, setData] = useState<SheetRow[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -52,7 +52,7 @@ export default function SalaryBankListPage() {
     setLoading(true)
     try {
       const response = await api.get('/reports/salary-sheet', {
-        params: { businessCenter: cleanBusinessCenter(businessCenter), year, month }
+        params: { businessCenter: cleanBusinessCenter(businessCenter), year, month, plant: plant || undefined }
       })
       setData(Array.isArray(response.data) ? response.data : [])
     } catch (error) {
@@ -66,7 +66,7 @@ export default function SalaryBankListPage() {
 
   useEffect(() => {
     loadData()
-  }, [businessCenter, year, month])
+  }, [businessCenter, year, month, plant])
 
   // One list per company, in the same order as the Salary Sheet Total
   const companies = useMemo<Company[]>(() => {
@@ -74,6 +74,7 @@ export default function SalaryBankListPage() {
     const groups = new Map<string, Company>()
     data.forEach(row => {
       const key = plantKey(row.plantCode)
+      if (plant && key !== plantKey(plant)) return
       const company = groups.get(key) || { plantCode: row.plantCode, companyName: row.plantName || row.plantCode, lines: [], total: 0 }
       const employee = byEpf.get((row.epfNo || '').trim().toUpperCase())
       const account = (employee?.bankAccountNumber || '').trim()
@@ -88,7 +89,7 @@ export default function SalaryBankListPage() {
     return Array.from(groups.values())
       .map(c => ({ ...c, lines: c.lines.sort((a, b) => a.name.localeCompare(b.name)) }))
       .sort((a, b) => a.companyName.localeCompare(b.companyName, undefined, { sensitivity: 'base' }))
-  }, [data, employees])
+  }, [data, employees, plant])
 
   // Each company starts on a new page; a long list carries on over the next pages
   const pages = useMemo(() => companies.flatMap(company => {
@@ -143,7 +144,7 @@ export default function SalaryBankListPage() {
       doc.setFontSize(8)
       doc.text(`Page ${page} of ${pageCount}`, doc.internal.pageSize.getWidth() - 15, doc.internal.pageSize.getHeight() - 8, { align: 'right' })
     }
-    doc.save(`salary_bank_list_${year}_${month}.pdf`)
+    doc.save(`salary_bank_list_${year}_${month}${plant ? `_${plant}` : ''}.pdf`)
   }
 
   return (
@@ -151,7 +152,7 @@ export default function SalaryBankListPage() {
       <div className="no-print bg-white border border-slate-200 rounded-xl p-4 mb-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
-            <ReportFilters filters={filters} showPlant={false} />
+            <ReportFilters filters={filters} />
             <button
               onClick={loadData}
               disabled={loading}

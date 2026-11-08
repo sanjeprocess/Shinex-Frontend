@@ -46,8 +46,11 @@ export function payrollFromSummary(monthlyData: MonthlySummary, employee: any) {
   const nightNormalDays = Math.max(0, Math.min(normalDays, nightDays,
     monthlyData.nightNormalDays !== undefined ? monthlyData.nightNormalDays : (poyaDays > 0 ? 0 : nightDays)))
   const nightDayPay = Math.round(nightNormalDays * normalRate * 100) / 100
-  const shownNormalDays = Math.round((normalDays - nightNormalDays) * 100) / 100
-  const shownNormalAmount = Math.round((normalAmount - nightDayPay) * 100) / 100
+  // Day off days are shown on the Day Off line at the basic day rate; the totals stay as calculated
+  const dayOffDays = Math.max(0, Math.min(normalDays - nightNormalDays, Number(monthlyData.dayOffDays || 0)))
+  const dayOffAmount = Math.round(dayOffDays * normalRate * 100) / 100
+  const shownNormalDays = Math.round((normalDays - nightNormalDays - dayOffDays) * 100) / 100
+  const shownNormalAmount = Math.round((normalAmount - nightDayPay - dayOffAmount) * 100) / 100
   const shownNightAmount = Math.round((nightAmount + nightDayPay) * 100) / 100
   const shownNightRate = nightNormalDays > 0 && nightDays > 0 ? Math.round(shownNightAmount / nightDays * 100) / 100 : nightRate
 
@@ -56,6 +59,9 @@ export function payrollFromSummary(monthlyData: MonthlySummary, employee: any) {
     normalDays: shownNormalDays,
     normalRate,
     normalAmount: shownNormalAmount,
+    dayOffDays,
+    dayOffRate: normalRate,
+    dayOffAmount,
     nightDays,
     nightRate: shownNightRate,
     nightAmount: shownNightAmount,
@@ -254,6 +260,13 @@ const PaySheetView = forwardRef<HTMLDivElement, PaySheetViewProps>(function PayS
                   <td className="px-2 py-1 print:py-[1px] text-center text-slate-400">—</td>
                   <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap text-slate-700">{calc.normalRate.toFixed(2)}</td>
                   <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-900">{calc.normalAmount.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td className="px-2.5 py-1 print:py-[1px] font-sans font-medium text-slate-800">DAY OFF / விடுமுறை நாள் / නිවාඩු දිනය</td>
+                  <td className="px-2 py-1 print:py-[1px] text-center text-slate-700">{calc.dayOffDays > 0 ? calc.dayOffDays : '—'}</td>
+                  <td className="px-2 py-1 print:py-[1px] text-center text-slate-400">—</td>
+                  <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap text-slate-700">{calc.dayOffDays > 0 ? calc.dayOffRate.toFixed(2) : '—'}</td>
+                  <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-900">{calc.dayOffAmount > 0 ? calc.dayOffAmount.toFixed(2) : '—'}</td>
                 </tr>
                 <tr>
                   <td className="px-2.5 py-1 print:py-[1px] font-sans font-medium text-slate-800">NIGHT / இரவு / රාත්‍රී</td>

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import A4Report, { A4ReportColumn } from '../../components/reports/A4Report'
 import { list as listBC } from '../../mocks/businessCenters'
-import { defaultReportCenter, reportYears } from '../../components/reports/ReportFilters'
+import { list as listCustomers, Customer } from '../../mocks/customers'
+import { list as listEmployees, Employee } from '../../mocks/employees'
+import { ClientSearch, defaultReportCenter, plantKey, reportYears } from '../../components/reports/ReportFilters'
 import api from '../../api/axios'
 import { formatCurrency } from '../../utils/reportHelpers'
 import { Settings, X, Save } from 'lucide-react'
@@ -36,6 +38,9 @@ export default function EpfCFormPage() {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
   const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
   const [businessCenter, setBusinessCenter] = useState<string>(defaultReportCenter)
+  const [selectedClient, setSelectedClient] = useState<string>('')
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [employees, setEmployees] = useState<Employee[]>([])
 
   const [settings, setSettings] = useState<EpfCompanySettings>(EMPTY_SETTINGS)
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false)
@@ -70,6 +75,18 @@ export default function EpfCFormPage() {
     setSettings(current => ({ ...businessSettings, surcharge: current.surcharge, chequeNo: current.chequeNo, bankName: current.bankName, branchName: current.branchName }))
   }, [businessCenters, businessCenter])
 
+  // Clients and employees of the selected business center; a client of another center is cleared
+  useEffect(() => {
+    Promise.all([
+      listCustomers(businessCenter).catch(() => [] as Customer[]),
+      listEmployees(businessCenter).catch(() => [] as Employee[]),
+    ]).then(([custs, emps]) => {
+      setCustomers(custs)
+      setEmployees(emps)
+      setSelectedClient(current => custs.some(c => c.code === current) ? current : '')
+    })
+  }, [businessCenter])
+
   const loadData = async () => {
     setLoading(true)
     try {
@@ -98,7 +115,10 @@ export default function EpfCFormPage() {
     loadData()
   }, [businessCenter, year, month])
 
-  const totalEarning = epfRows.reduce((a, b) => a + b.earning, 0)
+  const plantOf = (epfNo: string) => employees.find(e => (e.epfNo || '').trim().toUpperCase() === (epfNo || '').trim().toUpperCase())?.plantCode
+  const visibleEpfRows = selectedClient ? epfRows.filter(r => plantKey(plantOf(r.epfNo)) === plantKey(selectedClient)) : epfRows
+
+  const totalEarning = visibleEpfRows.reduce((a, b) => a + b.earning, 0)
   const total20 = Math.round(totalEarning * 0.2 * 100) / 100
   const employer12 = Math.round(totalEarning * 0.12 * 100) / 100
   const employee8 = Math.round(totalEarning * 0.08 * 100) / 100
@@ -143,7 +163,7 @@ export default function EpfCFormPage() {
     </>
   )
 
-  const displayRows = epfRows.map(r => {
+  const displayRows = visibleEpfRows.map(r => {
     const r20 = r.earning * 0.2
     const r12 = r.earning * 0.12
     const r8 = r.earning * 0.08
@@ -223,6 +243,11 @@ export default function EpfCFormPage() {
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        <label className="text-xs font-semibold text-slate-600">Client:</label>
+        <ClientSearch value={selectedClient} onChange={setSelectedClient} customers={customers} />
       </div>
 
       <button

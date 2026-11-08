@@ -19,6 +19,8 @@ export type MonthlySummary = {
   nightAllowance?: number
   // Night shift days included in normalDays (the pay sheet shows them on the Night line)
   nightNormalDays?: number
+  // Day off days included in normalDays (the pay sheet shows them on the Day Off line)
+  dayOffDays?: number
   poyaDayExtra?: number
   overtimeHours?: number
   overtimeRate?: number

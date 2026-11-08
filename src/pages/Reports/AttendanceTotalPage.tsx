@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import A4Report from '../../components/reports/A4Report'
 import { list as listBC } from '../../mocks/businessCenters'
-import { defaultReportCenter, reportYears } from '../../components/reports/ReportFilters'
+import { list as listCustomers, Customer } from '../../mocks/customers'
+import { ClientSearch, defaultReportCenter, plantKey, reportYears } from '../../components/reports/ReportFilters'
 import api from '../../api/axios'
 
 type TotalRow = {
+  plantCode: string
   companyName: string
   employees: number
   daysWorked: number
@@ -20,6 +22,8 @@ export default function AttendanceTotalPage() {
   const [year, setYear] = useState<string>(String(new Date().getFullYear()))
   const [month, setMonth] = useState<string>(String(new Date().getMonth() + 1).padStart(2, '0'))
   const [businessCenter, setBusinessCenter] = useState<string>(defaultReportCenter)
+  const [selectedClient, setSelectedClient] = useState<string>('')
+  const [customers, setCustomers] = useState<Customer[]>([])
 
   const [businessCenters, setBusinessCenters] = useState<any[]>([])
   const [loading, setLoading] = useState<boolean>(false)
@@ -28,6 +32,14 @@ export default function AttendanceTotalPage() {
   useEffect(() => {
     listBC().then(setBusinessCenters)
   }, [])
+
+  // Clients of the selected business center; a client of another center is cleared
+  useEffect(() => {
+    listCustomers(businessCenter).catch(() => [] as Customer[]).then(custs => {
+      setCustomers(custs)
+      setSelectedClient(current => custs.some(c => c.code === current) ? current : '')
+    })
+  }, [businessCenter])
 
   const loadData = async () => {
     setLoading(true)
@@ -40,6 +52,7 @@ export default function AttendanceTotalPage() {
         throw new Error('Attendance total report returned an invalid response.')
       }
       setRows(response.data.map((row: any) => ({
+        plantCode: row.plantCode || '',
         companyName: row.companyName || row.plantCode || '—',
         employees: Number(row.employees || 0),
         daysWorked: Number(row.daysWorked || 0),
@@ -62,7 +75,9 @@ export default function AttendanceTotalPage() {
 
   const columns = ['Company Name', 'Employees', 'Days Worked', 'Half Days', 'Total Hours', 'OT Hours']
 
-  const displayRows = rows.map(r => [
+  const visibleRows = selectedClient ? rows.filter(r => plantKey(r.plantCode) === plantKey(selectedClient)) : rows
+
+  const displayRows = visibleRows.map(r => [
     r.companyName,
     String(r.employees),
     fmt(r.daysWorked, 1),
@@ -71,7 +86,7 @@ export default function AttendanceTotalPage() {
     fmt(r.otHours),
   ])
 
-  const sum = (pick: (r: TotalRow) => number) => rows.reduce((acc, r) => acc + pick(r), 0)
+  const sum = (pick: (r: TotalRow) => number) => visibleRows.reduce((acc, r) => acc + pick(r), 0)
   const totalRow = [
     'Total',
     String(sum(r => r.employees)),
@@ -126,6 +141,11 @@ export default function AttendanceTotalPage() {
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        <label className="text-xs font-semibold text-slate-600">Client:</label>
+        <ClientSearch value={selectedClient} onChange={setSelectedClient} customers={customers} />
       </div>
     </>
   )

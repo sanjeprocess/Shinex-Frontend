@@ -5,7 +5,7 @@ import { Attendance } from '../../mocks/attendance'
 import { list as listEmployees } from '../../mocks/employees'
 import { list as listCustomers, Customer } from '../../mocks/customers'
 import { list as listBC } from '../../mocks/businessCenters'
-import { defaultReportCenter, reportYears } from '../../components/reports/ReportFilters'
+import { ClientSearch, defaultReportCenter, reportYears } from '../../components/reports/ReportFilters'
 import api from '../../api/axios'
 import { formatDateDdMmmYyyy, formatTimeAmPm, decimalToHmm, formatCurrency } from '../../utils/reportHelpers'
 
@@ -216,19 +216,8 @@ export default function AttendanceReportPage() {
       </div>
 
       <div className="flex items-center gap-1.5">
-        <label className="text-xs font-semibold text-slate-600">Plant / Customer:</label>
-        <select
-          value={selectedPlant}
-          onChange={e => setSelectedPlant(e.target.value)}
-          className="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 max-w-[220px]"
-        >
-          <option value="">All Plants / Customers</option>
-          {customers.map(c => (
-            <option key={c.code} value={c.code}>
-              {c.code} - {c.name}
-            </option>
-          ))}
-        </select>
+        <label className="text-xs font-semibold text-slate-600">Client:</label>
+        <ClientSearch value={selectedPlant} onChange={setSelectedPlant} customers={customers} />
       </div>
     </>
   )

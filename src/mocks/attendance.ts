@@ -29,6 +29,7 @@ export type Attendance = {
   normalDay?: string;          // Normal_Day (NCHAR(1)) - 'Y'/'N'
   saturdayPoya?: string;       // Saturday_Poya (NCHAR(1)) - 'Y'/'N'
   specialDay?: string;         // Special_Day (CHAR(1)) - 'Y'/'N'
+  dayOff?: string;             // Day_Off (NCHAR(1)) - 'Y'/'N': paid at the basic day rate
   lateAllowNo?: string;        // Late_Allow_No (NCHAR(11))
   dayShift?: string;           // Day_shift (NCHAR(1)) - 'Y'/'N'
   secondShift?: string;        // second_Shift (NCHAR(1)) - 'Y'/'N'
@@ -81,6 +82,7 @@ function fromApi(a: any): Attendance {
     normalDay: String(a.normalDay || '').trim(),
     saturdayPoya: String(a.saturdayPoya || '').trim(),
     specialDay: String(a.specialDay || '').trim(),
+    dayOff: String(a.dayOff || '').trim(),
     lateAllowNo: String(a.lateAllowNo || '').trim(),
     dayShift: String(a.dayShift || '').trim(),
     secondShift: String(a.secondShift || '').trim(),
@@ -214,6 +216,7 @@ function toBulkApi(rec: Attendance) {
     normalDay: normalizeYN(rec.normalDay),
     saturdayPoya: normalizeYN(rec.saturdayPoya),
     specialDay: normalizeYN(rec.specialDay),
+    dayOff: normalizeYN(rec.dayOff),
     dayShift: normalizeYN(rec.dayShift),
     secondShift: normalizeYN(rec.secondShift),
     nightShift: normalizeYN(rec.nightShift),

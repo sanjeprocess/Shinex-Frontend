@@ -71,7 +71,7 @@ const excelFieldMap: Record<string, keyof Attendance> = {
   basicsalary: 'basicSalary', dayallowance: 'dayAllowance',
   nightallowance: 'nightAllowance', dayin: 'dayIn', timein: 'timeIn', dayout: 'dayOut',
   timeout: 'timeOut', halfday: 'halfDay', totalworkinghours: 'totalWorkingHours', totalot: 'totalOt',
-  normalday: 'normalDay', saturdaypoya: 'saturdayPoya', specialday: 'specialDay',
+  normalday: 'normalDay', saturdaypoya: 'saturdayPoya', specialday: 'specialDay', dayoff: 'dayOff',
   dayshift: 'dayShift', secondshift: 'secondShift', nightshift: 'nightShift', fullnight: 'fullNight',
   noofmeal: 'noOfMeal', noofmeals: 'noOfMeal', meals: 'noOfMeal', meal: 'noOfMeal',
   totalmealvalue: 'totalMealValue', mealvalue: 'totalMealValue', statutoryholidays: 'statutoryHolidays',
@@ -103,7 +103,7 @@ const excelFieldMap: Record<string, keyof Attendance> = {
 
 const excelYesNoFields = new Set<keyof Attendance>([
   'otCalAuto', 'attAllowance', 'lateAllowNo',
-  'normalDay', 'saturdayPoya', 'specialDay', 'dayShift', 'secondShift', 'nightShift', 'fullNight'
+  'normalDay', 'saturdayPoya', 'specialDay', 'dayShift', 'secondShift', 'nightShift', 'fullNight', 'dayOff'
 ])
 
 // 'Y' / 'N' from Excel cells such as Y, Yes, 1, True, ✓; blank stays blank so masters can fill it
@@ -292,9 +292,13 @@ function parseAttendanceRows(
         if (plant) record.customerCode = plant.code
       }
       else if ((field as string) === 'dayTypeName') {
-        // "Normal" / "Sunday Poya" / "Special" text column
+        // "Normal" / "Sunday Poya" / "Special" / "Day Off" text column; a day off is a normal day ticked Day Off
         const text = String(value ?? '').trim().toLowerCase()
         if (!text) return
+        if (text.replace(/[^a-z]/g, '') === 'dayoff') {
+          (record as any).dayOff = 'Y'
+          return
+        }
         const type = text.includes('special') ? 'specialDay' : (text.includes('poya') || text.includes('sun') || text.includes('sat')) ? 'saturdayPoya' : 'normalDay'
         ;(['normalDay', 'saturdayPoya', 'specialDay'] as const).forEach(f => { (record as any)[f] = f === type ? 'Y' : 'N' })
       }
@@ -417,6 +421,7 @@ function parseAttendanceRows(
       normalDay: hasDayType ? (record.normalDay || 'N') : 'Y',
       saturdayPoya: record.saturdayPoya || 'N',
       specialDay: record.specialDay || 'N',
+      dayOff: record.dayOff || 'N',
       workingDays: (record.halfDay === 1 || record.halfDay === 0.5) ? 0.5 : (record.workingDays ?? 1),
       halfDay: record.halfDay ?? (record.workingDays === 0.5 ? 1 : 0),
       noOfMeal: noOfMeals,
@@ -579,6 +584,9 @@ function StagedRowDetails({ row, edits, employeeOptions, plantOptions, plants, s
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-1.5 cursor-pointer">
             <input type="checkbox" checked={isHalf} onChange={e => edits.setHalfDay(e.target.checked)} /> Half Day
+          </label>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={row.dayOff === 'Y'} onChange={e => edits.update({ dayOff: e.target.checked ? 'Y' : 'N' })} /> Day Off
           </label>
           <label className="flex items-center gap-1.5 cursor-pointer">
             <input type="checkbox" checked={row.lateAllowNo === 'Y'} onChange={e => edits.update({ lateAllowNo: e.target.checked ? 'Y' : 'N' })} /> Not Allow Late
@@ -755,6 +763,7 @@ export default function AttendancePage() {
     normalDay: 'Y',
     saturdayPoya: 'N',
     specialDay: 'N',
+    dayOff: 'N',
     lateAllowNo: '',
     dayShift: 'Y',
     secondShift: 'N',
@@ -1059,7 +1068,8 @@ export default function AttendancePage() {
       totalMealValue: mealRate,
       normalDay: 'Y',
       saturdayPoya: 'N',
-      specialDay: 'N'
+      specialDay: 'N',
+      dayOff: 'N'
     };
     setUploadRows(prev => [newRow, ...prev]);
     setSelectedStagedId(newRow.id);
@@ -1630,6 +1640,7 @@ export default function AttendancePage() {
         Normal_Day: record.normalDay,
         Saturday_Poya: record.saturdayPoya,
         Special_Day: record.specialDay,
+        Day_Off: record.dayOff || 'N',
         Late_Allow_No: record.lateAllowNo || 'N',
         Statutory_holidays: staged ? (stagedHolidayDates.has(excelDate(record.dayIn)) ? 1 : 0) : (record.statutoryHolidays ?? 0),
         Sunday_Poya_Extra: record.sundayPoyaExtra,
@@ -2341,6 +2352,14 @@ export default function AttendancePage() {
       dayTypeNode = <span className="tag-pill bg-violet-50 text-violet-700 border border-violet-200">Sunday Poya</span>
     } else if (r.specialDay === 'Y') {
       dayTypeNode = <span className="tag-pill bg-rose-50 text-rose-700 border border-rose-200">Special</span>
+    }
+    if (r.dayOff === 'Y') {
+      dayTypeNode = (
+        <div className="flex flex-col items-start gap-0.5">
+          {dayTypeNode}
+          <span className="tag-pill bg-sky-50 text-sky-700 border border-sky-200">Day Off</span>
+        </div>
+      )
     }
 
     // Statutory holiday label (+ Working / Not Working and value for eligible employees)
@@ -3316,6 +3335,10 @@ export default function AttendancePage() {
                 <span className="text-slate-600 font-medium">Sunday Poya</span>
                 <Toggle checked={isSundayPoya} onChange={handleSundayPoyaChange} />
               </div>
+              <div className="col-span-2 flex items-center justify-between p-1 bg-white border rounded">
+                <span className="text-slate-600 font-medium">Day Off <span className="text-[10px] text-slate-400">(paid at the basic day rate)</span></span>
+                <Toggle checked={form.dayOff === 'Y'} onChange={checked => setForm(prev => ({ ...prev, dayOff: checked ? 'Y' : 'N' }))} />
+              </div>
               {isSundayPoya && (
                 <div className="col-span-2">
                   <label className="block text-slate-600 mb-1">Sunday Poya Extra Payment</label>
@@ -3642,6 +3665,7 @@ export default function AttendancePage() {
                               isHalfDay && 'Half Day',
                               row.saturdayPoya === 'Y' && 'Sunday Poya',
                               row.specialDay === 'Y' && 'Special',
+                              row.dayOff === 'Y' && 'Day Off',
                               row.secondShift === 'Y' && '2nd Shift',
                               (row.nightShift === 'Y' || row.fullNight === 'Y') && 'Night',
                               stagedHolidayDates.has(dayInValue) && 'Holiday'
