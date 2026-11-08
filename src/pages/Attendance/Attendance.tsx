@@ -589,8 +589,35 @@ function StagedRowDetails({ row, edits, employeeOptions, plantOptions, plants, s
   )
 }
 
-// Rows per save request: a large upload sent in one request can be refused before it reaches the server
-const BULK_SAVE_BATCH = 5
+// Save requests stay small (a large request body is refused before it reaches the server)
+const BULK_SAVE_MAX_BYTES = 7500
+const BULK_SAVE_MAX_ROWS = 25
+// Requests sent at the same time
+const BULK_SAVE_PARALLEL = 3
+
+// Empty fields are left out of the request; the server reads a missing field as empty
+function compactForSave(row: Attendance): Attendance {
+  return Object.fromEntries(Object.entries(row).filter(([, value]) => value !== null && value !== undefined)) as Attendance
+}
+
+// Rows of one plant and month in requests of at most BULK_SAVE_MAX_BYTES / BULK_SAVE_MAX_ROWS
+function saveBatches(rows: Attendance[]): Attendance[][] {
+  const batches: Attendance[][] = []
+  let batch: Attendance[] = []
+  let bytes = 2
+  rows.forEach(row => {
+    const size = JSON.stringify(compactForSave(row)).length + 1
+    if (batch.length && (bytes + size > BULK_SAVE_MAX_BYTES || batch.length >= BULK_SAVE_MAX_ROWS)) {
+      batches.push(batch)
+      batch = []
+      bytes = 2
+    }
+    batch.push(row)
+    bytes += size
+  })
+  if (batch.length) batches.push(batch)
+  return batches
+}
 
 // The reason a save was refused, from the server's reply when it gives one
 function saveErrorText(error: any): string {
@@ -606,12 +633,28 @@ function saveErrorText(error: any): string {
 async function saveBatchWithRetry(batch: Attendance[], attempts = 3) {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await bulkSaveAttendance(batch)
+      return await bulkSaveAttendance(batch.map(compactForSave))
     } catch (error: any) {
       const status = error?.response?.status
       const retry = !error?.response || error?.code === 'ECONNABORTED' || status >= 500
       if (attempt >= attempts || !retry) throw error
     }
+  }
+}
+
+// A request refused as too large (403 / 413) is sent again in two halves, down to single rows
+async function saveAdaptive(batch: Attendance[], onSaved: (rows: Attendance[], result: Awaited<ReturnType<typeof bulkSaveAttendance>>) => void): Promise<void> {
+  try {
+    onSaved(batch, await saveBatchWithRetry(batch))
+  } catch (error: any) {
+    const status = error?.response?.status
+    if ((status === 403 || status === 413) && batch.length > 1) {
+      const half = Math.ceil(batch.length / 2)
+      await saveAdaptive(batch.slice(0, half), onSaved)
+      await saveAdaptive(batch.slice(half), onSaved)
+      return
+    }
+    throw error
   }
 }
 
@@ -1287,7 +1330,7 @@ export default function AttendancePage() {
 
     setSaveError(null)
     setSaveSummaries([])
-    // Saved in small batches; a refused batch stops the save and its rows stay staged
+    // Saved in small requests, a few at a time; a refused request stops the save and unsaved rows stay staged
     const savedIds = new Set<string>()
     const groups = new Map<string, { plantCode: string; year: string; month: string; employees: Set<string>; inserted: number; updated: number; failed: number }>()
     let failure: string | null = null
@@ -1298,34 +1341,38 @@ export default function AttendancePage() {
       byPlantMonth.set(key, [...(byPlantMonth.get(key) || []), r])
     })
     const batches: Attendance[][] = []
-    byPlantMonth.forEach(list => {
-      for (let start = 0; start < list.length; start += BULK_SAVE_BATCH) batches.push(list.slice(start, start + BULK_SAVE_BATCH))
-    })
-    let sent = 0
-    for (const batch of batches) {
-      sent += batch.length
-      if (enrichedValid.length > BULK_SAVE_BATCH) {
-        toast.loading(`Saving ${sent} of ${enrichedValid.length} rows (plant ${batch[0].plantCode})...`, { id: 'bulk-save-progress' })
+    byPlantMonth.forEach(list => batches.push(...saveBatches(list)))
+    const showProgress = batches.length > 1
+    if (showProgress) toast.loading(`Saving 0 of ${enrichedValid.length} rows...`, { id: 'bulk-save-progress' })
+    const recordSaved = (batch: Attendance[], result: Awaited<ReturnType<typeof bulkSaveAttendance>>) => {
+      batch.forEach(r => savedIds.add(r.id))
+      if (showProgress) {
+        toast.loading(`Saving ${savedIds.size} of ${enrichedValid.length} rows (plant ${batch[0].plantCode})...`, { id: 'bulk-save-progress' })
       }
-      try {
-        const result = await saveBatchWithRetry(batch)
-        batch.forEach(r => savedIds.add(r.id))
-        result.summaries.forEach(summary => {
-          const key = `${summary.plantCode}|${summary.year}|${summary.month}`
-          const group = groups.get(key) || { plantCode: summary.plantCode, year: summary.year, month: summary.month, employees: new Set<string>(), inserted: 0, updated: 0, failed: 0 }
-          group.inserted += summary.inserted || 0
-          group.updated += summary.updated || 0
-          group.failed += summary.failed || 0
-          batch.filter(r => (r.plantCode || '').trim().toUpperCase() === (summary.plantCode || '').trim().toUpperCase())
-            .forEach(r => group.employees.add((r.epfNo || '').trim().toUpperCase()))
-          groups.set(key, group)
-        })
-      } catch (error: any) {
-        console.error('Bulk attendance save failed', error)
-        failure = saveErrorText(error)
-        break
+      result.summaries.forEach(summary => {
+        const key = `${summary.plantCode}|${summary.year}|${summary.month}`
+        const group = groups.get(key) || { plantCode: summary.plantCode, year: summary.year, month: summary.month, employees: new Set<string>(), inserted: 0, updated: 0, failed: 0 }
+        group.inserted += summary.inserted || 0
+        group.updated += summary.updated || 0
+        group.failed += summary.failed || 0
+        batch.filter(r => (r.plantCode || '').trim().toUpperCase() === (summary.plantCode || '').trim().toUpperCase())
+          .forEach(r => group.employees.add((r.epfNo || '').trim().toUpperCase()))
+        groups.set(key, group)
+      })
+    }
+    const queue = [...batches]
+    const worker = async () => {
+      while (!failure && queue.length) {
+        const batch = queue.shift()!
+        try {
+          await saveAdaptive(batch, recordSaved)
+        } catch (error: any) {
+          console.error('Bulk attendance save failed', error)
+          failure = failure || saveErrorText(error)
+        }
       }
     }
+    await Promise.all(Array.from({ length: Math.min(BULK_SAVE_PARALLEL, queue.length) }, worker))
     toast.dismiss('bulk-save-progress')
 
     const summaryLines = Array.from(groups.values()).map(g =>
@@ -1341,7 +1388,7 @@ export default function AttendancePage() {
     if (failure) {
       // The error bar already starts with "Not saved to the database:"
       const msg = savedIds.size > 0
-        ? `the last ${unsavedRows.length} rows (${failure}). ${savedIds.size} of ${enrichedValid.length} rows were saved; the rest are still in the preview.`
+        ? `${unsavedRows.length} rows were not saved (${failure}). ${savedIds.size} of ${enrichedValid.length} rows were saved; the rest are still in the preview.`
         : failure
       setSaveError(msg)
       toast.error(`Not saved to the database: ${msg}`)
@@ -1787,6 +1834,11 @@ export default function AttendancePage() {
       const searchStr = `${r.epfNo} ${empName} ${r.plantCode} ${r.dayIn}`.toLowerCase()
       return searchStr.includes(q.toLowerCase())
     })
+      // Plant by plant (all of one plant's attendance together), then date, then EPF No
+      .sort((a, b) =>
+        (a.plantCode || '').trim().localeCompare((b.plantCode || '').trim(), undefined, { numeric: true, sensitivity: 'base' })
+        || String(a.dayIn || '').slice(0, 10).localeCompare(String(b.dayIn || '').slice(0, 10))
+        || (a.epfNo || '').trim().localeCompare((b.epfNo || '').trim(), undefined, { numeric: true, sensitivity: 'base' }))
   }, [rows, employeeList, q, filterYear, filterMonth, filterEmployee, filterPlant])
 
   // Employee filter choices: with a plant picked, only that plant's employees and anyone with attendance there
