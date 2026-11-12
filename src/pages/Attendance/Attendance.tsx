@@ -2385,7 +2385,7 @@ export default function AttendancePage() {
     // OT Node
     const otVal = Number(r.totalOt) || 0
     const otNode = otVal > 0 ? (
-      <span className="mono-numeric text-[#C08A2E] font-medium">{otVal.toFixed(1)}</span>
+      <span className="mono-numeric text-[#C08A2E] font-medium">{otVal.toFixed(2)}</span>
     ) : (
       <span className="mono-numeric text-slate-400">-</span>
     )
@@ -2408,7 +2408,7 @@ export default function AttendancePage() {
           1 - Full Day
         </span>
       ),
-      totalHours: (Number(r.totalWorkingHours) || 0).toFixed(1),
+      totalHours: (Number(r.totalWorkingHours) || 0).toFixed(2),
       otHours: otNode,
       meals: r.noOfMeal || 0,
       id: r.id
@@ -2666,7 +2666,7 @@ export default function AttendancePage() {
                           {group.totalDays}
                         </td>
                         <td className="p-3 text-center font-mono font-semibold text-[#C08A2E]">
-                          {group.totalOt.toFixed(1)} hrs
+                          {group.totalOt.toFixed(2)} hrs
                         </td>
                         <td className="p-3 text-slate-500 text-[11px] font-mono">
                           {group.lastSaved}
@@ -3286,7 +3286,7 @@ export default function AttendancePage() {
                 </div>
                 <div>
                   <span className="text-xs text-emerald-800 block font-medium">Total Working Hours</span>
-                  <span className="text-lg font-bold font-mono text-emerald-950">{liveComputed.hours.toFixed(1)} hrs</span>
+                  <span className="text-lg font-bold font-mono text-emerald-950">{liveComputed.hours.toFixed(2)} hrs</span>
                 </div>
                 <div className="border-l border-emerald-200 pl-4">
                   {form.otCalAuto === 'N' ? (
@@ -3301,7 +3301,7 @@ export default function AttendancePage() {
                   ) : (
                     <>
                       <span className="text-xs text-emerald-800 block font-medium">Calculated OT</span>
-                      <span className={`text-lg font-bold font-mono ${liveComputed.ot > 0 ? 'text-[#C08A2E]' : 'text-emerald-900'}`}>{liveComputed.ot.toFixed(1)} hrs</span>
+                      <span className={`text-lg font-bold font-mono ${liveComputed.ot > 0 ? 'text-[#C08A2E]' : 'text-emerald-900'}`}>{liveComputed.ot.toFixed(2)} hrs</span>
                     </>
                   )}
                 </div>

@@ -68,21 +68,22 @@ export function payrollFromSummary(monthlyData: MonthlySummary, employee: any) {
     poyaDays,
     poyaRate,
     poyaAmount,
-    otHours,
+    // OT is by the minute: hours to two decimals (2 h 02 min = 2.03)
+    otHours: Math.round(otHours * 100) / 100,
     otRate,
     otAmount,
     incentive,
     statutoryDays: monthlyData.attendance?.statutoryHolidayCount || 0,
     statutoryHolidayAmount,
     // OT worked on statutory holidays: (Daily Rate / 9) x 2, already in statutoryHolidayAmount
-    statutoryOtHours: Number(monthlyData.statutoryOtHours || 0),
+    statutoryOtHours: Math.round(Number(monthlyData.statutoryOtHours || 0) * 100) / 100,
     statutoryOtRate: Number(monthlyData.statutoryOtRate || 0),
     // Statutory holiday pay on two lines: the Working / Not Working value, and the holiday OT (2x)
     statutoryOtAmount: Number(monthlyData.statutoryOtAmount || 0),
     statutoryValueAmount: Math.round((statutoryHolidayAmount - Number(monthlyData.statutoryOtAmount || 0)) * 100) / 100,
     // Shown on the pay sheet: days worked and every OT hour (normal and statutory holiday)
     workingDays: Number(monthlyData.attendance?.workingDays || 0),
-    totalOtHours: monthlyData.totalOtHours !== undefined ? Number(monthlyData.totalOtHours) : otHours + Number(monthlyData.statutoryOtHours || 0),
+    totalOtHours: Math.round((monthlyData.totalOtHours !== undefined ? Number(monthlyData.totalOtHours) : otHours + Number(monthlyData.statutoryOtHours || 0)) * 100) / 100,
     totalAdditions,
     grossSalary,
     epf8,

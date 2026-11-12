@@ -143,10 +143,10 @@ export function computePlantHours(
     capped = true;
   }
 
-  const hours = Math.round(rawHours * 10) / 10;
-  // OT is paid in completed quarter hours (18:33 after a 16:30 end is 2.00, not 2.05)
+  const hours = Math.round(rawHours * 100) / 100;
+  // OT is paid by the minute: 18:32 after a 9 hour day from 07:30 is 2 h 02 min = 2.03
   const otMinutes = Math.round(rawHours * 60) - Math.round(minWorkHours * 60);
-  const ot = Math.max(0, Math.floor(otMinutes / 15) * 0.25);
+  const ot = Math.max(0, Math.round(otMinutes / 60 * 100) / 100);
 
   const startH = Math.floor(startMinutes / 60);
   const startM = startMinutes % 60;
