@@ -31,6 +31,8 @@ export type MonthlySummary = {
   statutoryOtHours?: number
   statutoryOtRate?: number
   statutoryOtAmount?: number
+  // Normal OT hours plus statutory holiday OT hours
+  totalOtHours?: number
   totalAdditions: number
   grossSalary: number
 

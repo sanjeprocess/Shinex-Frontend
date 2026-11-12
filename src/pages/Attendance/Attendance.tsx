@@ -34,9 +34,7 @@ import {
   getMonth as getStatutoryMonth,
   saveHoliday as saveStatutoryHoliday,
   removeHoliday as removeStatutoryHoliday,
-  setStatus as setStatutoryStatus,
-  StatutoryMonth,
-  StatutoryStatus
+  StatutoryMonth
 } from '../../services/statutoryHolidayService'
 import { v4 as uuid } from 'uuid'
 import * as XLSX from 'xlsx'
@@ -2092,9 +2090,6 @@ export default function AttendancePage() {
     })
   }
 
-  function handleStatStatusChange(date: string, epfNo: string, status: StatutoryStatus | 'AUTO') {
-    runStat(() => setStatutoryStatus(date, epfNo, status), 'Failed to update Working / Not Working')
-  }
   // Custom Form Select Handlers
   function handleNumericInput(field: 'workingDays' | 'noOfStaff' | 'dasForAttAllowance' | 'basicSalary' | 'dayAllowance' | 'nightAllowance' | 'sundayPoyaExtra' | 'noOfMeal' | 'totalMealValue', label: string, value: string) {
     if (value === '') {
@@ -2270,7 +2265,7 @@ export default function AttendancePage() {
       employees: all.length,
       eligible: eligible.length,
       workingDays: eligible.reduce((n, e) => n + e.lines.filter(l => l.status === 'W').length, 0),
-      total: Math.round(eligible.reduce((sum, e) => sum + (Number(e.total) || 0), 0) * 100) / 100
+      total: Math.round(eligible.reduce((sum, e) => sum + (Number(e.payTotal ?? e.total) || 0), 0) * 100) / 100
     }
   }, [statData])
 
@@ -2707,7 +2702,7 @@ export default function AttendancePage() {
                 <div>
                   <h3 className="font-bold text-xs text-slate-800 uppercase tracking-wider">Statutory Holidays</h3>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Eligible employees get the Working or Not Working value for each holiday. The monthly total is paid as Statutory Holiday Pay.
+                    Eligible employees get the Working or Not Working value for each holiday; Working is taken from attendance. Hours after the first 9 on a holiday are paid as holiday OT (Day Rate ÷ 9 × 2). The monthly total is paid as Statutory Holiday Pay.
                   </p>
                 </div>
               </div>
@@ -2904,22 +2899,18 @@ export default function AttendancePage() {
                                 <td key={line.date} className="p-2.5">
                                   {emp.eligible ? (
                                     <div className="space-y-0.5">
-                                      <select
-                                        value={line.source === 'MANUAL' ? line.status : 'AUTO'}
-                                        disabled={statBusy}
-                                        onChange={e => handleStatStatusChange(line.date, emp.epfNo, e.target.value as StatutoryStatus | 'AUTO')}
-                                        className="form-input text-xs py-0.5 px-1.5 h-7"
-                                      >
-                                        <option value="AUTO">From attendance</option>
-                                        <option value="W">Working</option>
-                                        <option value="N">Not Working</option>
-                                      </select>
-                                      <div className="text-[10px]">
-                                        <span className={`font-semibold ${line.status === 'W' ? 'text-teal-700' : 'text-amber-700'}`}>
-                                          {line.status === 'W' ? 'Working' : 'Not Working'}
-                                        </span>
-                                        <span className="text-slate-500"> · Rs. {Number(line.amount).toLocaleString()}</span>
+                                      <span className={`inline-block px-1.5 py-0.5 rounded border text-[11px] font-semibold ${line.status === 'W' ? 'bg-teal-50 text-teal-700 border-teal-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                                        {line.status === 'W' ? 'Working' : 'Not Working'}
+                                      </span>
+                                      <div className="text-[10px] text-slate-500">
+                                        Rs. {Number(line.amount).toLocaleString()}
+                                        {line.status === 'W' && Number(line.workedHours) > 0 && <> · worked {Number(line.workedHours)} h</>}
                                       </div>
+                                      {Number(line.otHours) > 0 && (
+                                        <div className="text-[10px] text-amber-800">
+                                          OT {Number(line.otHours)} h · Rs. {Number(line.otAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </div>
+                                      )}
                                     </div>
                                   ) : (
                                     <span>—</span>
@@ -2927,7 +2918,12 @@ export default function AttendancePage() {
                                 </td>
                               ))}
                               <td className="p-2.5 text-right font-mono font-semibold text-slate-900">
-                                Rs. {Number(emp.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                Rs. {Number(emp.payTotal ?? emp.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                {Number(emp.otAmount) > 0 && (
+                                  <div className="text-[10px] font-normal text-slate-500">
+                                    {Number(emp.total).toLocaleString()} + OT {Number(emp.otAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           ))}

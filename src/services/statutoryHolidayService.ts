@@ -16,6 +16,9 @@ export interface StatutoryHolidayLine {
   status: StatutoryStatus;
   source: 'MANUAL' | 'ATTENDANCE';
   amount: number;
+  workedHours?: number; // hours worked that day (from attendance)
+  otHours?: number;     // holiday OT: hours after the first 9
+  otAmount?: number;    // holiday OT pay: hours x Daily Rate / 9 x 2
 }
 
 export interface StatutoryEmployeeRow {
@@ -23,7 +26,11 @@ export interface StatutoryEmployeeRow {
   employeeName: string;
   plantCode?: string;
   eligible: boolean;
-  total: number;
+  total: number;       // Working / Not Working values
+  dayRate?: number;
+  otHours?: number;
+  otAmount?: number;
+  payTotal?: number;    // values + holiday OT, as on the pay sheet
   lines: StatutoryHolidayLine[];
 }
 

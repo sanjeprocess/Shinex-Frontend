@@ -94,7 +94,8 @@ export async function downloadPaySheetExcel(data: PaySheetExcelData, fileName: s
     ['NIC No', employee.nicNo || '—', 'Business Center', employee.businessCenter || activeBc],
     ['Current Plant', employee.plantCode || '—', 'Section', employee.sectionCode || '—'],
     ['Daily Rate (Normal)', Number(employee.basicSalary || 0), 'Hired Date', employee.hiredDate || '—'],
-    ['Bank Account', `${employee.bankName || 'Bank'} — ${employee.bankAccountNumber || '—'}`, 'Plant Filter', plantFilter]
+    ['Bank Account', `${employee.bankName || 'Bank'} — ${employee.bankAccountNumber || '—'}`, 'Plant Filter', plantFilter],
+    ['Working Days', String(calc.workingDays), 'OT Hours', String(calc.totalOtHours)]
   ]
   details.forEach(([leftLabel, leftValue, rightLabel, rightValue]) => {
     const row = sheet.addRow([`${leftLabel}:  ${typeof leftValue === 'number' ? `LKR ${leftValue.toLocaleString()}` : leftValue}`, null, null, `${rightLabel}:  ${rightValue}`])
@@ -118,11 +119,12 @@ export async function downloadPaySheetExcel(data: PaySheetExcelData, fileName: s
   line('DAY OFF / விடுமுறை நாள் / නිවාඩු දිනය', calc.dayOffDays || null, null, calc.dayOffDays > 0 ? calc.dayOffRate : null, calc.dayOffAmount || null)
   line('NIGHT / இரவு / රාත්‍රී', calc.nightDays, null, calc.nightRate, calc.nightAmount)
   line('POYA / SUNDAY / ஞாயிறு / போயா / ඉරිදා / පෝය', calc.poyaDays, null, calc.poyaRate, calc.poyaAmount)
-  line('OVERTIME / மேலதிக நேரம் / අතිකාල (1.5× rate)', null, calc.otHours, calc.otRate, calc.otAmount)
+  line('OVERTIME / மேலதிக நேரம் / අතිකාල (1.5× rate)', null, calc.otHours, calc.otHours > 0 ? calc.otRate : null, calc.otAmount)
   line('INCENTIVE / ஊக்கத்தொகை / දිරිගැන්වීම් දීමනාව', null, null, null, calc.incentive)
   line('ATTENDANCE ALLOWANCE / கலந்துகொள்ளல் படி / පැමිණීමේ දීමනාව')
   line('ATTENDANCE BONUS / வருகை போனஸ் / පැමිණීමේ බෝනස්')
-  line('STATUTORY HOLIDAY / சட்டப்பூர்வ விடுமுறை / ව්‍යවස්ථාපිත නිවාඩු', calc.statutoryDays, calc.statutoryOtHours || null, calc.statutoryOtHours > 0 ? calc.statutoryOtRate : null, calc.statutoryHolidayAmount)
+  line('STATUTORY HOLIDAY / சட்டப்பூர்வ விடுமுறை / ව්‍යවස්ථාපිත නිවාඩු', calc.statutoryDays, null, null, calc.statutoryValueAmount)
+  line('STATUTORY HOLIDAY OT / சட்டப்பூர்வ விடுமுறை மேலதிக நேரம் / ව්‍යවස්ථාපිත නිවාඩු අතිකාල (2× rate)', null, calc.statutoryOtHours || null, calc.statutoryOtHours > 0 ? calc.statutoryOtRate : null, calc.statutoryOtAmount || null)
   line('OTHER ADDITIONS / மற்றவை / වෙනත් එකතු කිරීම්', null, null, null, calc.totalAdditions)
   total('GROSS SALARY / மொத்த சம்பளம் / දළ වැටුප', calc.grossSalary, GREEN_TEXT, GREEN_FILL)
   sheet.addRow([])

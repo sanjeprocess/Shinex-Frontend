@@ -77,6 +77,12 @@ export function payrollFromSummary(monthlyData: MonthlySummary, employee: any) {
     // OT worked on statutory holidays: (Daily Rate / 9) x 2, already in statutoryHolidayAmount
     statutoryOtHours: Number(monthlyData.statutoryOtHours || 0),
     statutoryOtRate: Number(monthlyData.statutoryOtRate || 0),
+    // Statutory holiday pay on two lines: the Working / Not Working value, and the holiday OT (2x)
+    statutoryOtAmount: Number(monthlyData.statutoryOtAmount || 0),
+    statutoryValueAmount: Math.round((statutoryHolidayAmount - Number(monthlyData.statutoryOtAmount || 0)) * 100) / 100,
+    // Shown on the pay sheet: days worked and every OT hour (normal and statutory holiday)
+    workingDays: Number(monthlyData.attendance?.workingDays || 0),
+    totalOtHours: monthlyData.totalOtHours !== undefined ? Number(monthlyData.totalOtHours) : otHours + Number(monthlyData.statutoryOtHours || 0),
     totalAdditions,
     grossSalary,
     epf8,
@@ -239,9 +245,16 @@ const PaySheetView = forwardRef<HTMLDivElement, PaySheetViewProps>(function PayS
 
         {/* Earnings Table */}
         <div className="p-3 border-b border-slate-200 print:p-2">
-          <h4 className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 mb-1.5 print:text-[9px]">
-            Earnings & Allowances / கொடுப்பனவுகள் / ඉපැයීම්
-          </h4>
+          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1.5">
+            <h4 className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 print:text-[9px]">
+              Earnings & Allowances / கொடுப்பனவுகள் / ඉපැයීම්
+            </h4>
+            <span className="text-[11px] font-semibold text-slate-700 print:text-[8.5px]">
+              Working Days: <span className="font-mono">{calc.workingDays}</span>
+              <span className="text-slate-300 mx-1.5">|</span>
+              OT Hours: <span className="font-mono text-amber-800">{calc.totalOtHours}</span>
+            </span>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs divide-y divide-slate-200 print:text-[8.5px]">
               <thead className="bg-slate-50 text-slate-600 font-semibold print:bg-slate-100">
@@ -286,7 +299,7 @@ const PaySheetView = forwardRef<HTMLDivElement, PaySheetViewProps>(function PayS
                   <td className="px-2.5 py-1 print:py-[1px] font-sans font-medium text-slate-800">OVERTIME / மேலதிக நேரம் / අතිකාල (1.5× rate)</td>
                   <td className="px-2 py-1 print:py-[1px] text-center text-slate-400">—</td>
                   <td className="px-2 py-1 print:py-[1px] text-center text-amber-700 font-bold">{calc.otHours > 0 ? calc.otHours : '—'}</td>
-                  <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap text-slate-700">{calc.otRate.toFixed(2)}</td>
+                  <td className={`px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap ${calc.otHours > 0 ? 'text-slate-700' : 'text-slate-400'}`}>{calc.otHours > 0 ? calc.otRate.toFixed(2) : '—'}</td>
                   <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-amber-900">{calc.otAmount > 0 ? calc.otAmount.toFixed(2) : '—'}</td>
                 </tr>
                 <tr>
@@ -299,9 +312,16 @@ const PaySheetView = forwardRef<HTMLDivElement, PaySheetViewProps>(function PayS
                 <tr>
                   <td className="px-2.5 py-1 print:py-[1px] font-sans font-medium text-slate-800">STATUTORY HOLIDAY / சட்டப்பூர்வ விடுமுறை / ව්‍යවස්ථාපිත නිවාඩු</td>
                   <td className="px-2 py-1 print:py-[1px] text-center text-slate-700">{calc.statutoryDays || '—'}</td>
+                  <td className="px-2 py-1 print:py-[1px] text-center text-slate-400">—</td>
+                  <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap text-slate-400">—</td>
+                  <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-900">{calc.statutoryValueAmount > 0 ? calc.statutoryValueAmount.toFixed(2) : '—'}</td>
+                </tr>
+                <tr>
+                  <td className="px-2.5 py-1 print:py-[1px] font-sans font-medium text-slate-800">STATUTORY HOLIDAY OT / சட்டப்பூர்வ விடுமுறை மேலதிக நேரம் / ව්‍යවස්ථාපිත නිවාඩු අතිකාල (2× rate)</td>
+                  <td className="px-2 py-1 print:py-[1px] text-center text-slate-400">—</td>
                   <td className={`px-2 py-1 print:py-[1px] text-center ${calc.statutoryOtHours > 0 ? 'text-amber-700 font-bold' : 'text-slate-400'}`}>{calc.statutoryOtHours > 0 ? calc.statutoryOtHours : '—'}</td>
                   <td className={`px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap ${calc.statutoryOtHours > 0 ? 'text-slate-700' : 'text-slate-400'}`}>{calc.statutoryOtHours > 0 ? calc.statutoryOtRate.toFixed(2) : '—'}</td>
-                  <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-900">{calc.statutoryHolidayAmount > 0 ? calc.statutoryHolidayAmount.toFixed(2) : '—'}</td>
+                  <td className="px-2.5 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-amber-900">{calc.statutoryOtAmount > 0 ? calc.statutoryOtAmount.toFixed(2) : '—'}</td>
                 </tr>
                 <tr>
                   <td className="px-2.5 py-1 print:py-[1px] font-sans font-medium text-slate-800">OTHER ADDITIONS / மற்றவை / වෙනත් එකතු කිරීම්</td>
