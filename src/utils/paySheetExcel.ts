@@ -137,6 +137,7 @@ export async function downloadPaySheetExcel(data: PaySheetExcelData, fileName: s
   line('ABSENT / வராதிருத்தல் / නොපැමිණීම', null, null, null, calc.absent)
   line('LOAN / கடன் / ණය', null, null, null, calc.loan)
   line('DEATH DONATION / இறப்பு நன்கொடை / මරණ ආධාර', null, null, null, calc.deathDonation)
+  line('UNIFORM / சீருடை / නිල ඇඳුම', null, null, null, calc.uniform)
   total('TOTAL DEDUCTION / மொத்த கழிவு / මුළු අඩුකිරීම', calc.totalDeductions, ROSE_TEXT, ROSE_FILL)
   sheet.addRow([])
 

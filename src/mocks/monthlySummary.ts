@@ -43,6 +43,8 @@ export type MonthlySummary = {
   absentDeduction?: number
   loanDeduction?: number
   deathDonation?: number
+  // This month's uniform cut from Deduction Transactions
+  uniformDeduction?: number
   totalDeductions: number
 
   netSalary: number

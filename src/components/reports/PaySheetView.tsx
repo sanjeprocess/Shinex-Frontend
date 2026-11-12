@@ -35,8 +35,9 @@ export function payrollFromSummary(monthlyData: MonthlySummary, employee: any) {
   const absent = monthlyData.absentDeduction !== undefined ? monthlyData.absentDeduction : 0
   const loan = monthlyData.loanDeduction !== undefined ? monthlyData.loanDeduction : 0
   const deathDonation = monthlyData.deathDonation !== undefined ? monthlyData.deathDonation : 0
+  const uniform = Number(monthlyData.uniformDeduction || 0)
 
-  const totalDeductions = monthlyData.totalDeductions !== undefined ? monthlyData.totalDeductions : Math.round((epf8 + advance + telephone + meal + absent + loan + deathDonation) * 100) / 100
+  const totalDeductions = monthlyData.totalDeductions !== undefined ? monthlyData.totalDeductions : Math.round((epf8 + advance + telephone + meal + absent + loan + deathDonation + uniform) * 100) / 100
   const netSalary = monthlyData.netSalary !== undefined ? monthlyData.netSalary : Math.round((grossSalary - totalDeductions) * 100) / 100
 
   const epf12 = monthlyData.epf12 !== undefined ? monthlyData.epf12 : Math.round(normalAmount * 0.12 * 100) / 100
@@ -93,6 +94,7 @@ export function payrollFromSummary(monthlyData: MonthlySummary, employee: any) {
     absent,
     loan,
     deathDonation,
+    uniform,
     totalDeductions,
     netSalary,
     epf12,
@@ -371,6 +373,10 @@ const PaySheetView = forwardRef<HTMLDivElement, PaySheetViewProps>(function PayS
                 <tr>
                   <td className="px-3 py-1 print:py-[1px] font-sans text-slate-700">DEATH DONATION / இறப்பு நன்கொடை / මරණ ආධාර</td>
                   <td className="px-3 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-800">{calc.deathDonation > 0 ? `LKR ${calc.deathDonation.toFixed(2)}` : '—'}</td>
+                </tr>
+                <tr>
+                  <td className="px-3 py-1 print:py-[1px] font-sans text-slate-700">UNIFORM / சீருடை / නිල ඇඳුම</td>
+                  <td className="px-3 py-1 print:py-[1px] text-right whitespace-nowrap font-semibold text-slate-800">{calc.uniform > 0 ? `LKR ${calc.uniform.toFixed(2)}` : '—'}</td>
                 </tr>
                 <tr className="bg-rose-50 font-bold font-sans border-t border-rose-200 print:bg-slate-100">
                   <td className="px-3 py-1.5 print:py-0.5 text-rose-950 font-bold">TOTAL DEDUCTION / மொத்த கழிவு</td>

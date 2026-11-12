@@ -400,6 +400,7 @@ export default function EmployeeHistoryPage() {
       absent,
       loan,
       deathDonation,
+      uniform: 0,
       totalDeductions,
       netSalary,
       epf12,
