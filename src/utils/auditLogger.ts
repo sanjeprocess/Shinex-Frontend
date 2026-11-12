@@ -8,6 +8,9 @@ export type AuditLogEntry = {
   module: string
   entityId?: string
   details: string
+  loginName?: string
+  userRole?: string
+  businessCenter?: string
 }
 
 export async function logAuditAction(params: {
@@ -50,11 +53,8 @@ export async function logAuditAction(params: {
     localStorage.setItem('hsb_audit_logs', JSON.stringify(cached.slice(0, 300)))
   } catch {}
 
-  try {
-    await api.post('/audit-logs', logPayload)
-  } catch (err) {
-    console.warn('Failed to persist audit log to backend:', err)
-  }
+  // The server records every add, edit and delete itself (with the signed-in user and business center),
+  // so this entry is not sent again
 }
 
 export async function fetchAuditLogs(): Promise<AuditLogEntry[]> {

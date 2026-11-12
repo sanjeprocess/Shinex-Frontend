@@ -1,6 +1,15 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { toast } from 'sonner'
 import { fetchAuditLogs, AuditLogEntry } from '../../utils/auditLogger'
+import { getCurrentUser } from '../../utils/permissions'
+import { list as listBusinessCenters } from '../../mocks/businessCenters'
+
+const MODULE_LABELS: Record<string, string> = {
+  EMPLOYEE: 'Employees', ATTENDANCE: 'Attendance', LOAN: 'Loans', SECTION: 'Sections', ADDITION: 'Addition Types (Master)',
+  TRANSACTION_ADDITION: 'Transaction Additions', DEDUCTION: 'Deduction Types (Master)', TRANSACTION_DEDUCTION: 'Transaction Deductions',
+  LEAVE: 'Leaves', BUSINESS_CENTER: 'Business Centers', PLANT: 'Plants', DEDUCTION_TRANSACTION: 'Deduction Transactions',
+  PLANT_TRANSFER: 'Plant Transfers', STATUTORY_HOLIDAY: 'Statutory Holidays', USER: 'Users', PROCESS: 'Process'
+}
 
 export default function AuditLogPage() {
   const [logs, setLogs] = useState<AuditLogEntry[]>([])
@@ -8,6 +17,10 @@ export default function AuditLogPage() {
 
   const [selectedModule, setSelectedModule] = useState<string>('ALL')
   const [selectedAction, setSelectedAction] = useState<string>('ALL')
+  // The super admin sees every business center in one list and can narrow it to one
+  const isSuperAdmin = ['SUPERADMIN', 'SUPER_ADMIN'].includes(String(getCurrentUser().role || '').toUpperCase())
+  const [selectedCenter, setSelectedCenter] = useState<string>('ALL')
+  const [businessCenters, setBusinessCenters] = useState<any[]>([])
   const [search, setSearch] = useState<string>('')
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
@@ -16,7 +29,21 @@ export default function AuditLogPage() {
 
   useEffect(() => {
     loadLogs()
+    if (isSuperAdmin) listBusinessCenters().then(setBusinessCenters).catch(() => setBusinessCenters([]))
   }, [])
+
+  const centerOf = (log: AuditLogEntry) => (log.businessCenter || '').split(' / ')[0].trim()
+  const centerName = (code: string) => businessCenters.find((b: any) => (b.code || '').trim() === code)?.name || ''
+  const centerOptions = useMemo(() => {
+    const codes = new Set<string>(businessCenters.map((b: any) => (b.code || '').trim()).filter(Boolean))
+    logs.forEach(l => { if (centerOf(l)) codes.add(centerOf(l)) })
+    return Array.from(codes).sort()
+  }, [logs, businessCenters])
+  const moduleOptions = useMemo(() => {
+    const mods = new Set<string>(Object.keys(MODULE_LABELS))
+    logs.forEach(l => { if (l.module) mods.add(l.module) })
+    return Array.from(mods).sort((a, b) => (MODULE_LABELS[a] || a).localeCompare(MODULE_LABELS[b] || b))
+  }, [logs])
 
   async function loadLogs() {
     setLoading(true)
@@ -48,9 +75,10 @@ export default function AuditLogPage() {
     return logs.filter(log => {
       if (selectedModule !== 'ALL' && log.module !== selectedModule) return false
       if (selectedAction !== 'ALL' && log.action !== selectedAction) return false
+      if (selectedCenter !== 'ALL' && centerOf(log) !== selectedCenter) return false
       if (search.trim()) {
         const q = search.toLowerCase()
-        const str = `${log.performedBy || ''} ${log.module || ''} ${log.action || ''} ${log.entityId || ''} ${log.details || ''}`.toLowerCase()
+        const str = `${log.performedBy || ''} ${log.loginName || ''} ${log.userRole || ''} ${log.businessCenter || ''} ${log.module || ''} ${log.action || ''} ${log.entityId || ''} ${log.details || ''}`.toLowerCase()
         if (!str.includes(q)) return false
       }
 
@@ -67,7 +95,7 @@ export default function AuditLogPage() {
       }
       return true
     })
-  }, [logs, selectedModule, selectedAction, search, fromDate, toDate, appliedFromDate, appliedToDate])
+  }, [logs, selectedModule, selectedAction, selectedCenter, search, fromDate, toDate, appliedFromDate, appliedToDate])
 
   function exportToExcel() {
     if (filteredLogs.length === 0) {
@@ -75,12 +103,12 @@ export default function AuditLogPage() {
       return
     }
 
-    const headers = 'Timestamp,Admin User,Action,Module,Entity ID,Change Details'
+    const headers = 'Timestamp,Admin User,Login,Role,Business Center,Action,Module,Entity ID,Change Details'
     const rows = filteredLogs.map(l => {
       const time = l.timestamp ? new Date(l.timestamp).toLocaleString() : ''
       const user = String(l.performedBy || '').replace(/"/g, '""')
       const details = String(l.details || '').replace(/"/g, '""')
-      return `"${time}","${user}","${l.action}","${l.module}","${l.entityId}","${details}"`
+      return `"${time}","${user}","${l.loginName || ''}","${l.userRole || ''}","${l.businessCenter || ''}","${l.action}","${l.module}","${l.entityId}","${details}"`
     })
 
     const csvContent = '\uFEFF' + [headers, ...rows].join('\n')
@@ -126,7 +154,7 @@ export default function AuditLogPage() {
 
       {/* Filter Controls Card */}
       <div className="bg-white p-5 rounded-2xl shadow-flat border border-slate-200 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className={`grid grid-cols-1 gap-4 ${isSuperAdmin ? 'md:grid-cols-6' : 'md:grid-cols-5'}`}>
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">From Date</label>
             <input
@@ -155,18 +183,23 @@ export default function AuditLogPage() {
               className="w-full form-input bg-slate-50 border-slate-300 font-medium text-xs"
             >
               <option value="ALL">All Modules</option>
-              <option value="EMPLOYEE">Employees</option>
-              <option value="ATTENDANCE">Attendance</option>
-              <option value="LOAN">Loans</option>
-              <option value="SECTION">Sections</option>
-              <option value="ADDITION">Addition Types (Master)</option>
-              <option value="TRANSACTION_ADDITION">Transaction Additions</option>
-              <option value="DEDUCTION">Deduction Types (Master)</option>
-              <option value="TRANSACTION_DEDUCTION">Transaction Deductions</option>
-              <option value="LEAVE">Leaves</option>
-              <option value="BUSINESS_CENTER">Business Centers</option>
+              {moduleOptions.map(m => <option key={m} value={m}>{MODULE_LABELS[m] || m}</option>)}
             </select>
           </div>
+
+          {isSuperAdmin && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Business Center</label>
+              <select
+                value={selectedCenter}
+                onChange={e => setSelectedCenter(e.target.value)}
+                className="w-full form-input bg-slate-50 border-slate-300 font-medium text-xs"
+              >
+                <option value="ALL">All Business Centers</option>
+                {centerOptions.map(c => <option key={c} value={c}>{c}{centerName(c) ? ` - ${centerName(c)}` : ''}</option>)}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">Filter by Action</label>
@@ -247,6 +280,11 @@ export default function AuditLogPage() {
                       <span className="text-xs font-mono font-medium text-slate-500">
                         ID: {log.entityId}
                       </span>
+                      {log.businessCenter && (
+                        <span className="bg-sky-50 text-sky-800 text-[11px] font-semibold px-2 py-0.5 rounded border border-sky-200">
+                          {centerOf(log)}{centerName(centerOf(log)) ? ` - ${centerName(centerOf(log))}` : ''}
+                        </span>
+                      )}
                     </div>
 
                     <p className="text-xs text-slate-800 font-medium pt-0.5">
@@ -256,6 +294,11 @@ export default function AuditLogPage() {
 
                   <div className="text-right text-xs space-y-0.5 min-w-[180px]">
                     <div className="font-semibold text-slate-700">{log.performedBy || 'System Admin'}</div>
+                    {(log.loginName || log.userRole) && (
+                      <div className="text-[11px] text-slate-500">
+                        {log.loginName}{log.userRole ? ` · ${log.userRole === 'SUPERADMIN' ? 'Super Admin' : log.userRole === 'ADMIN' ? 'Admin' : log.userRole}` : ''}
+                      </div>
+                    )}
                     <div className="text-[11px] text-slate-400 mono-numeric">{dateStr}</div>
                   </div>
                 </div>
